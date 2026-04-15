@@ -553,9 +553,12 @@ export default function App(){
   const [ngCycle,setNgCycle]=useState(0);
   const [storageLoaded,setStorageLoaded]=useState(false);
   const [knowledgeCache,setKnowledgeCache]=useState({});
-  const [apiKey,setApiKey]=useState("");
+  const [provider,setProvider]=useState("claude");
+  const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",openai:""});
   const [showSettings,setShowSettings]=useState(false);
-  const [settingsKeyDraft,setSettingsKeyDraft]=useState("");
+  const [settingsDraft,setSettingsDraft]=useState({claude:"",perplexity:"",openai:""});
+  // legacy compat
+  const apiKey=apiKeys[provider]||"";
 
   // Load saved state on mount
   useEffect(()=>{
@@ -575,10 +578,22 @@ export default function App(){
       if(rawK){const k=JSON.parse(rawK);if(k&&typeof k==="object")setKnowledgeCache(k);}
     }catch(e){}
     try{
-      const savedKey=localStorage.getItem("codex_apikey");
-      if(savedKey)setApiKey(savedKey);
-      else setShowSettings(true);
-    }catch(e){}
+      const savedKeys=localStorage.getItem("codex_apikeys");
+      const legacyKey=localStorage.getItem("codex_apikey");
+      if(savedKeys){
+        const parsed=JSON.parse(savedKeys);
+        setApiKeys(prev=>({...prev,...parsed}));
+        setSettingsDraft(prev=>({...prev,...parsed}));
+        if(!parsed.claude&&!parsed.perplexity&&!parsed.openai)setShowSettings(true);
+      }else if(legacyKey){
+        // migrate old single key to claude slot
+        setApiKeys(prev=>({...prev,claude:legacyKey}));
+        setSettingsDraft(prev=>({...prev,claude:legacyKey}));
+        localStorage.setItem("codex_apikeys",JSON.stringify({claude:legacyKey,perplexity:"",openai:""}));
+      }else{setShowSettings(true);}
+      const savedProvider=localStorage.getItem("codex_provider");
+      if(savedProvider)setProvider(savedProvider);
+    }catch(e){setShowSettings(true);}
     setStorageLoaded(true);
   },[]);
 
@@ -712,19 +727,44 @@ export default function App(){
     return `\n\nKNOWN FACTS FROM PREVIOUS BUILDS IN THIS CODEX (verified from earlier research${ageHours!=null?`, ${ageHours}h old`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}Use these as authoritative references. Only web search for things NOT in this list.\n`;
   };
 
+  const PROVIDERS={
+    claude:{label:"Claude",icon:"🟠",model:"claude-opus-4-6",hint:"sk-ant-...",url:"console.anthropic.com",note:"Most capable. Web search built-in."},
+    perplexity:{label:"Perplexity",icon:"🔵",model:"sonar-pro",hint:"pplx-...",url:"perplexity.ai/settings/api",note:"Fast with real-time web search native."},
+    openai:{label:"OpenAI",icon:"🟢",model:"gpt-4o",hint:"sk-...",url:"platform.openai.com/api-keys",note:"GPT-4o. No web search — uses cached knowledge."},
+  };
+
   const apiCall=async(prompt,useSearch=true)=>{
-    const body={model:"claude-opus-4-6",max_tokens:8000,messages:[{role:"user",content:prompt}]};
-    if(useSearch){body.tools=[{type:"web_search_20250305",name:"web_search"}];}
-    let data;
-    if(window.electronAPI){
-      data=await window.electronAPI.callAnthropic(body,apiKey,useSearch);
-    }else{
-      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01"},body:JSON.stringify(body)});
-      data=await r.json();
+    const curKey=apiKeys[provider]||"";
+    if(!curKey.trim())throw new Error(`No API key for ${PROVIDERS[provider]?.label||provider}. Open Settings.`);
+    let body,rawText;
+
+    if(provider==="claude"){
+      body={model:PROVIDERS.claude.model,max_tokens:8000,messages:[{role:"user",content:prompt}]};
+      if(useSearch)body.tools=[{type:"web_search_20250305",name:"web_search"}];
+      let data;
+      if(window.electronAPI){data=await window.electronAPI.callAI("claude",body,curKey);}
+      else{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":curKey,"anthropic-version":"2023-06-01"},body:JSON.stringify(body)});data=await r.json();}
+      if(data.error)throw new Error(data.error.message||"Claude API error");
+      const blocks=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text);
+      if(blocks.length===0)throw new Error("No text in Claude response");
+      rawText=blocks.join("\n");
+    } else {
+      // Perplexity + OpenAI use OpenAI-compatible format
+      const isPerplexity=provider==="perplexity";
+      body={model:PROVIDERS[provider].model,max_tokens:8000,messages:[{role:"system",content:"You are an expert soulslike theorycrafter. Output ONLY raw JSON — no markdown, no explanation, no preamble. Start with { and end with }."},{role:"user",content:prompt}]};
+      let data;
+      if(window.electronAPI){data=await window.electronAPI.callAI(provider,body,curKey);}
+      else{
+        const url=isPerplexity?"https://api.perplexity.ai/chat/completions":"https://api.openai.com/v1/chat/completions";
+        const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});
+        data=await r.json();
+      }
+      if(data.error)throw new Error(data.error.message||(data.error?.code?"API error: "+data.error.code:"API error"));
+      const choice=data.choices?.[0]?.message?.content;
+      if(!choice)throw new Error("No content in response");
+      rawText=choice;
     }
-    if(data.error)throw new Error(data.error.message||"API error");
-    const textBlocks=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text);
-    if(textBlocks.length===0)throw new Error("No text in response");
+
     const tryParse=(raw)=>{
       if(!raw)return null;
       let text=raw.replace(/```json|```/g,"").trim();
@@ -737,9 +777,9 @@ export default function App(){
       if(lastV!==-1){try{return JSON.parse(text.slice(0,lastV+1));}catch(_){}}
       return null;
     };
-    const candidates=[textBlocks[textBlocks.length-1],...textBlocks.slice().sort((a,b)=>b.length-a.length),textBlocks.join("\n")];
-    for(const cand of candidates){const parsed=tryParse(cand);if(parsed)return parsed;}
-    throw new Error(`Couldn't extract JSON. Preview: "${textBlocks[textBlocks.length-1].slice(0,150)}..."`);
+    const parsed=tryParse(rawText);
+    if(parsed)return parsed;
+    throw new Error(`Couldn't extract JSON. Preview: "${rawText.slice(0,150)}..."`);
   };
 
   const handleAddBuild=async()=>{
@@ -749,7 +789,7 @@ export default function App(){
       if(!hasStats){setAddError("Set at least one endgame stat target in Semi-AI mode");return;}
     }
     if(addMode==="manual"&&!manualForm.label.trim()){setAddError("Manual mode needs at least a build name");return;}
-    if(!apiKey.trim()){setAddError("No API key set. Open Settings to add your key.");return;}
+    if(!(apiKeys[provider]||"").trim()){setAddError(`No API key for ${PROVIDERS[provider]?.label||provider}. Open Settings to add your key.`);return;}
     setAdding(true);setAddError("");
     const useCustomGame=addCustomGameName.trim().length>0;
     const customKey=useCustomGame?"game_"+Date.now():null;
@@ -879,11 +919,13 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     }catch(e){
       let msg=e.message||"Unknown error";
       if(msg.toLowerCase().includes("stream idle timeout")||msg.toLowerCase().includes("partial response")){
-        msg="API stream timed out — the response was too long. Try a more specific build description, or use Semi-AI mode with stat targets to reduce generation length.";
-      }else if(msg.includes("exceeded_limit")||msg.includes("out_of_credits")||msg.includes("rate")){
-        msg="You've hit your Claude usage limit for this window. Try again later or upgrade your plan.";
-      }else if(msg.length>200){msg=msg.slice(0,200)+"... (Try a more specific request or different wording.)";}
-      else{msg=msg+" Try a more specific request or different wording.";}
+        msg="Response timed out mid-stream. Try a more specific description, use Semi-AI mode, or switch to a different AI provider in Settings.";
+      }else if(msg.includes("exceeded_limit")||msg.includes("out_of_credits")||msg.includes("rate_limit")||msg.includes("Rate limit")||msg.includes("insufficient_quota")||msg.includes("credit")){
+        const pName=PROVIDERS[provider]?.label||provider;
+        const alt=Object.keys(PROVIDERS).filter(p=>p!==provider&&(apiKeys[p]||"").trim()).map(p=>PROVIDERS[p].label);
+        msg=`${pName} usage limit reached.${alt.length>0?` Switch to ${alt.join(" or ")} in Settings to keep generating.`:" Try again later or add an API key for another provider in Settings."}`;
+      }else if(msg.length>200){msg=msg.slice(0,200)+"...";}
+      else{msg=msg+" Try a different provider in Settings if this keeps happening.";}
       setAddError(msg);setAddStep("");
     }finally{setAdding(false);}
   };
@@ -973,17 +1015,19 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
 
       {/* SETTINGS MODAL */}
-      {showSettings&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000000ee",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
-        <div style={{background:C.card,border:`1px solid ${C.gold}66`,borderLeft:`4px solid ${C.gold}`,borderRadius:10,padding:24,maxWidth:460,width:"100%",boxShadow:"0 20px 60px #000"}}>
-          <div style={{fontFamily:"'Cinzel',serif",fontSize:"1.1rem",color:C.bright,fontWeight:800,marginBottom:6}}>⚙ Settings</div>
-          <div style={{fontSize:".78rem",color:C.dim,marginBottom:16,lineHeight:1.5}}>Enter your Anthropic API key. It is stored locally on your device and never sent anywhere except directly to api.anthropic.com through this app.</div>
-          <label style={{display:"block",marginBottom:8,fontSize:".74rem",color:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".08em"}}>ANTHROPIC API KEY</label>
-          <input value={settingsKeyDraft} onChange={e=>setSettingsKeyDraft(e.target.value)} placeholder="sk-ant-..." type="password" style={{width:"100%",background:"#ffffff0a",border:`1px solid ${C.gold}44`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".86rem",outline:"none",boxSizing:"border-box",marginBottom:14}} onKeyDown={e=>{if(e.key==="Enter"&&settingsKeyDraft.trim()){setApiKey(settingsKeyDraft.trim());try{localStorage.setItem("codex_apikey",settingsKeyDraft.trim());}catch(_){}setShowSettings(false);}}}/>
-          <div style={{display:"flex",gap:8}}>
-            {apiKey&&<button onClick={()=>setShowSettings(false)} style={{flex:1,background:"transparent",border:"1px solid #ffffff22",borderRadius:6,padding:"10px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>Cancel</button>}
-            <button onClick={()=>{if(settingsKeyDraft.trim()){setApiKey(settingsKeyDraft.trim());try{localStorage.setItem("codex_apikey",settingsKeyDraft.trim());}catch(_){}setShowSettings(false);}}} disabled={!settingsKeyDraft.trim()} style={{flex:2,background:settingsKeyDraft.trim()?C.gold:"#ffffff22",border:"none",borderRadius:6,padding:"10px",cursor:settingsKeyDraft.trim()?"pointer":"not-allowed",color:"#000",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:800}}>Save Key</button>
+      {showSettings&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000000ee",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>Object.values(apiKeys).some(v=>v.trim())&&setShowSettings(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:C.card,border:`1px solid ${C.gold}66`,borderLeft:`4px solid ${C.gold}`,borderRadius:10,padding:24,maxWidth:500,width:"100%",boxShadow:"0 20px 60px #000",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:"1.1rem",color:C.bright,fontWeight:800,marginBottom:4}}>⚙ Settings — AI Provider</div>
+          <div style={{fontSize:".76rem",color:C.dim,marginBottom:16,lineHeight:1.5}}>Keys are stored locally and sent only to the provider's API. Configure multiple providers and switch between them when one hits a rate limit.</div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:".64rem",color:C.dim,letterSpacing:".1em",textTransform:"uppercase",marginBottom:8,fontWeight:700}}>Active Provider</div>
+          <div style={{display:"flex",gap:6,marginBottom:18}}>
+            {Object.entries(PROVIDERS).map(([key,p])=>{const isA=provider===key;return(<button key={key} onClick={()=>{setProvider(key);try{localStorage.setItem("codex_provider",key);}catch(_){}}} style={{flex:1,background:isA?`${C.gold}22`:"transparent",border:`1px solid ${isA?C.gold+"88":"#ffffff18"}`,borderRadius:6,padding:"8px 6px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:"1.1rem",marginBottom:2}}>{p.icon}</div><div style={{fontFamily:"'Cinzel',serif",fontSize:".65rem",color:isA?C.bright:C.dim,fontWeight:700}}>{p.label}</div>{isA&&<div style={{fontSize:".5rem",color:C.gold,marginTop:1}}>● active</div>}</button>);})}</div>
+          {Object.entries(PROVIDERS).map(([key,p])=>{const hasSaved=(apiKeys[key]||"").trim();return(<div key={key} style={{marginBottom:14}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}><label style={{fontSize:".68rem",color:hasSaved?C.text:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".07em",fontWeight:700}}>{p.icon} {p.label.toUpperCase()} KEY{hasSaved?" ✓":""}</label><span style={{fontSize:".58rem",color:C.dim,maxWidth:180,textAlign:"right",lineHeight:1.3}}>{p.note}</span></div><input value={settingsDraft[key]||""} onChange={e=>setSettingsDraft(prev=>({...prev,[key]:e.target.value}))} placeholder={hasSaved?"(saved — paste to replace)":p.hint} type="password" style={{width:"100%",background:"#ffffff08",border:`1px solid ${hasSaved?C.gold+"55":C.gold+"22"}`,borderRadius:6,padding:"9px 12px",color:C.bright,fontSize:".84rem",outline:"none",boxSizing:"border-box"}}/><div style={{fontSize:".58rem",color:"#ffffff33",marginTop:3}}>Get key → {p.url}</div></div>);})}
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            {Object.values(apiKeys).some(v=>v.trim())&&<button onClick={()=>setShowSettings(false)} style={{flex:1,background:"transparent",border:"1px solid #ffffff22",borderRadius:6,padding:"10px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>Cancel</button>}
+            <button onClick={()=>{const merged={...apiKeys};Object.entries(settingsDraft).forEach(([k,v])=>{if(v.trim())merged[k]=v.trim();});setApiKeys(merged);try{localStorage.setItem("codex_apikeys",JSON.stringify(merged));localStorage.setItem("codex_provider",provider);}catch(_){}setSettingsDraft({claude:"",perplexity:"",openai:""});setShowSettings(false);}} style={{flex:2,background:C.gold,border:"none",borderRadius:6,padding:"10px",cursor:"pointer",color:"#000",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:800}}>Save Settings</button>
           </div>
-          {!apiKey&&<div style={{marginTop:12,fontSize:".7rem",color:C.fire,fontStyle:"italic"}}>API key required to generate builds. Get one at console.anthropic.com</div>}
+          {!Object.values(apiKeys).some(v=>v.trim())&&<div style={{marginTop:10,fontSize:".7rem",color:C.fire,fontStyle:"italic",textAlign:"center"}}>Add at least one API key to generate builds.</div>}
         </div>
       </div>}
 
@@ -1020,6 +1064,9 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
           <div style={{display:"flex",gap:6,marginBottom:14}}>
             {[{id:"ai",l:"✦ Full AI",d:"Just describe it"},{id:"semi",l:"◐ Semi-AI",d:"Set targets, AI fills"},{id:"manual",l:"✎ Manual",d:"Build it yourself"}].map(m=>{const isA=addMode===m.id;return(<button key={m.id} onClick={()=>{setAddMode(m.id);setAddError("");}} disabled={adding} style={{flex:1,background:isA?`${a}22`:"transparent",border:`1px solid ${isA?a:"#ffffff14"}`,borderRadius:6,padding:"10px 8px",cursor:adding?"not-allowed":"pointer",textAlign:"center",opacity:adding?0.5:1,transition:"all .2s"}}><div style={{fontFamily:"'Cinzel',serif",fontSize:".75rem",color:isA?C.bright:C.dim,fontWeight:700}}>{m.l}</div><div style={{fontSize:".58rem",color:isA?a:"#555",marginTop:2}}>{m.d}</div></button>);})}
           </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,padding:"8px 10px",background:"#ffffff05",border:"1px solid #ffffff0d",borderRadius:6}}>
+            <span style={{fontSize:".62rem",color:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700,letterSpacing:".06em",flexShrink:0}}>AI:</span>
+            {Object.entries(PROVIDERS).map(([key,p])=>{const isA=provider===key;const hasKey=(apiKeys[key]||"").trim();return(<button key={key} onClick={()=>{if(!adding){setProvider(key);try{localStorage.setItem("codex_provider",key);}catch(_){}}}} disabled={adding} title={hasKey?`Switch to ${p.label}`:`${p.label} — no key (add in Settings)`} style={{display:"flex",alignItems:"center",gap:3,background:isA?"#ffffff12":"transparent",border:`1px solid ${isA?C.gold+"66":"transparent"}`,borderRadius:5,padding:"4px 8px",cursor:adding?"not-allowed":"pointer",opacity:adding?0.5:1}}><span style={{fontSize:".85rem"}}>{p.icon}</span><span style={{fontFamily:"'Cinzel',serif",fontSize:".62rem",color:isA?C.bright:C.dim,fontWeight:700}}>{p.label}</span>{!hasKey&&<span style={{fontSize:".5rem",color:C.fire}}>!</span>}{isA&&<span style={{fontSize:".45rem",color:C.gold}}>●</span>}</button>);})}</div>
           <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Target Game</div>
           <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {Object.entries(allGames).map(([k,g])=>{const isA=addTargetGame===k&&!addCustomGameName.trim();return(<button key={k} onClick={()=>{setAddTargetGame(k);setAddCustomGameName("");}} disabled={adding} style={{flex:"1 1 140px",background:isA?C.cardHi:"transparent",border:`1px solid ${isA?a+"66":"#ffffff14"}`,borderRadius:5,padding:"8px",cursor:adding?"not-allowed":"pointer",textAlign:"center",opacity:adding?0.5:1}}><span style={{fontSize:"1.1rem",marginRight:5}}>{g.icon}</span><span style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:isA?C.bright:C.dim,fontWeight:700}}>{g.name}</span></button>);})}
@@ -1108,11 +1155,15 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       <div style={{maxWidth:920,margin:"0 auto",padding:"0 16px"}}>
 
         {/* HEADER */}
-        <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{textAlign:"center",marginBottom:20,position:"relative"}}>
           <div style={{fontSize:".58rem",letterSpacing:".35em",color:a,textTransform:"uppercase",marginBottom:3,fontWeight:600}}>Master Build Codex</div>
           <h1 style={{fontFamily:"'Cinzel',serif",fontSize:"1.6rem",color:C.bright,letterSpacing:".1em",margin:0,fontWeight:800}}>OP BUILDS</h1>
           <div style={{width:80,height:2,background:a,margin:"8px auto 0",borderRadius:1}}/>
-          <button onClick={()=>{setSettingsKeyDraft(apiKey);setShowSettings(true);}} title="Settings" style={{position:"absolute",top:20,right:20,background:"transparent",border:"1px solid #ffffff22",borderRadius:5,padding:"6px 10px",cursor:"pointer",color:C.dim,fontSize:".72rem",fontFamily:"'Cinzel',serif",fontWeight:700}}>⚙ Settings</button>
+          <button onClick={()=>{setSettingsDraft({claude:"",perplexity:"",openai:""});setShowSettings(true);}} title="Settings" style={{position:"absolute",top:20,right:20,background:"transparent",border:"1px solid #ffffff22",borderRadius:5,padding:"6px 10px",cursor:"pointer",color:C.dim,fontSize:".72rem",fontFamily:"'Cinzel',serif",fontWeight:700,display:"flex",alignItems:"center",gap:5}}>
+            <span>{PROVIDERS[provider]?.icon||"⚙"}</span>
+            <span style={{color:apiKey?C.text:C.fire}}>{apiKey?PROVIDERS[provider]?.label:"No Key"}</span>
+            <span style={{color:"#ffffff33"}}>▸</span>
+          </button>
         </div>
 
         {/* GAME SELECTOR */}
