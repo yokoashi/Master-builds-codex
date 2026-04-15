@@ -888,4 +888,54 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     }finally{setAdding(false);}
   };
 
+  const getTargetStatKeys=()=>{
+    if(addCustomGameName.trim())return ["VIG","MND","END","STR","DEX","INT","FTH","ARC"];
+    const tg=allGames[addTargetGame];if(!tg||!tg.builds)return ["STR","DEX","INT","FTH"];
+    const fb=Object.values(tg.builds)[0];
+    if(!fb||!fb.ph||!fb.ph[0])return ["STR","DEX","INT","FTH"];
+    return Object.keys(fb.ph[0].stats);
+  };
+  const updateManualField=(field,value)=>setManualForm(prev=>({...prev,[field]:value}));
+  const updateManualStat=(phaseIdx,key,value)=>{setManualForm(prev=>{const phases=[...prev.phases];phases[phaseIdx]={...phases[phaseIdx],stats:{...phases[phaseIdx].stats,[key]:value}};return {...prev,phases};});};
+  const updateManualItem=(phaseIdx,cat,itemIdx,field,value)=>{setManualForm(prev=>{const phases=[...prev.phases];const items=[...(phases[phaseIdx][cat]||[])];items[itemIdx]={...items[itemIdx],[field]:value};phases[phaseIdx]={...phases[phaseIdx],[cat]:items};return {...prev,phases};});};
+  const addManualItem=(phaseIdx,cat,blank)=>{setManualForm(prev=>{const phases=[...prev.phases];const items=[...(phases[phaseIdx][cat]||[]),blank];phases[phaseIdx]={...phases[phaseIdx],[cat]:items};return {...prev,phases};});};
+  const removeManualItem=(phaseIdx,cat,itemIdx)=>{setManualForm(prev=>{const phases=[...prev.phases];const items=[...(phases[phaseIdx][cat]||[])];items.splice(itemIdx,1);phases[phaseIdx]={...phases[phaseIdx],[cat]:items};return {...prev,phases};});};
+  const resetForms=()=>{
+    setSemiForm({label:"",playstyle:"",accent:"",endgameStats:{},preferredWeapon:"",notes:""});
+    setManualForm({label:"",sub:"",icon:"⚔️",accent:"#e74c3c",cls:"",caps:"",weaponReq:"",playstyle:"",phases:[{stats:{},weapons:[{n:"",st:""}],armor:[{n:""}],acc:[{n:"",ef:""}],spells:[]},{stats:{},weapons:[{n:"",st:""}],armor:[{n:""}],acc:[{n:"",ef:""}],spells:[]},{stats:{},weapons:[{n:"",st:""}],armor:[{n:""}],acc:[{n:"",ef:""}],spells:[]}]});
+    setManualPhase(0);
+  };
+
+  const handleExport=()=>{
+    try{
+      const payload={version:1,exportedAt:new Date().toISOString(),dynamicBuilds,dynamicGames,hiddenStaticBuilds,knowledgeCache,currentGame:game,currentBuild:buildKey};
+      const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement("a");link.href=url;link.download=`codex_backup_${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(link);link.click();document.body.removeChild(link);URL.revokeObjectURL(url);
+      setUpdateMsg("✓ Codex exported");setTimeout(()=>setUpdateMsg(""),4000);
+    }catch(e){setUpdateMsg("✗ Export failed: "+(e.message||"unknown"));setTimeout(()=>setUpdateMsg(""),5000);}
+  };
+
+  const handleImport=(event)=>{
+    const file=event.target.files?.[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const data=JSON.parse(e.target.result);
+        if(!data||typeof data!=="object")throw new Error("Invalid file format");
+        let restored=0;
+        if(data.dynamicBuilds&&typeof data.dynamicBuilds==="object"){setDynamicBuilds(data.dynamicBuilds);restored++;}
+        if(data.dynamicGames&&typeof data.dynamicGames==="object"){setDynamicGames(data.dynamicGames);restored++;}
+        if(Array.isArray(data.hiddenStaticBuilds)){setHiddenStaticBuilds(data.hiddenStaticBuilds);restored++;}
+        if(data.knowledgeCache&&typeof data.knowledgeCache==="object"){setKnowledgeCache(data.knowledgeCache);restored++;}
+        if(data.currentGame)setGame(data.currentGame);
+        if(data.currentBuild)setBuildKey(data.currentBuild);
+        if(restored===0)throw new Error("No recognizable codex data in file");
+        setUpdateMsg(`✓ Codex restored from ${file.name}`);setTimeout(()=>setUpdateMsg(""),5000);
+      }catch(err){setUpdateMsg("✗ Import failed: "+(err.message||"unknown"));setTimeout(()=>setUpdateMsg(""),5000);}
+    };
+    reader.readAsText(file);event.target.value="";
+  };
+
 /* >>>CONTINUE<<< */
