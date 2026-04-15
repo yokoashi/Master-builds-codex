@@ -64,6 +64,20 @@ ipcMain.handle('ai-request', async (_event, { provider, body, apiKey }) => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey.trim()}`,
     };
+  } else if (provider === 'gemini') {
+    // Google Gemini via OpenAI-compatible endpoint (AI Studio)
+    url = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+    headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`,
+    };
+  } else if (provider === 'groq') {
+    // Groq — ultra-fast inference (Llama models)
+    url = 'https://api.groq.com/openai/v1/chat/completions';
+    headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`,
+    };
   } else {
     return { error: { message: `Unknown provider: ${provider}` } };
   }

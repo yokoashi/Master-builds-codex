@@ -554,9 +554,9 @@ export default function App(){
   const [storageLoaded,setStorageLoaded]=useState(false);
   const [knowledgeCache,setKnowledgeCache]=useState({});
   const [provider,setProvider]=useState("claude");
-  const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",openai:""});
+  const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
   const [showSettings,setShowSettings]=useState(false);
-  const [settingsDraft,setSettingsDraft]=useState({claude:"",perplexity:"",openai:""});
+  const [settingsDraft,setSettingsDraft]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
   // legacy compat
   const apiKey=apiKeys[provider]||"";
 
@@ -584,12 +584,12 @@ export default function App(){
         const parsed=JSON.parse(savedKeys);
         setApiKeys(prev=>({...prev,...parsed}));
         setSettingsDraft(prev=>({...prev,...parsed}));
-        if(!parsed.claude&&!parsed.perplexity&&!parsed.openai)setShowSettings(true);
+        if(!Object.values(parsed).some(v=>v&&v.trim()))setShowSettings(true);
       }else if(legacyKey){
         // migrate old single key to claude slot
         setApiKeys(prev=>({...prev,claude:legacyKey}));
         setSettingsDraft(prev=>({...prev,claude:legacyKey}));
-        localStorage.setItem("codex_apikeys",JSON.stringify({claude:legacyKey,perplexity:"",openai:""}));
+        localStorage.setItem("codex_apikeys",JSON.stringify({claude:legacyKey,perplexity:"",openai:"",gemini:"",groq:""}));
       }else{setShowSettings(true);}
       const savedProvider=localStorage.getItem("codex_provider");
       if(savedProvider)setProvider(savedProvider);
@@ -728,17 +728,21 @@ export default function App(){
   };
 
   const PROVIDERS={
-    claude:{label:"Claude",icon:"🟠",model:"claude-opus-4-6",hint:"sk-ant-...",url:"console.anthropic.com",note:"Most capable. Web search built-in."},
-    perplexity:{label:"Perplexity",icon:"🔵",model:"sonar-pro",hint:"pplx-...",url:"perplexity.ai/settings/api",note:"Fast with real-time web search native."},
-    openai:{label:"OpenAI",icon:"🟢",model:"gpt-4o",hint:"sk-...",url:"platform.openai.com/api-keys",note:"GPT-4o. No web search — uses cached knowledge."},
+    claude:{label:"Claude",icon:"🟠",model:"claude-sonnet-4-6",hint:"sk-ant-...",url:"console.anthropic.com",note:"Best structured JSON & reasoning. Web search built-in.",searchCapable:true},
+    perplexity:{label:"Perplexity",icon:"🔵",model:"sonar-pro",hint:"pplx-...",url:"perplexity.ai/settings/api",note:"Real-time web search. Used as research step automatically.",searchCapable:true},
+    openai:{label:"OpenAI",icon:"🟢",model:"gpt-4o",hint:"sk-...",url:"platform.openai.com/api-keys",note:"GPT-4o. Great for creative variants & alternatives.",searchCapable:false},
+    gemini:{label:"Gemini",icon:"🔴",model:"gemini-2.0-flash",hint:"AIza...",url:"aistudio.google.com/apikey",note:"Google Gemini Flash. Fast with Search grounding.",searchCapable:true},
+    groq:{label:"Groq",icon:"⚡",model:"llama-3.3-70b-versatile",hint:"gsk_...",url:"console.groq.com/keys",note:"Ultra-fast Llama 3.3 70B. Free tier available.",searchCapable:false},
   };
 
-  const apiCall=async(prompt,useSearch=true)=>{
-    const curKey=apiKeys[provider]||"";
-    if(!curKey.trim())throw new Error(`No API key for ${PROVIDERS[provider]?.label||provider}. Open Settings.`);
+  // opts: { prov: string (override active provider), rawText: bool (skip JSON parsing, return string) }
+  const apiCall=async(prompt,useSearch=true,opts={})=>{
+    const tProv=opts.prov||provider;
+    const curKey=apiKeys[tProv]||"";
+    if(!curKey.trim())throw new Error(`No API key for ${PROVIDERS[tProv]?.label||tProv}. Open Settings.`);
     let body,rawText;
 
-    if(provider==="claude"){
+    if(tProv==="claude"){
       body={model:PROVIDERS.claude.model,max_tokens:8000,messages:[{role:"user",content:prompt}]};
       if(useSearch)body.tools=[{type:"web_search_20250305",name:"web_search"}];
       let data;
@@ -749,21 +753,22 @@ export default function App(){
       if(blocks.length===0)throw new Error("No text in Claude response");
       rawText=blocks.join("\n");
     } else {
-      // Perplexity + OpenAI use OpenAI-compatible format
-      const isPerplexity=provider==="perplexity";
-      body={model:PROVIDERS[provider].model,max_tokens:8000,messages:[{role:"system",content:"You are an expert soulslike theorycrafter. Output ONLY raw JSON — no markdown, no explanation, no preamble. Start with { and end with }."},{role:"user",content:prompt}]};
+      // OpenAI-compatible: Perplexity, OpenAI, Gemini, Groq
+      const systemMsg=opts.rawText
+        ?"You are a game research assistant. Search for and provide accurate, concise, up-to-date information. Be specific with item names, locations, and stats."
+        :"You are an expert soulslike theorycrafter. Output ONLY raw JSON — no markdown, no explanation, no preamble. Start with { and end with }.";
+      const urlMap={perplexity:"https://api.perplexity.ai/chat/completions",openai:"https://api.openai.com/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions"};
+      body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1500:8000,messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
       let data;
-      if(window.electronAPI){data=await window.electronAPI.callAI(provider,body,curKey);}
-      else{
-        const url=isPerplexity?"https://api.perplexity.ai/chat/completions":"https://api.openai.com/v1/chat/completions";
-        const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});
-        data=await r.json();
-      }
+      if(window.electronAPI){data=await window.electronAPI.callAI(tProv,body,curKey);}
+      else{const r=await fetch(urlMap[tProv]||urlMap.openai,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});data=await r.json();}
       if(data.error)throw new Error(data.error.message||(data.error?.code?"API error: "+data.error.code:"API error"));
       const choice=data.choices?.[0]?.message?.content;
       if(!choice)throw new Error("No content in response");
       rawText=choice;
     }
+
+    if(opts.rawText)return rawText; // raw text for research steps — skip JSON parsing
 
     const tryParse=(raw)=>{
       if(!raw)return null;
@@ -824,7 +829,36 @@ export default function App(){
       const knowledgeBlock=buildKnowledgeBlock(cacheKey);
       const cacheSize=knowledgeCache[cacheKey]?.facts?.length||0;
       const useSearchStep1=addUrl.trim().length>0||cacheSize<20||useCustomGame;
-      setAddStep(useSearchStep1?(useCustomGame?`Researching ${gameName} & generating early progression...`:"Researching game & generating early progression..."):`Using cached knowledge (${cacheSize} facts) — generating early progression...`);
+
+      // ── Smart provider routing ──────────────────────────────────────────────
+      // Research step: prefer search-capable providers other than the main one
+      const researchProv=["perplexity","gemini"].find(p=>p!==provider&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable);
+      // Variants step: prefer OpenAI (best creative diversity), then others, fallback to main
+      const variantsProv=["openai","claude","gemini","groq","perplexity"].find(p=>(apiKeys[p]||"").trim())||provider;
+
+      // ── Step 0: Web research (runs in parallel with UX update) ──────────────
+      let researchContext="";
+      if(researchProv){
+        const rp=PROVIDERS[researchProv];
+        setAddStep(`${rp.icon} ${rp.label} searching current ${gameName} meta...`);
+        try{
+          const buildDesc=addMode==="ai"?addText:addMode==="semi"?(semiForm.playstyle||semiForm.label||"OP build"):manualForm.label||"OP build";
+          const rPrompt=`Search for accurate, up-to-date ${gameName} information for a "${buildDesc}" build archetype. Summarize:
+1. Current meta viability and tier ranking for this archetype
+2. Best weapons for this style with exact acquisition locations and upgrade materials
+3. Recommended stat priorities and soft/hard caps
+4. Any recent patches or balance changes affecting this build type
+5. Key community tips, common mistakes, and progression advice
+
+Be concise (under 400 words). Prioritize specificity — exact item names, zone names, boss names.`;
+          const rawResearch=await apiCall(rPrompt,true,{prov:researchProv,rawText:true});
+          if(rawResearch&&rawResearch.length>50){
+            researchContext=`\n\n=== LIVE WEB RESEARCH (${rp.label}) ===\n${rawResearch.slice(0,1800)}\n=== END RESEARCH ===\nUse the above to verify and improve item names, locations, and stat recommendations.`;
+          }
+        }catch(e){/* research failure is non-fatal */}
+      }
+
+      setAddStep(useSearchStep1?(useCustomGame?`${PROVIDERS[provider].icon} Researching ${gameName} & generating early progression...`:`${PROVIDERS[provider].icon} Researching & generating early progression...`):`${PROVIDERS[provider].icon} Using cached knowledge (${cacheSize} facts) — generating early progression...`);
       const customGameMetaSchema=useCustomGame?`"game_meta":{"icon":"single emoji representing this game","stat_keys":["STAT1","STAT2","STAT3","STAT4","STAT5","STAT6"],"stat_max":99,"notes":"1-2 sentence note on the game's stat system"},\n`:"";
       const p1=`You are an elite ${gameName} theorycrafter with deep knowledge of weapons, stats, item locations, and optimal progression routes. Generate the FIRST HALF of an OP build (metadata + 3 early phases).
 
@@ -848,7 +882,7 @@ RULES:
 - Use EXACTLY these stat keys: ${statKeysStr}
 - Stat max: ${statMax}
 - BE SPECIFIC with locations (name zones, bonfires/vestiges/graces, landmarks)
-- Use web search aggressively to verify item names and locations${urlRef}${knowledgeBlock}
+- Use web search aggressively to verify item names and locations${urlRef}${knowledgeBlock}${researchContext}
 
 ${userConstraints}`;
       const step1=await apiCall(p1,useSearchStep1);
@@ -860,7 +894,7 @@ ${userConstraints}`;
         if(keys.length>0){sampleStats=keys;resolvedStatKeysStr=keys.join(", ");resolvedStatObjStr=keys.map(s=>`"${s}":N`).join(",");statMax=customGameMeta.stat_max||99;}
       }
 
-      setAddStep(`Generating late-game and NG+ for "${step1.label}"...`);
+      setAddStep(`${PROVIDERS[provider].icon} Generating late-game & NG+ for "${step1.label}"...`);
       const p2=`You previously generated the early phases of a "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the LATE progression phases 4-7.
 
 CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. No preamble, no commentary. Start with { and end with }.
@@ -873,12 +907,13 @@ Phase 7 (NG+) SPECIAL structure: {"name":"NG+","range":"NG+1 to NG+7","stats":{$
 
 Generate: Phase 4 (Unlock Spells, Lv 25-40), Phase 5 (Mid-to-Late, Lv 35-55), Phase 6 (Endgame, Lv 55+), Phase 7 (NG+, with ngCycles)
 
-RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. Each NG+ cycle adds ~5-10 levels per stat. Use exact stat keys: ${resolvedStatKeysStr}.${urlRef}${knowledgeBlock}
+RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. Each NG+ cycle adds ~5-10 levels per stat. Use exact stat keys: ${resolvedStatKeysStr}.${urlRef}${knowledgeBlock}${researchContext}
 
 Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       const step2=await apiCall(p2,false);
 
-      setAddStep("Generating similar builds, alternatives & reference table...");
+      const vp=PROVIDERS[variantsProv];
+      setAddStep(`${vp.icon} ${vp.label} generating variants & comparison${variantsProv!==provider?" (creative diversity)":""}...`);
       const p3=`You previously generated a full "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the VARIANTS SECTION.
 
 CRITICAL OUTPUT FORMAT: Single JSON object only. Start with { end with }. No preamble.
@@ -895,7 +930,7 @@ RULES: 2 sim = same archetype but different weapons/approach. 2 oth = completely
 
 Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       let step3;
-      try{step3=await apiCall(p3,false);}catch(e){step3={sim:[],oth:[],ref:[{n:step1.label,i:step1.icon,w:"—",ap:"—",st:"—",ar:"—",s:step1.sub,a:step1.accent}]};}
+      try{step3=await apiCall(p3,false,{prov:variantsProv});}catch(e){step3={sim:[],oth:[],ref:[{n:step1.label,i:step1.icon,w:"—",ap:"—",st:"—",ar:"—",s:step1.sub,a:step1.accent}]};}
 
       setAddStep("Finalizing build...");
       const {game_meta,...step1Clean}=step1;
@@ -920,10 +955,10 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       let msg=e.message||"Unknown error";
       if(msg.toLowerCase().includes("stream idle timeout")||msg.toLowerCase().includes("partial response")){
         msg="Response timed out mid-stream. Try a more specific description, use Semi-AI mode, or switch to a different AI provider in Settings.";
-      }else if(msg.includes("exceeded_limit")||msg.includes("out_of_credits")||msg.includes("rate_limit")||msg.includes("Rate limit")||msg.includes("insufficient_quota")||msg.includes("credit")){
+      }else if(msg.includes("exceeded_limit")||msg.includes("out_of_credits")||msg.includes("rate_limit")||msg.includes("Rate limit")||msg.includes("insufficient_quota")||msg.includes("credit")||msg.includes("tokens per minute")||msg.includes("requests per minute")){
         const pName=PROVIDERS[provider]?.label||provider;
         const alt=Object.keys(PROVIDERS).filter(p=>p!==provider&&(apiKeys[p]||"").trim()).map(p=>PROVIDERS[p].label);
-        msg=`${pName} usage limit reached.${alt.length>0?` Switch to ${alt.join(" or ")} in Settings to keep generating.`:" Try again later or add an API key for another provider in Settings."}`;
+        msg=`${pName} rate limit hit.${alt.length>0?` Switch to ${alt.join(" or ")} in Settings to continue.`:" Add a Groq (free) or Gemini (free) key in Settings for a fast fallback."}`;
       }else if(msg.length>200){msg=msg.slice(0,200)+"...";}
       else{msg=msg+" Try a different provider in Settings if this keeps happening.";}
       setAddError(msg);setAddStep("");
@@ -1025,7 +1060,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
           {Object.entries(PROVIDERS).map(([key,p])=>{const hasSaved=(apiKeys[key]||"").trim();return(<div key={key} style={{marginBottom:14}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}><label style={{fontSize:".68rem",color:hasSaved?C.text:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".07em",fontWeight:700}}>{p.icon} {p.label.toUpperCase()} KEY{hasSaved?" ✓":""}</label><span style={{fontSize:".58rem",color:C.dim,maxWidth:180,textAlign:"right",lineHeight:1.3}}>{p.note}</span></div><input value={settingsDraft[key]||""} onChange={e=>setSettingsDraft(prev=>({...prev,[key]:e.target.value}))} placeholder={hasSaved?"(saved — paste to replace)":p.hint} type="password" style={{width:"100%",background:"#ffffff08",border:`1px solid ${hasSaved?C.gold+"55":C.gold+"22"}`,borderRadius:6,padding:"9px 12px",color:C.bright,fontSize:".84rem",outline:"none",boxSizing:"border-box"}}/><div style={{fontSize:".58rem",color:"#ffffff33",marginTop:3}}>Get key → {p.url}</div></div>);})}
           <div style={{display:"flex",gap:8,marginTop:6}}>
             {Object.values(apiKeys).some(v=>v.trim())&&<button onClick={()=>setShowSettings(false)} style={{flex:1,background:"transparent",border:"1px solid #ffffff22",borderRadius:6,padding:"10px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>Cancel</button>}
-            <button onClick={()=>{const merged={...apiKeys};Object.entries(settingsDraft).forEach(([k,v])=>{if(v.trim())merged[k]=v.trim();});setApiKeys(merged);try{localStorage.setItem("codex_apikeys",JSON.stringify(merged));localStorage.setItem("codex_provider",provider);}catch(_){}setSettingsDraft({claude:"",perplexity:"",openai:""});setShowSettings(false);}} style={{flex:2,background:C.gold,border:"none",borderRadius:6,padding:"10px",cursor:"pointer",color:"#000",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:800}}>Save Settings</button>
+            <button onClick={()=>{const merged={...apiKeys};Object.entries(settingsDraft).forEach(([k,v])=>{if(v.trim())merged[k]=v.trim();});setApiKeys(merged);try{localStorage.setItem("codex_apikeys",JSON.stringify(merged));localStorage.setItem("codex_provider",provider);}catch(_){}setSettingsDraft({claude:"",perplexity:"",openai:"",gemini:"",groq:""});setShowSettings(false);}} style={{flex:2,background:C.gold,border:"none",borderRadius:6,padding:"10px",cursor:"pointer",color:"#000",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:800}}>Save Settings</button>
           </div>
           {!Object.values(apiKeys).some(v=>v.trim())&&<div style={{marginTop:10,fontSize:".7rem",color:C.fire,fontStyle:"italic",textAlign:"center"}}>Add at least one API key to generate builds.</div>}
         </div>
@@ -1159,7 +1194,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
           <div style={{fontSize:".58rem",letterSpacing:".35em",color:a,textTransform:"uppercase",marginBottom:3,fontWeight:600}}>Master Build Codex</div>
           <h1 style={{fontFamily:"'Cinzel',serif",fontSize:"1.6rem",color:C.bright,letterSpacing:".1em",margin:0,fontWeight:800}}>OP BUILDS</h1>
           <div style={{width:80,height:2,background:a,margin:"8px auto 0",borderRadius:1}}/>
-          <button onClick={()=>{setSettingsDraft({claude:"",perplexity:"",openai:""});setShowSettings(true);}} title="Settings" style={{position:"absolute",top:20,right:20,background:"transparent",border:"1px solid #ffffff22",borderRadius:5,padding:"6px 10px",cursor:"pointer",color:C.dim,fontSize:".72rem",fontFamily:"'Cinzel',serif",fontWeight:700,display:"flex",alignItems:"center",gap:5}}>
+          <button onClick={()=>{setSettingsDraft({claude:"",perplexity:"",openai:"",gemini:"",groq:""});setShowSettings(true);}} title="Settings" style={{position:"absolute",top:20,right:20,background:"transparent",border:"1px solid #ffffff22",borderRadius:5,padding:"6px 10px",cursor:"pointer",color:C.dim,fontSize:".72rem",fontFamily:"'Cinzel',serif",fontWeight:700,display:"flex",alignItems:"center",gap:5}}>
             <span>{PROVIDERS[provider]?.icon||"⚙"}</span>
             <span style={{color:apiKey?C.text:C.fire}}>{apiKey?PROVIDERS[provider]?.label:"No Key"}</span>
             <span style={{color:"#ffffff33"}}>▸</span>
