@@ -394,4 +394,67 @@ lotf:{name:"Lords of the Fallen",icon:"🩸",builds:{crimson:crimsonReaper,withe
 ds1:{name:"Dark Souls",icon:"⚔️",builds:{uchi:ds1Uchi},statMax:99,endgameBudget:200,softCaps:{VIT:50,ATT:50,END:40,STR:40,DEX:40,RES:null,INT:50,FTH:50},mats:ds1Mats,weightInfo:ds1Weight}
 };
 
+/* ══ COMPONENTS ══ */
+
+const SL=({children,a})=>(
+  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:22,marginBottom:12}}>
+    <div style={{width:3,height:16,background:a,borderRadius:2}}/>
+    <h3 style={{fontFamily:"'Cinzel',serif",fontSize:".76rem",letterSpacing:".15em",textTransform:"uppercase",color:C.bright,margin:0,fontWeight:700}}>{children}</h3>
+    <div style={{flex:1,height:1,background:`${a}33`}}/>
+  </div>
+);
+
+const ItemCard=({item,a})=>{
+  const [o,setO]=useState(false);
+  return (
+    <div style={{border:`1px solid ${o?a+"66":"#ffffff14"}`,borderRadius:6,marginBottom:6,background:o?C.cardHi:C.card,transition:"all .2s",overflow:"hidden"}}>
+      <button onClick={()=>setO(!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"10px 13px",background:"none",border:"none",cursor:"pointer",textAlign:"left",flexWrap:"wrap"}}>
+        <span style={{width:8,height:8,borderRadius:"50%",background:item.eq!==false?a:"#444",flexShrink:0}}/>
+        <span style={{flex:"1 1 110px",fontSize:".86rem",color:item.eq!==false?C.bright:C.dim,fontWeight:item.eq!==false?600:400,minWidth:80}}>{item.n}</span>
+        {item.ap&&<span style={{fontSize:".72rem",color:a,fontFamily:"'Cinzel',serif",fontWeight:700}}>{item.ap}</span>}
+        {item.st&&<span style={{fontSize:".66rem",background:`${a}22`,color:C.bright,padding:"2px 9px",borderRadius:11,whiteSpace:"nowrap",fontWeight:600,border:`1px solid ${a}55`}}>{item.st}</span>}
+        {item.ef&&<span style={{fontSize:".68rem",color:C.dim,fontStyle:"italic",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.ef}</span>}
+        {item.wt&&<span style={{fontSize:".66rem",color:C.dim,whiteSpace:"nowrap"}}>⚖{item.wt}</span>}
+        <span style={{color:a,fontSize:".62rem",transform:o?"rotate(90deg)":"rotate(0)",transition:"transform .2s",flexShrink:0}}>▶</span>
+      </button>
+      {o&&<div style={{padding:"4px 13px 14px 30px",fontSize:".8rem",lineHeight:1.65}}>
+        {item.d&&<p style={{color:C.text,margin:"0 0 9px"}}>{item.d}</p>}
+        {[{i:"📍",l:"LOCATION",v:item.loc},{i:"⬆",l:"UPGRADE",v:item.up},{i:"💡",l:"TIPS",v:item.tip}].filter(x=>x.v&&x.v!=="N/A").map((x,i)=>(
+          <div key={i} style={{background:"#ffffff08",borderRadius:5,padding:"8px 11px",marginBottom:5,borderLeft:`3px solid ${a}`}}>
+            <span style={{color:a,fontWeight:700,fontSize:".72rem",letterSpacing:".05em"}}>{x.i} {x.l}: </span><span style={{color:C.text}}>{x.v}</span>
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+};
+
+const StatBar=({l,v,max,a,p,softCap})=>{
+  const pct=Math.min((v/max)*100,100);
+  const grew=p!=null&&v>p;
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+      <span style={{width:36,fontSize:".72rem",color:C.dim,fontFamily:"'Cinzel',serif",textAlign:"right"}}>{l}</span>
+      <div style={{flex:1,height:14,background:"#ffffff0a",borderRadius:7,overflow:"hidden",position:"relative"}}>
+        {p!=null&&<div style={{position:"absolute",width:`${Math.min((p/max)*100,100)}%`,height:"100%",background:`${a}33`,borderRadius:7}}/>}
+        <div style={{position:"relative",width:`${pct}%`,height:"100%",background:a,borderRadius:7,transition:"width .4s"}}/>
+        {softCap&&<div style={{position:"absolute",left:`${(softCap/max)*100}%`,top:-1,width:2,height:"calc(100% + 2px)",background:"#ffffff66"}}/>}
+      </div>
+      <span style={{width:28,fontSize:".84rem",color:C.bright,fontWeight:700,textAlign:"right"}}>{v}</span>
+      {grew?<span style={{fontSize:".64rem",color:C.green,fontWeight:700,width:24}}>+{v-p}</span>:<span style={{width:24}}/>}
+    </div>
+  );
+};
+
+const DBox=({d,a})=>(
+  <div style={{background:C.card,border:`1px solid ${a}44`,borderLeft:`3px solid ${a}`,borderRadius:6,padding:13,fontSize:".8rem"}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:9}}>
+      <div><div style={{color:a,fontWeight:700,fontSize:".68rem",letterSpacing:".07em",marginBottom:3}}>PER SWING</div><div style={{color:C.bright,fontWeight:700,fontSize:".92rem"}}>{d.ps}</div></div>
+      <div><div style={{color:a,fontWeight:700,fontSize:".68rem",letterSpacing:".07em",marginBottom:3}}>STATUS / EFFECT</div><div style={{color:C.text}}>{d.sp}</div></div>
+    </div>
+    <div style={{marginBottom:7}}><span style={{color:a,fontWeight:700,fontSize:".68rem"}}>BOSS SPEED: </span><span style={{color:C.text}}>{d.bs}</span></div>
+    <div style={{color:C.dim,fontStyle:"italic",fontSize:".78rem",borderTop:"1px solid #ffffff10",paddingTop:8,lineHeight:1.5}}>{d.n}</div>
+  </div>
+);
+
 /* >>>CONTINUE<<< */
