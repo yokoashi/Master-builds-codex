@@ -1012,4 +1012,49 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         </div>
       </div>}
 
+      {/* ADD BUILD MODAL */}
+      {showAdd&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000000dd",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>!adding&&setShowAdd(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:C.card,border:`1px solid ${a}66`,borderLeft:`4px solid ${a}`,borderRadius:10,padding:22,maxWidth:620,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px #000"}}>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:"1.1rem",color:C.bright,fontWeight:800,marginBottom:4}}>✦ Request New Build</div>
+          <div style={{fontSize:".74rem",color:C.dim,marginBottom:14,lineHeight:1.5}}>Choose a mode below. Full AI does everything from a description. Semi-AI lets you set endgame stat targets. Manual lets you build the skeleton yourself with AI filling in details.</div>
+          <div style={{display:"flex",gap:6,marginBottom:14}}>
+            {[{id:"ai",l:"✦ Full AI",d:"Just describe it"},{id:"semi",l:"◐ Semi-AI",d:"Set targets, AI fills"},{id:"manual",l:"✎ Manual",d:"Build it yourself"}].map(m=>{const isA=addMode===m.id;return(<button key={m.id} onClick={()=>{setAddMode(m.id);setAddError("");}} disabled={adding} style={{flex:1,background:isA?`${a}22`:"transparent",border:`1px solid ${isA?a:"#ffffff14"}`,borderRadius:6,padding:"10px 8px",cursor:adding?"not-allowed":"pointer",textAlign:"center",opacity:adding?0.5:1,transition:"all .2s"}}><div style={{fontFamily:"'Cinzel',serif",fontSize:".75rem",color:isA?C.bright:C.dim,fontWeight:700}}>{m.l}</div><div style={{fontSize:".58rem",color:isA?a:"#555",marginTop:2}}>{m.d}</div></button>);})}
+          </div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Target Game</div>
+          <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+            {Object.entries(allGames).map(([k,g])=>{const isA=addTargetGame===k&&!addCustomGameName.trim();return(<button key={k} onClick={()=>{setAddTargetGame(k);setAddCustomGameName("");}} disabled={adding} style={{flex:"1 1 140px",background:isA?C.cardHi:"transparent",border:`1px solid ${isA?a+"66":"#ffffff14"}`,borderRadius:5,padding:"8px",cursor:adding?"not-allowed":"pointer",textAlign:"center",opacity:adding?0.5:1}}><span style={{fontSize:"1.1rem",marginRight:5}}>{g.icon}</span><span style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:isA?C.bright:C.dim,fontWeight:700}}>{g.name}</span></button>);})}
+          </div>
+          <input type="text" value={addCustomGameName} onChange={e=>setAddCustomGameName(e.target.value)} disabled={adding} placeholder="…or type a new game name (e.g. 'Elden Ring', 'Bloodborne', 'Dark Souls 3')" style={{width:"100%",background:C.bg,border:`1px solid ${addCustomGameName.trim()?a:a+"44"}`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".8rem",outline:"none",boxSizing:"border-box",marginBottom:14}}/>
+
+          {addMode==="ai"&&<>
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Build Request</div>
+            <textarea value={addText} onChange={e=>setAddText(e.target.value)} disabled={adding} placeholder="e.g. 'Holy paladin tank with greatsword' or 'Fast dex dual-dagger bleed build' or 'Pyromancer with fire spells and melee support'" style={{width:"100%",minHeight:80,background:C.bg,border:`1px solid ${a}44`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".85rem",lineHeight:1.5,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
+          </>}
+
+          {addMode==="semi"&&<>
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Build Name <span style={{color:C.dim,fontSize:".6rem",textTransform:"none",fontWeight:400}}>— optional</span></div>
+            <input type="text" value={semiForm.label} onChange={e=>setSemiForm({...semiForm,label:e.target.value})} disabled={adding} placeholder="e.g. Crimson Vanguard" style={{width:"100%",background:C.bg,border:`1px solid ${a}44`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".8rem",outline:"none",boxSizing:"border-box",marginBottom:12}}/>
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Playstyle <span style={{color:C.dim,fontSize:".6rem",textTransform:"none",fontWeight:400}}>— optional</span></div>
+            <textarea value={semiForm.playstyle} onChange={e=>setSemiForm({...semiForm,playstyle:e.target.value})} disabled={adding} placeholder="e.g. heavy hitter that procs bleed, fast dual-wield assassin" style={{width:"100%",minHeight:55,background:C.bg,border:`1px solid ${a}44`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".8rem",lineHeight:1.5,resize:"vertical",outline:"none",boxSizing:"border-box",marginBottom:12}}/>
+            {(()=>{
+              const statKeys=getTargetStatKeys();
+              const tg=addCustomGameName.trim()?null:allGames[addTargetGame];
+              const budget=tg?.endgameBudget||200;const maxStat=tg?.statMax||99;
+              const used=statKeys.reduce((sum,k)=>sum+(parseInt(semiForm.endgameStats[k])||0),0);
+              const remaining=budget-used;const pct=Math.min(100,Math.round((used/budget)*100));const overBudget=remaining<0;
+              const changeStat=(k,delta)=>{const cur=parseInt(semiForm.endgameStats[k])||0;let next=cur+delta;if(delta>0)next=Math.min(next,cur+remaining,maxStat);next=Math.max(0,Math.min(maxStat,next));setSemiForm(prev=>({...prev,endgameStats:{...prev.endgameStats,[k]:next>0?String(next):""}}));};
+              return(<>
+                <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Endgame Stat Targets <span style={{color:"#ff9a8b",fontSize:".6rem",textTransform:"none",fontWeight:400}}>— required</span></div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(90px,1fr))",gap:6,marginBottom:10}}>
+                  {statKeys.map(k=>{const val=parseInt(semiForm.endgameStats[k])||0;const softCap=tg?.softCaps?.[k];const atSoft=softCap&&val>=softCap;return(<div key={k} style={{display:"flex",flexDirection:"column",alignItems:"center"}}><div style={{fontSize:".58rem",color:atSoft?a:C.dim,letterSpacing:".06em",fontWeight:700,marginBottom:3}}>{k}{atSoft?" ✓":""}</div><div style={{display:"flex",alignItems:"center",gap:2}}><button onClick={()=>changeStat(k,-5)} disabled={adding||val<=0} style={{background:"transparent",border:`1px solid ${a}44`,borderRadius:4,width:22,height:26,cursor:adding||val<=0?"not-allowed":"pointer",color:val<=0?C.dim:a,fontWeight:700,fontSize:".7rem"}}>−</button><div style={{width:36,textAlign:"center",fontSize:".88rem",color:val>0?C.bright:C.dim,fontWeight:700}}>{val||"–"}</div><button onClick={()=>changeStat(k,5)} disabled={adding||remaining<=0||val>=maxStat} style={{background:"transparent",border:`1px solid ${a}44`,borderRadius:4,width:22,height:26,cursor:adding||remaining<=0||val>=maxStat?"not-allowed":"pointer",color:remaining<=0||val>=maxStat?C.dim:a,fontWeight:700,fontSize:".7rem"}}>+</button></div></div>);})}
+                </div>
+                <div style={{marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:".62rem",fontWeight:600}}><span style={{color:overBudget?"#ff6b6b":C.dim}}>Points used: <span style={{color:overBudget?"#ff6b6b":C.text}}>{used}</span> / {budget}</span><span style={{color:remaining<=0?(overBudget?"#ff6b6b":"#7ddb8a"):C.dim}}>{remaining>0?`${remaining} remaining`:remaining===0?"Budget filled!":"Over budget!"}</span></div><div style={{height:6,background:"#ffffff0d",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:overBudget?"#e74c3c":pct>85?a:"#7ddb8a",borderRadius:3,transition:"width .2s"}}/></div></div>
+              </>);
+            })()}
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Preferred Weapon <span style={{color:C.dim,fontSize:".6rem",textTransform:"none",fontWeight:400}}>— optional</span></div>
+            <input type="text" value={semiForm.preferredWeapon} onChange={e=>setSemiForm({...semiForm,preferredWeapon:e.target.value})} disabled={adding} placeholder="e.g. Bloody Glory, Uchigatana, Rivers of Blood" style={{width:"100%",background:C.bg,border:`1px solid ${a}44`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".8rem",outline:"none",boxSizing:"border-box",marginBottom:12}}/>
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Additional Notes <span style={{color:C.dim,fontSize:".6rem",textTransform:"none",fontWeight:400}}>— optional</span></div>
+            <textarea value={semiForm.notes} onChange={e=>setSemiForm({...semiForm,notes:e.target.value})} disabled={adding} placeholder="e.g. 'no spells', 'must use shield', 'PvE focused'" style={{width:"100%",minHeight:50,background:C.bg,border:`1px solid ${a}44`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".8rem",lineHeight:1.5,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
+          </>}
+
 /* >>>CONTINUE<<< */
