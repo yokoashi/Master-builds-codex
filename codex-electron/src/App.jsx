@@ -211,4 +211,187 @@ acc:[{n:"Pendant of Atrophy + Loash + Radiant Preeminence",ef:"Same trinity",eq:
 spells:[{n:"Umbral Weapon + Grieving Gaze",ef:"Buff + ranged",eq:true,d:"Pre-buff Umbral Weapon every fight.",loc:"Acquired.",up:"Max RAD+INF scaling.",tip:"Always pre-buff before bosses."}],
 dmg:{ps:"~1,100/swing NG+1, ~1,800+/swing NG+7, ~3,000+ combo explosion",sp:"Pure Wither — bosses can't recover any of it",bs:"NG+ bosses 25–50s",n:"Wither builds get STRONGER in NG+ since enemies have more HP that can never come back."}}
 ],
+sim:[
+{label:"Umbral Mage",sub:"Pure INF/RAD Caster",icon:"🔮",a:C.blue,cls:"Orian Preacher",why:"Same umbral damage focus but pure spellcasting.",
+ph:[
+{name:"Early Game",range:"Lv 1–20",stats:{VIT:15,END:12,STR:8,AGI:8,RAD:22,INF:18},sn:"RAD/INF early.",weapons:[{n:"Orian Preacher Catalyst",ap:"~150",eq:true,d:"Starting catalyst.",loc:"Starting gear.",up:"Upgrade.",tip:"Spells > melee."}],armor:[{n:"Cultist Robes",wt:"Light",eq:true,d:"Light starter.",loc:"Starting.",up:"N/A",tip:"Light."}],acc:[],spells:[],dmg:{ps:"~150 per basic cast",sp:"Umbral",bs:"Slow",n:"Spell focus."}},
+{name:"Mid Game",range:"Lv 20–40",stats:{VIT:25,END:15,STR:8,AGI:8,RAD:35,INF:30},sn:"Lost Berescu's Catalyst.",weapons:[{n:"Lost Berescu's Catalyst",ap:"~350–500",st:"Umbral",eq:true,d:"Best Umbral catalyst.",loc:"Lost Calrath Umbral path.",up:"Large Shards.",tip:"INF/RAD scaling."}],armor:[{n:"Mix armor",wt:"Light-Medium",eq:true,d:"Flexible.",loc:"Various.",up:"N/A",tip:"Stay mobile."}],acc:[{n:"Pendant of Atrophy",ef:"Wither boost",eq:true,d:"Core.",loc:"Exploration.",up:"N/A",tip:"Core."}],spells:[{n:"Grieving Gaze",ef:"Umbral beam",eq:true,d:"Main spell.",loc:"Umbral vendors.",up:"Scales RAD+INF.",tip:"Primary damage."}],dmg:{ps:"~350–500 per buffed cast",sp:"Umbral Wither",bs:"Moderate",n:"Ranged wither."}},
+{name:"Endgame",range:"Lv 50+",stats:{VIT:30,END:18,STR:8,AGI:8,RAD:50,INF:40},sn:"RAD/INF soft caps.",weapons:[{n:"Berescu's +10",ap:"~600–900",st:"Umbral",eq:true,d:"Max catalyst.",loc:"Acquired.",up:"Chunk.",tip:"Infinite mana setup."}],armor:[{n:"Lightreaper's",wt:"Medium",eq:true,d:"Best caster armor.",loc:"Trade Remembrance.",up:"N/A",tip:"Medium."}],acc:[{n:"Pendant of Atrophy + Manastone + Puissance Root",ef:"Wither+mana+damage",eq:true,d:"Full caster setup.",loc:"Acquired.",up:"N/A",tip:"All three."}],spells:[{n:"Grieving Gaze + Umbral Weapon",ef:"Ranged + buff",eq:true,d:"Core spells.",loc:"Acquired.",up:"Max RAD+INF.",tip:"Buff then blast."}],dmg:{ps:"~600–900 per cast",sp:"Umbral Wither",bs:"Fast",n:"Infinite casting. Boss HP goes grey from range."}}],
+key:[{i:"Lost Berescu's Catalyst",d:"Best Umbral catalyst. Lost Calrath Umbral path."},{i:"Pendant of Atrophy",d:"Wither boost."},{i:"Puissance Root Ring",d:"Sorcery damage."},{i:"Manastone Ring + regen rune",d:"Infinite casting."}],
+steps:["Start Orian Preacher","RAD/INF 15 each","Basic Umbral spells","Lost Berescu's Catalyst","Pendant of Atrophy","Infinite casting setup","RAD 50 / INF 40"]},
+{label:"Dervla's Shadow",sub:"Harrower Dervla Sword",icon:"🗡️",a:C.purple,cls:"Exiled Stalker",why:"Pure focus on Harrower Dervla's Sword with unique weapon art (Martyr's Sleeves required).",
+ph:[
+{name:"Early Game",range:"Lv 1–25",stats:{VIT:18,END:18,STR:14,AGI:20,RAD:18,INF:12},sn:"AGI/RAD balance.",weapons:[{n:"Dervla's Sword base",ap:"~280–400",st:"Wither",eq:true,d:"Early wither sword.",loc:"Defeat Harrower Dervla in Lower Calrath. Trade Remembrance.",up:"Small Fragments.",tip:"Wither on hit."}],armor:[{n:"Light starter",wt:"Light",eq:true,d:"Stay light.",loc:"Starting.",up:"N/A",tip:"Light."}],acc:[],spells:[],dmg:{ps:"~280–400 with wither",sp:"Wither",bs:"Moderate",n:"Early wither."}},
+{name:"Mid Game",range:"Lv 25–40",stats:{VIT:25,END:22,STR:14,AGI:30,RAD:25,INF:15},sn:"Weapon art unlocked with Martyr's Sleeves.",weapons:[{n:"Dervla's +7",ap:"~500–650",st:"Wither",eq:true,d:"Weapon art active.",loc:"Acquired.",up:"Large Shards.",tip:"Weapon art unlocked."}],armor:[{n:"Light + Martyr's Sleeves",wt:"Light",eq:true,d:"Sleeves required for weapon art.",loc:"Complete Dunmire questline.",up:"N/A",tip:"REQUIRED for art."}],acc:[{n:"Pendant of Atrophy",ef:"Wither boost",eq:true,d:"Core.",loc:"Exploration.",up:"N/A",tip:"Core."}],spells:[],dmg:{ps:"~500–650 weapon art unlocked",sp:"Wither",bs:"Fast",n:"Weapon art active."}},
+{name:"Endgame",range:"Lv 45+",stats:{VIT:30,END:25,STR:14,AGI:40,RAD:35,INF:20},sn:"AGI 40, weapon art mastered.",weapons:[{n:"Dervla's +10",ap:"~800–1,000",st:"Wither",eq:true,d:"Max upgraded.",loc:"Acquired.",up:"Chunk.",tip:"Weapon art deletes groups."}],armor:[{n:"Dervla's Set + Martyr's Sleeves",wt:"Light",eq:true,d:"Full thematic set.",loc:"Dervla's: Trade Remembrance.",up:"N/A",tip:"Light mobility."}],acc:[{n:"Pendant of Atrophy + Umbral Eye of Loash",ef:"Wither+hyperarmor",eq:true,d:"Core duo.",loc:"Acquired.",up:"N/A",tip:"Both core."}],spells:[],dmg:{ps:"~800–1,000, deletes groups",sp:"Wither",bs:"Very fast",n:"Weapon art wipes groups."}}],
+key:[{i:"Harrower Dervla's Sword",d:"Defeat Harrower Dervla in Lower Calrath."},{i:"Martyr's Sleeves",d:"Complete Dunmire the Tax Collector questline."},{i:"Pendant of Atrophy",d:"Wither boost."}],
+steps:["Start Exiled Stalker","Progress to Lower Calrath","Defeat Harrower Dervla","Trade Remembrance","Complete Dunmire questline","Upgrade to +10","Master weapon art"]},
+{label:"Faithful Bludgeon",sub:"STR Grand Hammer Wither",icon:"🔨",a:C.yellow,cls:"Udirangr Warwolf",why:"Pure STR Grand Hammer with Holy+Wither. Unstaggerable charged R2s.",
+ph:[
+{name:"Early Game",range:"Lv 1–25",stats:{VIT:20,END:20,STR:22,AGI:10,RAD:15,INF:10},sn:"STR 22 early.",weapons:[{n:"Starting → Faithful Bludgeon",ap:"~400–550",st:"Wither",eq:true,d:"Grand Hammer with wither.",loc:"Campaign drop.",up:"Small Fragments.",tip:"Two-hand."}],armor:[{n:"Warwolf Set",wt:"~35",eq:true,d:"Heavy starter.",loc:"Starting.",up:"N/A",tip:"Tank."}],acc:[],spells:[],dmg:{ps:"~400–550",sp:"Wither",bs:"Slow",n:"Heavy hits."}},
+{name:"Mid Game",range:"Lv 25–40",stats:{VIT:28,END:25,STR:32,AGI:10,RAD:25,INF:12},sn:"STR 32, Loash hyperarmor.",weapons:[{n:"Faithful Bludgeon +7",ap:"~650–800",st:"Holy+Wither",eq:true,d:"Mid upgrade.",loc:"Acquired.",up:"Large Shards.",tip:"Charged R2 = unstaggerable."}],armor:[{n:"Sovereign Protector",wt:"75",eq:true,d:"Best heavy.",loc:"Sunless Skein mines chest.",up:"N/A",tip:"High armor."}],acc:[{n:"Umbral Eye of Loash",ef:"Hyperarmor charged attacks",eq:true,d:"Core.",loc:"Umbral realm.",up:"N/A",tip:"Game changer."}],spells:[],dmg:{ps:"~650–800 charged R2",sp:"Wither",bs:"Fast",n:"Unstaggerable charged R2."}},
+{name:"Endgame",range:"Lv 45+",stats:{VIT:35,END:28,STR:45,AGI:10,RAD:30,INF:15},sn:"STR 45, max hammer.",weapons:[{n:"Faithful Bludgeon +10",ap:"~950–1,100",st:"Holy+Wither",eq:true,d:"Max Grand Hammer.",loc:"Acquired.",up:"Chunk.",tip:"Charged R2 everything."}],armor:[{n:"Sovereign Protector",wt:"75",eq:true,d:"Best heavy.",loc:"Acquired.",up:"N/A",tip:"Max tank."}],acc:[{n:"Pendant of Atrophy + Loash",ef:"Wither+hyperarmor",eq:true,d:"Core duo.",loc:"Acquired.",up:"N/A",tip:"Both core."}],spells:[],dmg:{ps:"~950–1,100 charged R2",sp:"Holy+Wither",bs:"Fast",n:"Charged R2 everything."}}],
+key:[{i:"Faithful Bludgeon",d:"Grand Hammer with Holy + Wither."},{i:"Umbral Eye of Loash",d:"Hyperarmor charged attacks."},{i:"Pendant of Atrophy",d:"Wither boost."},{i:"Sovereign Protector Set",d:"Best heavy armor."}],
+steps:["Start Warwolf","STR 25+","Find Faithful Bludgeon","Umbral Eye of Loash","Pendant of Atrophy","STR 45","Charged R2 everything"]}
+],
+oth:[
+{label:"Crimson Reaper",sub:"Bleed Build",icon:"🩸",a:C.crimson,cls:"Udirangr Warwolf",why:"The other main LotF build — heavy STR + Bleed with Bloody Glory. Opposite playstyle.",
+ph:[
+{name:"Early Game",range:"Lv 1–20",stats:{VIT:20,END:20,STR:18,AGI:10,RAD:8,INF:8},sn:"STR/VIT/END early.",weapons:[{n:"Starting → Bloody Glory",ap:"~400–550",st:"300 Bleed",eq:true,d:"Bleed weapon.",loc:"Pilgrim's Perch.",up:"Fragments.",tip:"Crafter's Essence bypasses reqs."}],armor:[{n:"Fitzroy's",wt:"71.7",eq:true,d:"Heavy armor.",loc:"Fitzroy's Gorge.",up:"N/A",tip:"Heavy."}],acc:[],spells:[],dmg:{ps:"~400–550 + 300 Bleed",sp:"Bleed burst",bs:"Moderate",n:"Bleed focus."}},
+{name:"Mid Game",range:"Lv 25–40",stats:{VIT:25,END:24,STR:32,AGI:10,RAD:18,INF:12},sn:"STR 32, dual wield.",weapons:[{n:"Bloody Glory +7",ap:"~700–850",st:"300 Bleed",eq:true,d:"Mid upgrade.",loc:"Acquired.",up:"Large Shards.",tip:"Lacerating Weapon buff."}],armor:[{n:"Sovereign Protector",wt:"75",eq:true,d:"Best heavy.",loc:"Sunless Skein.",up:"N/A",tip:"Heavy."}],acc:[{n:"Bloodbane Ring + Pendant of Burden",ef:"Bleed chain + status amp",eq:true,d:"Core duo.",loc:"Forsaken Fen.",up:"N/A",tip:"Core."}],spells:[],dmg:{ps:"~700–850 + Bleed burst",sp:"Bleed+Poison",bs:"Fast",n:"Bleed burst."}},
+{name:"Endgame",range:"Lv 55+",stats:{VIT:35,END:30,STR:50,AGI:10,RAD:40,INF:12},sn:"STR 50 soft cap.",weapons:[{n:"Dual Bloody Glory +10",ap:"~1,800 dual",st:"300 Bleed each",eq:true,d:"Dual max bleed.",loc:"Acquired.",up:"2 Chunks.",tip:"Lacerating + Poison before bosses."}],armor:[{n:"Sovereign Protector",wt:"75",eq:true,d:"Best heavy.",loc:"Acquired.",up:"N/A",tip:"Tank."}],acc:[{n:"Bloodbane + Pendant of Burden + Lucent Sword",ef:"Full bleed trinity",eq:true,d:"Core trio.",loc:"Acquired.",up:"N/A",tip:"All three."}],spells:[{n:"Lacerating + Poison Weapon",ef:"+60 Bleed + Poison chain",eq:true,d:"Pre-buff combo.",loc:"Acquired.",up:"Max RAD.",tip:"Pre-buff always."}],dmg:{ps:"~1,800/dual swing",sp:"Bleed every combo",bs:"Fast",n:"Bleed melts everything."}}],
+key:[{i:"Bloody Glory",d:"Pilgrim's Perch → Path of Devotion."},{i:"Bloodbane Ring",d:"Forsaken Fen — triggers Bleed on Poison."},{i:"Pendant of Burden",d:"Umbral Forsaken Fen."},{i:"Lacerating Weapon spell",d:"+60 Bleed buildup."}],
+steps:["Start Udirangr Warwolf","Get Bloody Glory","Bloodbane + Pendant of Burden","Lacerating + Poison Weapon","Dual-wield","STR 50 / RAD 40"]},
+{label:"Holy Juggernaut",sub:"STR/RAD Paladin",icon:"⚔️",a:C.yellow,cls:"Orian Preacher",why:"Meta tank build. Massive Holy damage, self-healing, group-deleting spells.",
+ph:[
+{name:"Early Game",range:"Lv 1–20",stats:{VIT:18,END:18,STR:12,AGI:8,RAD:22,INF:8},sn:"RAD 22.",weapons:[{n:"Pieta's Sword",ap:"~300–500",st:"Smite",eq:true,d:"A- RAD.",loc:"Trade Remembrance.",up:"Fragments.",tip:"RAD focus."}],armor:[{n:"Pieta's Set",wt:"57.6",eq:true,d:"Holy defense.",loc:"Trade.",up:"N/A",tip:"Medium."}],acc:[],spells:[],dmg:{ps:"~300–500",sp:"Smite",bs:"Moderate",n:"Holy early."}},
+{name:"Mid Game",range:"Lv 25–40",stats:{VIT:25,END:22,STR:25,AGI:8,RAD:30,INF:8},sn:"Ravager Gregory's.",weapons:[{n:"Ravager Gregory's",ap:"~700–900",st:"Wither",eq:true,d:"Highest AP Grand Sword.",loc:"Give Rosary to Dunmire.",up:"Large Shards.",tip:"Two-hand."}],armor:[{n:"Judge Cleric's",wt:"Heavy",eq:true,d:"Best cleric armor.",loc:"Trade Remembrance.",up:"N/A",tip:"Heavy."}],acc:[],spells:[],dmg:{ps:"~700–900 + Wither",sp:"Smite+Wither",bs:"Fast",n:"Heavy holy hits."}},
+{name:"Endgame",range:"Lv 50+",stats:{VIT:30,END:25,STR:40,AGI:8,RAD:50,INF:8},sn:"STR 40/RAD 50.",weapons:[{n:"Ravager Gregory's +10",ap:"~1,000+",st:"Smite+Wither",eq:true,d:"Max AP.",loc:"Acquired.",up:"Chunk.",tip:"Orius' Judgment."}],armor:[{n:"Judge Cleric's",wt:"Heavy",eq:true,d:"Best.",loc:"Acquired.",up:"N/A",tip:"Tank."}],acc:[{n:"Exacter Scripture",ef:"Best RAD catalyst",eq:true,d:"Top catalyst.",loc:"Exploration.",up:"N/A",tip:"For spells."}],spells:[],dmg:{ps:"~1,000+",sp:"Smite+Wither",bs:"Fast",n:"Orius' Judgment deletes."}}],
+key:[{i:"Ravager Gregory's Sword",d:"Highest AP Grand Sword."},{i:"Judge Cleric's Armor",d:"Trade Remembrance."},{i:"Exacter Scripture",d:"Best RAD catalyst."}],
+steps:["Start Orian Preacher","RAD 25 + Pieta's","STR 25+","Ravager Gregory's","Judge Cleric Armor","STR 40 / RAD 50"]},
+{label:"Lord of Flames",sub:"Inferno Burn",icon:"🌋",a:C.fire,cls:"Pyric Cultist",why:"Pure fire. Everything burns and explodes.",
+ph:[
+{name:"Early Game",range:"Lv 1–20",stats:{VIT:18,END:18,STR:12,AGI:8,RAD:8,INF:20},sn:"INF 20.",weapons:[{n:"Pyric Cultist Staff",ap:"~200–300",st:"Fire",eq:true,d:"Starting staff.",loc:"Starting.",up:"Upgrade.",tip:"Spells."}],armor:[{n:"Cultist Robes",wt:"Light",eq:true,d:"Starter.",loc:"Starting.",up:"N/A",tip:"Light."}],acc:[],spells:[],dmg:{ps:"~200–300",sp:"Fire",bs:"Slow",n:"Spell focus."}},
+{name:"Mid Game",range:"Lv 25–40",stats:{VIT:22,END:22,STR:25,AGI:8,RAD:8,INF:30},sn:"Fallen Lord's Sword.",weapons:[{n:"Fallen Lord's Sword",ap:"~600–850",st:"300 Ignite",eq:true,d:"Ignite weapon.",loc:"Campaign drop.",up:"Large Shards.",tip:"Two-hand."}],armor:[{n:"Infernal Enchantress",wt:"Medium",eq:true,d:"Fire armor.",loc:"Exploration.",up:"N/A",tip:"Medium."}],acc:[{n:"Ring of Infernal Devotion",ef:"Burn→Ignite",eq:true,d:"Core.",loc:"Exploration.",up:"N/A",tip:"Core."}],spells:[],dmg:{ps:"~600–850 + 300 Ignite",sp:"Ignite AoE",bs:"Fast",n:"Ignite groups."}},
+{name:"Endgame",range:"Lv 50+",stats:{VIT:25,END:28,STR:35,AGI:8,RAD:8,INF:50},sn:"INF 50.",weapons:[{n:"Fallen Lord's +10",ap:"~900–1,100",st:"Ignite AoE",eq:true,d:"Max fire.",loc:"Acquired.",up:"Chunk.",tip:"AoE everything."}],armor:[{n:"Tancred's Set",wt:"81.2",eq:true,d:"Best heavy.",loc:"Trade.",up:"N/A",tip:"Tank."}],acc:[{n:"Ring of Infernal Devotion + Pendant of Burden",ef:"Ignite+status amp",eq:true,d:"Core duo.",loc:"Acquired.",up:"N/A",tip:"Core."}],spells:[],dmg:{ps:"~900–1,100 + Ignite AoE",sp:"Constant Ignite",bs:"Fast",n:"Fire melts everything."}}],
+key:[{i:"Fallen Lord's Sword",d:"300 Ignite, A+ STR."},{i:"Ring of Infernal Devotion",d:"Burn→Ignite."},{i:"Tancred's Set",d:"Trade Remembrance."}],
+steps:["Start Pyric Cultist","INF 20","Fallen Lord's Sword","Ring of Infernal Devotion","STR 35 / INF 50"]}
+],
+ref:[
+{n:"Wither Reaper",i:"🌑",w:"Elianne's + Pieta's",ap:"~2,000 combo",st:"Wither (permanent)",ar:"Elianne's Set",s:"Umbral wither control",a:C.purple},
+{n:"Umbral Mage",i:"🔮",w:"Lost Berescu's Catalyst",ap:"~600–900/cast",st:"Umbral Wither",ar:"Lightreaper's",s:"Pure ranged caster",a:C.blue},
+{n:"Dervla's Shadow",i:"🗡️",w:"Harrower Dervla's Sword",ap:"~800–1,000",st:"Wither + weapon art",ar:"Dervla's + Martyr's",s:"Long-reach wither",a:C.purple},
+{n:"Faithful Bludgeon",i:"🔨",w:"Faithful Bludgeon +10",ap:"~950–1,100",st:"Holy + Wither",ar:"Sovereign Protector",s:"STR Grand Hammer",a:C.yellow},
+{n:"Crimson Reaper",i:"🩸",w:"Bloody Glory×2",ap:"~1,800 dual",st:"Bleed + Poison",ar:"Sovereign Protector",s:"Heavy melee burst",a:C.crimson},
+{n:"Holy Juggernaut",i:"⚔️",w:"Ravager Gregory's",ap:"~1,000+",st:"Smite + Wither",ar:"Judge Cleric's",s:"Tank paladin",a:C.yellow},
+{n:"Lord of Flames",i:"🌋",w:"Fallen Lord's Sword",ap:"~900–1,100",st:"Ignite + Burn",ar:"Tancred's",s:"Fire melee + spells",a:C.fire}]};
+
+/* ══ DS1: UCHIGATANA ══ */
+const ds1Uchi={label:"Sharp Uchigatana",sub:"DEX Katana",icon:"⚔️",accent:C.gold,
+playstyle:"Fast DEX katana with Bleed buildup. Buff with Crystal Magic Weapon or Power Within for absurd damage. The most iconic DEX weapon in Dark Souls — accessible early, scales beautifully, R2 thrust shreds.",
+cls:"Hunter (best DEX start)",caps:"DEX soft 40 / hard 99 · END soft 40 · VIT soft 50",weaponReq:"14 STR / 14 DEX",loadouts:null,
+ph:[
+{name:"Early Game",range:"SL 1–20",stats:{VIT:14,ATT:8,END:14,STR:14,DEX:18,RES:11,INT:9,FTH:8},sn:"Hunter starts with 16 DEX. Rush to Undead Burg for the Uchi.",
+weapons:[{n:"Hunter starting Short Sword + Bow",ap:"~80–120",eq:true,d:"Default starting gear.",loc:"Hunter class default.",up:"Don't bother.",tip:"Pick Master Key as gift."}],
+armor:[{n:"Hunter starter set",wt:"Light",eq:true,d:"Under 25% equip load = fast roll.",loc:"Hunter default.",up:"N/A",tip:"Under 25% = fastest roll."}],
+acc:[{n:"Use any rings",ef:"None yet",eq:true,d:"Only 2 ring slots in DS1.",loc:"N/A",up:"N/A",tip:"Cloranthy Ring early."}],spells:[],
+dmg:{ps:"~80–120",sp:"None",bs:"Slow",n:"Get to Undead Burg ASAP."}},
+{name:"Get the Uchi",range:"SL 15–25",stats:{VIT:18,ATT:10,END:18,STR:14,DEX:20,RES:11,INT:9,FTH:8},sn:"VIT/END 18. DEX 20. Never level RES.",
+weapons:[{n:"Uchigatana",ap:"~200–260",st:"Bleed (33/hit)",eq:true,d:"Built-in Bleed. Slash + Thrust. 14 STR / 14 DEX. Low durability.",loc:"Undead Burg → Undead Merchant (Male) on the bridge. Kill him for 100% drop. Alt: Shiva of the East in Blighttown (5,000 souls, Forest Hunter Covenant).",up:"+0 to +5: Titanite Shards (200 souls each) at Andre in Undead Parish.",tip:"Watch durability — katanas break."}],
+armor:[{n:"Elite Knight Set",wt:"Light–Medium",eq:true,d:"Classic light-medium DEX pick.",loc:"Darkroot Garden corpse near Hydra area.",up:"N/A",tip:"Stay under 25% for fast roll."}],
+acc:[
+{n:"Cloranthy Ring",ef:"+Stamina regen",eq:true,d:"Massive stamina regen boost.",loc:"The Great Hollow bottom. Or jump from Blighttown swamp.",up:"N/A",tip:"Essential. Take ASAP."},
+{n:"Ring of Favor and Protection",ef:"+20% HP/Stamina/Equip",eq:false,d:"BEST GENERAL RING. Triple buff. WARNING: removing breaks it permanently.",loc:"Anor Londo — drop from Lautrec after killing him.",up:"N/A",tip:"Don't unequip."}],spells:[],
+dmg:{ps:"~200–260",sp:"Bleed in 4–5 hits",bs:"Moderate",n:"Thrust R2 destroys early enemies in 2–3 hits."}},
+{name:"Mid Game",range:"SL 25–50",stats:{VIT:25,ATT:12,END:25,STR:14,DEX:30,RES:11,INT:9,FTH:8},sn:"DEX 30 for scaling. END 25.",
+weapons:[{n:"Uchigatana +6 to +10",ap:"~280–360",st:"Bleed",eq:true,d:"Andre needs Large Ember past +5.",loc:"Acquired.",up:"+5 to +10: LARGE EMBER from The Depths chest. Large Titanite Shards — farm Darkwraiths in New Londo (after draining).",tip:"At +10 / 30 DEX = ~350 AR."}],
+armor:[{n:"Elite Knight or Shadow Set",wt:"Light",eq:true,d:"Shadow Set is best light DEX armor.",loc:"Shadow: Darkroot Garden Shadow assassins.",up:"N/A",tip:"Light = mobility."}],
+acc:[
+{n:"Ring of Favor and Protection",ef:"+20% HP/Stam/Equip",eq:true,d:"Core. NEVER unequip.",loc:"Acquired.",up:"N/A",tip:"Permanent slot."},
+{n:"Hornet Ring",ef:"+Critical damage (ripostes/backstabs)",eq:true,d:"GAME CHANGER. Ripostes hit for 1,500+.",loc:"Darkroot Garden corpse near Sif arena, guarded by Forest invaders.",up:"N/A",tip:"Parry humanoids for massive damage."}],spells:[],
+dmg:{ps:"~280–360 normal, 800–1,500+ ripostes",sp:"Bleed in 3–4 hits",bs:"Fast",n:"Build comes online. Hornet + Uchi parry = burst."}},
+
+{name:"Late Game",range:"SL 50–80",stats:{VIT:35,ATT:14,END:35,STR:14,DEX:40,RES:11,INT:9,FTH:8},sn:"DEX hits 40 (soft cap). END 35.",
+weapons:[{n:"Uchigatana +14 to +15",ap:"~430–490",st:"Bleed",eq:true,d:"Very Large Ember needed past +10.",loc:"Acquired.",up:"+10 to +14: VERY LARGE EMBER from Demon Ruins illusory wall near Centipede Demon. Titanite Chunks from Black Knights. +14 to +15: Titanite Slab.",tip:"Buff with Crystal Magic Weapon or Power Within."}],
+armor:[{n:"Light DEX setup",wt:"Light–Medium",eq:true,d:"Fashion souls.",loc:"Various.",up:"N/A",tip:"Mask of Father + Havel's Ring = heavy armor fast roll."}],
+acc:[
+{n:"Ring of Favor and Protection",ef:"+20% HP/Stam/Equip",eq:true,d:"Core.",loc:"Acquired.",up:"N/A",tip:"Never unequip."},
+{n:"Hornet Ring",ef:"+Critical damage",eq:true,d:"Core for ripostes.",loc:"Acquired.",up:"N/A",tip:"Permanent."}],
+spells:[
+{n:"Power Within (optional)",ef:"+50% damage, drains HP",eq:false,d:"Pyromancy. +50% damage and stamina at HP cost. No INT/FTH required.",loc:"Lost Izalith or buy from Quelana.",up:"Needs Pyromancy Flame only.",tip:"Pop before bosses."},
+{n:"Crystal Magic Weapon (optional)",ef:"+~50% damage buff",eq:false,d:"Best weapon buff in DS1. ~60s duration.",loc:"Bought from Logan after Duke's Archives.",up:"Requires ~32 INT.",tip:"Heavy INT investment but worth it."}],
+dmg:{ps:"~430–490 base, 1,500+ ripostes, 600+ buffed",sp:"Bleed in 2–3 hits",bs:"Very fast",n:"Power Within + buffed Uchi + Hornet = massive burst."}},
+{name:"Endgame / Meta",range:"SL 80–125 (PvP)",stats:{VIT:43,ATT:16,END:40,STR:14,DEX:45,RES:11,INT:9,FTH:8},sn:"DEX 45. END 40 (soft cap). SL 120 is PvP meta.",
+weapons:[{n:"Uchigatana +15",ap:"~490+",st:"Bleed",eq:true,d:"Maxed. With Power Within = ~730+ AP.",loc:"Acquired.",up:"Maxed.",tip:"Always carry repair powder."}],
+armor:[{n:"Fashion + 25% equip load",wt:"Light",eq:true,d:"Classic DS1 dex fits.",loc:"Various.",up:"N/A",tip:"Under 25% = fast roll."}],
+acc:[
+{n:"Ring of Favor and Protection",ef:"+20% HP/Stam/Equip",eq:true,d:"Permanent.",loc:"Acquired.",up:"N/A",tip:"Only 2 ring slots."},
+{n:"Hornet Ring or Havel's Ring",ef:"Crit OR equip load",eq:true,d:"Hornet for ripostes, Havel's for heavy armor.",loc:"Havel's: Undead Burg basement Havel.",up:"N/A",tip:"Swap per situation."}],
+spells:[{n:"Power Within",ef:"+50% damage, HP drain",eq:true,d:"Boss-killer buff.",loc:"Acquired.",up:"N/A",tip:"Pop before fights."}],
+dmg:{ps:"~490 base, 730+ buffed, 2,000+ Power Within riposte",sp:"Bleed in 2 hits",bs:"Even Gwyn dies in seconds",n:"Final form. SL 120 meta. Uchi is top PvP weapon."}},
+{name:"NG+",range:"NG+1 to NG+7",stats:{VIT:50,ATT:18,END:40,STR:14,DEX:60,RES:11,INT:9,FTH:8},
+sn:"DS1 hard caps DEX at 99 but soft caps at 40 then 60. Cycle selector pushes from PvP meta toward maxed PvE.",
+ngCycles:[
+{label:"NG+1",stats:{VIT:50,ATT:18,END:40,STR:14,DEX:60,RES:11,INT:9,FTH:8},notes:"Past PvP meta. VIT to 50 (soft cap). DEX to 60 (second soft cap). END at 40 (soft cap)."},
+{label:"NG+3",stats:{VIT:60,ATT:20,END:40,STR:14,DEX:75,RES:11,INT:9,FTH:8},notes:"Comfortable cycle. DEX past second soft cap, gains slow but real. VIT well past soft cap."},
+{label:"NG+5",stats:{VIT:70,ATT:22,END:40,STR:14,DEX:90,RES:11,INT:9,FTH:8},notes:"Min-max focus. DEX approaching hard cap. STR/INT/FTH stay minimum (pure DEX)."},
+{label:"NG+7",stats:{VIT:80,ATT:24,END:40,STR:14,DEX:99,RES:11,INT:9,FTH:8},notes:"DEX at hard cap (99). Maximum Uchi scaling. Total stat investment ~370 = SL ~290. The PvE god build."}],
+weapons:[{n:"Uchigatana +15 (multiple, fresh durability)",ap:"~530+",st:"Bleed",eq:true,d:"NG+ resets respawning slabs so you can have backup +15s for durability swaps.",loc:"Acquired.",up:"Already +15. Slabs reset in NG+.",tip:"Carry 2-3 +15 Uchis since they break easily on extended NG+ runs."}],
+armor:[{n:"Light fashion + Havel's combo",wt:"Light",eq:true,d:"With 40 END + Havel's Ring + Mask of the Father, you can fast roll in nearly anything.",loc:"Various.",up:"N/A",tip:"Pick whatever fashion souls combo you like."}],
+acc:[{n:"Ring of Favor + Hornet Ring (PvE) or Havel's (PvP)",ef:"Triple buff + crit",eq:true,d:"Only 2 ring slots so choose wisely.",loc:"Acquired.",up:"N/A",tip:"PvE: Hornet for ripostes. PvP: Havel's for fashion souls weight."}],
+spells:[{n:"Power Within + Crystal Magic Weapon",ef:"+50% damage + ~50% buff",eq:true,d:"NG+ buff stack. Power Within for damage/stamina, CMW for weapon damage.",loc:"Acquired.",up:"32+ INT for CMW.",tip:"Pop Power Within → Cast CMW → swing the boss into oblivion."}],
+dmg:{ps:"~530 base NG+1, ~700+ NG+7, ~1,000+ buffed, ~2,500+ Power Within riposte",sp:"Bleed in 2 hits",bs:"NG+7 Gwyn melts in seconds",n:"DS1 NG+ caps out at NG+7 (no further difficulty scaling). At NG+7 with maxed Uchi + buffs, you're the ultimate katana wielder."}}
+],
+
+sim:[
+{label:"Iaito",sub:"DEX Katana variant",icon:"🗡️",a:C.cyan,cls:"Wanderer",why:"Same katana archetype with unique charging stance R1.",
+ph:[{n:"Early",r:"SL 1–25",s:{VIT:18,END:18,STR:10,DEX:20,INT:9,FTH:8},w:"Iaito",ar:"Wanderer starter",dm:"~180–250"},
+{n:"Mid",r:"SL 25–50",s:{VIT:25,END:25,STR:10,DEX:30,INT:9,FTH:8},w:"Iaito +10",ar:"Shadow Set",dm:"~280–360 Bleed procs"},
+{n:"End",r:"SL 50+",s:{VIT:35,END:35,STR:10,DEX:40,INT:9,FTH:8},w:"Iaito +15",ar:"Light fashion",dm:"~430–490"}],
+key:[{i:"Iaito",d:"Shiva of the East in Blighttown, 5,000 souls (Forest Hunter Covenant)."},{i:"Forest Hunter Covenant",d:"Alvina the Cat in Darkroot Garden."},{i:"Hornet Ring",d:"Darkroot Garden near Sif."}],
+steps:["Start Wanderer","Darkroot → Forest Hunter","Blighttown → buy Iaito","Large Ember from Depths","DEX 30 → 40","+15 with Slab"]},
+{label:"Washing Pole",sub:"Long-range katana",icon:"🗾",a:C.purple,cls:"Wanderer",why:"Longest reach katana. Absurd range.",
+ph:[{n:"Early",r:"SL 15–30",s:{VIT:20,END:18,STR:14,DEX:20,INT:9,FTH:8},w:"Washing Pole",ar:"Light starter",dm:"~200–270"},
+{n:"Mid",r:"SL 30–55",s:{VIT:27,END:25,STR:14,DEX:30,INT:9,FTH:8},w:"Washing Pole +10",ar:"Elite Knight",dm:"~290–360 absurd reach"},
+{n:"End",r:"SL 55+",s:{VIT:35,END:35,STR:14,DEX:40,INT:9,FTH:8},w:"Washing Pole +15",ar:"Light DEX",dm:"~440–500"}],
+key:[{i:"Washing Pole",d:"Shiva of the East in Blighttown, 10,000 souls."},{i:"Forest Hunter Covenant",d:"Required for Shiva."}],
+steps:["Start Wanderer/Hunter","Forest Hunter Covenant","Blighttown → Washing Pole","DEX 30 → 40","Range advantage","+15"]},
+{label:"Chaos Blade",sub:"Crafted DEX katana",icon:"🔥",a:C.fire,cls:"Hunter",why:"Crafted from Uchi +10 + Soul of Quelaag. Highest katana damage but drains HP.",
+ph:[{n:"Mid",r:"SL 30–50",s:{VIT:27,END:25,STR:14,DEX:30,INT:9,FTH:8},w:"Uchi +10",ar:"Light",dm:"~280–360 prepping"},
+{n:"Late",r:"SL 50–80",s:{VIT:35,END:30,STR:14,DEX:40,INT:9,FTH:8},w:"Chaos Blade +5",ar:"Light",dm:"~430–490 + ~5% HP self-damage"},
+{n:"End",r:"SL 80+",s:{VIT:45,END:35,STR:14,DEX:50,INT:9,FTH:8},w:"Chaos Blade +5 max",ar:"Light fashion",dm:"~520+ at 50 DEX"}],
+key:[{i:"Soul of Quelaag",d:"Defeat Chaos Witch Quelaag in Blighttown."},{i:"Uchi +10",d:"Upgrade first."},{i:"Smith box",d:"Forge at bonfire smith box."}],
+steps:["Uchigatana","Upgrade to +10","Defeat Quelaag","Forge Chaos Blade","Upgrade with Demon Titanite","DEX 40+"]}
+],
+oth:[
+{label:"Quality Claymore",sub:"STR/DEX 40/40",icon:"⚔️",a:C.yellow,cls:"Knight",why:"Most popular DS1 build. Claymore is universally great.",
+ph:[{n:"Early",r:"SL 1–25",s:{VIT:20,END:18,STR:18,DEX:16,INT:9,FTH:8},w:"Claymore",ar:"Knight Set",dm:"~180–250"},
+{n:"Mid",r:"SL 25–60",s:{VIT:30,END:30,STR:30,DEX:30,INT:9,FTH:8},w:"Claymore +10",ar:"Knight/Elite Knight",dm:"~310–380"},
+{n:"End",r:"SL 60+",s:{VIT:40,END:40,STR:40,DEX:40,INT:9,FTH:8},w:"Claymore +15",ar:"Heavy fashion",dm:"~440–500 meta-tier"}],
+key:[{i:"Claymore",d:"Undead Burg Hellkite Dragon bridge — grab from body after dragon flies away."},{i:"Andre of Astora",d:"Undead Parish blacksmith."}],
+steps:["Start Knight","Claymore on Hellkite bridge","Upgrade at Andre","STR/DEX evenly","40/40 endgame","+15"]},
+{label:"Pyromancer",sub:"Pyromancy spam",icon:"🔥",a:C.fire,cls:"Pyromancer",why:"Pyromancies don't scale with INT/FTH — they scale with the Pyromancy Flame. Free damage.",
+ph:[{n:"Early",r:"SL 1–25",s:{VIT:20,ATT:14,END:15,STR:11,DEX:11,INT:9,FTH:8},w:"Pyro Flame + Fireball",ar:"Pyromancer starter",dm:"~150 spell damage"},
+{n:"Mid",r:"SL 25–55",s:{VIT:30,ATT:18,END:20,STR:14,DEX:14,INT:9,FTH:8},w:"Pyro Flame +10 + Great Combustion",ar:"Light",dm:"~400 per Great Combustion"},
+{n:"End",r:"SL 60+",s:{VIT:40,ATT:24,END:25,STR:14,DEX:14,INT:9,FTH:8},w:"Pyro Flame +15 Ascended",ar:"Light fashion",dm:"~600+ per spell"}],
+key:[{i:"Pyromancy Flame",d:"Pyromancer default or from Laurentius."},{i:"Quelana of Izalith",d:"Pyromancy teacher near Quelaag's Domain."},{i:"Great Combustion",d:"From Laurentius."}],
+steps:["Start Pyromancer","Rescue Laurentius in The Depths","Reach Quelaag","Flame to +10","Great Combustion","Ascend Flame with Quelana to +15"]},
+{label:"Sorcerer",sub:"Pure INT mage",icon:"🔮",a:C.blue,cls:"Sorcerer",why:"Crystal Soul Spear shreds bosses. Long-range destruction.",
+ph:[{n:"Early",r:"SL 1–25",s:{VIT:15,ATT:14,END:12,STR:10,DEX:10,INT:25,FTH:8},w:"Sorcerer's Catalyst + Soul Arrow",ar:"Sorcerer Robe",dm:"~120 per Soul Arrow"},
+{n:"Mid",r:"SL 25–55",s:{VIT:25,ATT:18,END:15,STR:10,DEX:10,INT:40,FTH:8},w:"Logan's Catalyst + Soul Spear",ar:"Black Cleric",dm:"~400 per Soul Spear"},
+{n:"End",r:"SL 60+",s:{VIT:30,ATT:24,END:18,STR:10,DEX:10,INT:50,FTH:8},w:"Tin Crystallization + Crystal Soul Spear",ar:"Light",dm:"~700+ per Crystal Soul Spear"}],
+key:[{i:"Logan's Catalyst",d:"Best INT staff at 40+ INT. Big Hat Logan drop."},{i:"Crystal Soul Spear",d:"From Logan after rescuing him."},{i:"Bellowing Dragoncrest Ring",d:"+20% sorcery damage. Great Hollow."}],
+steps:["Start Sorcerer","Find Big Hat Logan in Sen's Fortress cage","Rescue him","INT 40","Crystal Soul Spear","INT 50"]}
+],
+ref:[
+{n:"Sharp Uchigatana",i:"⚔️",w:"Uchigatana +15",ap:"~490+ (730+ buffed)",st:"Bleed",ar:"Elite Knight",s:"DEX katana, parry/counter",a:C.gold},
+{n:"Iaito",i:"🗡️",w:"Iaito +15",ap:"~430–490",st:"Bleed",ar:"Shadow Set",s:"DEX katana variant",a:C.cyan},
+{n:"Washing Pole",i:"🗾",w:"Washing Pole +15",ap:"~440–500",st:"Bleed + range",ar:"Light DEX",s:"Long-range katana",a:C.purple},
+{n:"Chaos Blade",i:"🔥",w:"Chaos Blade +5",ap:"~520+",st:"Bleed + self-damage",ar:"Light",s:"Crafted DEX katana",a:C.fire},
+{n:"Quality Claymore",i:"⚔️",w:"Claymore +15",ap:"~440–500",st:"Pure damage",ar:"Knight Set",s:"Meta R1 spam",a:C.yellow},
+{n:"Pyromancer",i:"🔥",w:"Pyro Flame +15",ap:"~600+",st:"Fire AoE",ar:"Light",s:"Free damage spells",a:C.fire},
+{n:"Sorcerer",i:"🔮",w:"Tin Crystallization",ap:"~700+ Crystal Spear",st:"Long-range",ar:"Sorcerer Robe",s:"Pure INT mage",a:C.blue}]};
+
+/* ══ GAME DATA ══ */
+const lotfMats=[
+{tier:"Small Deralium Fragments",range:"+0 to +2",buy:"Gerlinde at Skyrest Bridge — unlimited, 500 Vigor each",farm:"Pilgrim Mages, Shuja Warriors",find:"Scattered in early areas",tip:"Just buy from Gerlinde."},
+{tier:"Regular Deralium Nuggets",range:"+2 to +5",buy:"Gerlinde — unlimited after Sunless Skein",farm:"Chests in early-mid",find:"Revelation Depths (×3), Fitzroy's Gorge",tip:"Visit new Vestiges to expand inventory."},
+{tier:"Large Deralium Shards",range:"+5 to +9",buy:"Gerlinde — unlimited after Abbey of Hallowed Sisters",farm:"BEST: Holy Bulwark at Vestige of Brother Jeremiah (~20 sec/run)",find:"Abbey, Empyrean, Bramis Castle",tip:"Equip Bountiful Ring for higher drops."},
+{tier:"Deralium Chunks",range:"+9 to +10",buy:"Shrine of Orius — Pilfered Coins from boss rush",farm:"NOT farmable. Only ~4 per playthrough.",find:"Revelation Depths, Tower of Penance, Bramis Castle, Fief of Chill Curse",tip:"PERMANENT — test weapons before committing."}];
+
+const ds1Mats=[
+{tier:"Titanite Shard",range:"+0 to +5",buy:"Andre (800 souls) and Undead Merchant Female (800) — unlimited",farm:"Common enemies Undead Burg/Parish/Depths",find:"Scattered everywhere",tip:"You'll never run out."},
+{tier:"Large Titanite Shard",range:"+5 to +10",buy:"Giant Blacksmith in Anor Londo — unlimited",farm:"BEST: Darkwraiths in New Londo after draining water. Also Black Knights.",find:"Sen's Fortress, Darkroot Basin, Anor Londo",tip:"REQUIRED: Give Large Ember (Depths chest) to Andre for +6 to +10."},
+{tier:"Titanite Chunk",range:"+10 to +14",buy:"Giant Blacksmith — unlimited (expensive)",farm:"Black Knights. Crystal Cave Lizards. Anor Londo gargoyles.",find:"Crystal Cave, Anor Londo rooftops, Tomb of Giants",tip:"REQUIRED: Give Very Large Ember (Demon Ruins illusory wall) to Andre for +11 to +14."},
+{tier:"Titanite Slab",range:"+14 to +15",buy:"Giant Blacksmith — limited",farm:"Crystal Lizards (tiny chance). Darkwraiths (low chance).",find:"FREE SLABS: Anor Londo (near Giant Blacksmith), Tomb of Giants (near Patches), Demon Ruins, Lost Izalith (Bounding Demons), Duke's Archives, Darkroot Garden (near Sif's grave)",tip:"~6–7 slabs per playthrough. ONLY +15 your main weapon."}];
+
+const lotfWeight={light:"Under ~50% of max. Faster attacks.",medium:"50%–100%. RECOMMENDED. Same dodge as Light, better armor.",heavy:"Over max. Slow.",note:"END soft cap for weight at 40. Crafter's Essence rune (3 Rune Tablets to Gerlinde) makes weapons weightless and bypasses stat reqs. Ring of Bones increases equip load."};
+
+const ds1Weight={light:"Under 25% equip load. FAST roll (best i-frames). Essential for DEX builds.",medium:"25%–50%. Normal roll.",heavy:"50%–100%. Slow roll.",note:"Over 100% = fat roll. Ring of Favor +20% equip. Havel's Ring +50% equip. Mask of Father +5% equip. END soft cap at 40. Combine for fast roll in anything."};
+
+const games={
+lotf:{name:"Lords of the Fallen",icon:"🩸",builds:{crimson:crimsonReaper,wither:witherReaper},statMax:75,endgameBudget:155,softCaps:{VIT:null,END:40,STR:50,AGI:50,RAD:50,INF:50},mats:lotfMats,weightInfo:lotfWeight},
+ds1:{name:"Dark Souls",icon:"⚔️",builds:{uchi:ds1Uchi},statMax:99,endgameBudget:200,softCaps:{VIT:50,ATT:50,END:40,STR:40,DEX:40,RES:null,INT:50,FTH:50},mats:ds1Mats,weightInfo:ds1Weight}
+};
+
 /* >>>CONTINUE<<< */
