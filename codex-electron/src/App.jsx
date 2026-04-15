@@ -742,4 +742,150 @@ export default function App(){
     throw new Error(`Couldn't extract JSON. Preview: "${textBlocks[textBlocks.length-1].slice(0,150)}..."`);
   };
 
+  const handleAddBuild=async()=>{
+    if(addMode==="ai"&&!addText.trim()){setAddError("Describe the build you want");return;}
+    if(addMode==="semi"){
+      const hasStats=Object.values(semiForm.endgameStats).some(v=>{const n=parseInt(v);return !isNaN(n)&&n>0;});
+      if(!hasStats){setAddError("Set at least one endgame stat target in Semi-AI mode");return;}
+    }
+    if(addMode==="manual"&&!manualForm.label.trim()){setAddError("Manual mode needs at least a build name");return;}
+    if(!apiKey.trim()){setAddError("No API key set. Open Settings to add your key.");return;}
+    setAdding(true);setAddError("");
+    const useCustomGame=addCustomGameName.trim().length>0;
+    const customKey=useCustomGame?"game_"+Date.now():null;
+    const gameName=useCustomGame?addCustomGameName.trim():allGames[addTargetGame].name;
+    const existingStats=useCustomGame?null:Object.keys(Object.values(allGames[addTargetGame].builds)[0].ph[0].stats);
+    const existingStatMax=useCustomGame?99:allGames[addTargetGame].statMax;
+    let sampleStats=existingStats||["STAT_KEY_1","STAT_KEY_2","STAT_KEY_3","STAT_KEY_4"];
+    let statMax=existingStatMax;
+    let statKeysStr=useCustomGame?`use the standard stats for ${gameName} (the common short codes the community uses, e.g. VIG, END, STR, DEX, INT, FTH)`:sampleStats.join(", ");
+    let statObjStr=useCustomGame?`"STAT_CODE":N,"STAT_CODE":N`:sampleStats.map(s=>`"${s}":N`).join(",");
+    const urlRef=addUrl.trim()?`\n\nPRIMARY REFERENCE URL: ${addUrl.trim()} — you MUST use web search to read this reference and pull accurate item names, locations, and stat recommendations from it.`:"\n\nUse web search to verify item names, locations, and current stat recommendations from reputable wikis (Fextralife, official wikis).";
+    let userConstraints;
+    if(addMode==="ai"){userConstraints=`USER REQUEST: ${addText}`;}
+    else if(addMode==="semi"){
+      const statTargets=Object.entries(semiForm.endgameStats).filter(([k,v])=>{const n=parseInt(v);return !isNaN(n)&&n>0;}).map(([k,v])=>`${k}:${v}`).join(", ");
+      const cl=[];
+      if(semiForm.label.trim())cl.push(`- Build name: ${semiForm.label.trim()}`);
+      if(semiForm.playstyle.trim())cl.push(`- Playstyle: ${semiForm.playstyle.trim()}`);
+      cl.push(`- ENDGAME stat targets (build MUST reach these by endgame, ±2 points): ${statTargets}`);
+      cl.push(`- Total stat point budget is ~${addCustomGameName.trim()?200:(allGames[addTargetGame]?.endgameBudget||200)} (average endgame). Do NOT exceed.`);
+      if(semiForm.preferredWeapon.trim())cl.push(`- Preferred main weapon: ${semiForm.preferredWeapon.trim()}`);
+      if(semiForm.accent.trim())cl.push(`- Use this accent color: ${semiForm.accent.trim()}`);
+      if(semiForm.notes.trim())cl.push(`- Additional notes: ${semiForm.notes.trim()}`);
+      userConstraints=`SEMI-AI MODE - USER CONSTRAINTS (you MUST honor these):\n${cl.join("\n")}\n\nBuild the progression so that endgame phase stats match the user targets. Earlier phases should naturally lead toward those stats.`;
+    }else{
+      const skeleton={label:manualForm.label.trim(),sub:manualForm.sub.trim()||"(generate fitting subtitle)",icon:manualForm.icon.trim()||"⚔️",accent:manualForm.accent||"#e74c3c",cls:manualForm.cls.trim()||"(pick best starting class)",caps:manualForm.caps.trim()||"(determine soft/hard caps)",weaponReq:manualForm.weaponReq.trim()||"(determine from weapons)",playstyle:manualForm.playstyle.trim()||"(write 3-4 sentences describing the playstyle)",user_phases:manualForm.phases.map((ph,i)=>({stage:["Early","Mid","Endgame"][i],stats:Object.fromEntries(Object.entries(ph.stats).filter(([k,v])=>v!==""&&v!=null).map(([k,v])=>[k,parseInt(v)||0])),weapons:(ph.weapons||[]).filter(w=>w.n&&w.n.trim()).map(w=>({n:w.n.trim(),st:w.st?w.st.trim():""})),armor:(ph.armor||[]).filter(ar=>ar.n&&ar.n.trim()).map(ar=>({n:ar.n.trim()})),acc:(ph.acc||[]).filter(ac=>ac.n&&ac.n.trim()).map(ac=>({n:ac.n.trim(),ef:ac.ef?ac.ef.trim():""})),spells:(ph.spells||[]).filter(s=>s.n&&s.n.trim()).map(s=>({n:s.n.trim(),ef:s.ef?s.ef.trim():""}))}))};
+      userConstraints=`MANUAL MODE - USER-PROVIDED BUILD SKELETON:\n\nThe user has manually built the core skeleton below. Your job:\n1. PRESERVE all user-provided values exactly as written\n2. FILL IN blank/missing fields: descriptions (d), specific locations (loc), upgrade paths (up), tips, ap, wt, damage box (dmg)\n3. EXPAND the user's 3 stages into the 3 schema phases for Step 1 — distribute items naturally\n4. Generate metadata only if user values are placeholders\n\nUSER SKELETON (JSON):\n${JSON.stringify(skeleton,null,2)}`;
+    }
+
+    try{
+      const cacheKey=useCustomGame?addCustomGameName.trim().toLowerCase().replace(/\s+/g,"_"):addTargetGame;
+      const knowledgeBlock=buildKnowledgeBlock(cacheKey);
+      const cacheSize=knowledgeCache[cacheKey]?.facts?.length||0;
+      const useSearchStep1=addUrl.trim().length>0||cacheSize<20||useCustomGame;
+      setAddStep(useSearchStep1?(useCustomGame?`Researching ${gameName} & generating early progression...`:"Researching game & generating early progression..."):`Using cached knowledge (${cacheSize} facts) — generating early progression...`);
+      const customGameMetaSchema=useCustomGame?`"game_meta":{"icon":"single emoji representing this game","stat_keys":["STAT1","STAT2","STAT3","STAT4","STAT5","STAT6"],"stat_max":99,"notes":"1-2 sentence note on the game's stat system"},\n`:"";
+      const p1=`You are an elite ${gameName} theorycrafter with deep knowledge of weapons, stats, item locations, and optimal progression routes. Generate the FIRST HALF of an OP build (metadata + 3 early phases).
+
+CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. No preamble, no commentary, no explanation before or after. No "Here's the build:" or "Based on my research". Start your response with { and end with }. Your output is parsed by code that will fail if there's any non-JSON text.${useCustomGame?`\n\nIMPORTANT: ${gameName} is not yet in the codex. You MUST first determine its stat system via web search, then include a "game_meta" field at the top of your JSON with the correct stat short codes and stat_max.`:""}
+
+SCHEMA (output exactly this structure):
+{
+${customGameMetaSchema}"label":"Short evocative name (3-5 words)","sub":"Short archetype subtitle","icon":"single thematic emoji","accent":"#hexcolor (distinctive - avoid #d64545, #b370d8, #e8c05a, #e74c3c)","playstyle":"3-4 sentences explaining identity, combat feel, and why this build is strong","cls":"Best starting class for this build","caps":"Relevant stat soft/hard cap info","weaponReq":"Stat requirements for main weapon(s)",
+"loadouts":[<loadout1>,<loadout2>,<loadout3>],
+"ph":[<phase1>,<phase2>,<phase3>]
+}
+
+Each loadout: {"id":"unique_id","label":"Variant Name","weaponWt":"~N","endReq":"N","armor":"best armor description","pros":"benefits","cons":"drawbacks"} (set loadouts to null if build is single-weapon focused with no real variants)
+
+Each phase: {"name":"Phase Name","range":"Lv X-Y","stats":{${statObjStr}},"sn":"1-2 sentence stat priority note","weapons":[{"n":"Weapon","ap":"~N","st":"status","eq":true,"d":"desc","loc":"specific location","up":"upgrade material","tip":"tip"}],"armor":[{"n":"Armor","wt":"~N","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"acc":[{"n":"Ring","ef":"effect","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"spells":[],"dmg":{"ps":"~N","sp":"status procs","bs":"boss speed","n":"notes"}}
+
+Generate exactly 3 phases: Phase 1 (Early Game, Lv 1-20, starter gear), Phase 2 (Core Weapon, Lv 15-25, acquires signature weapon), Phase 3 (Key Accessories, Lv 20-30, build-defining rings)
+
+RULES:
+- Target game: ${gameName}
+- Use EXACTLY these stat keys: ${statKeysStr}
+- Stat max: ${statMax}
+- BE SPECIFIC with locations (name zones, bonfires/vestiges/graces, landmarks)
+- Use web search aggressively to verify item names and locations${urlRef}${knowledgeBlock}
+
+${userConstraints}`;
+      const step1=await apiCall(p1,useSearchStep1);
+      if(!step1.label||!step1.ph||!Array.isArray(step1.ph))throw new Error("Invalid build metadata");
+      let resolvedStatKeysStr=statKeysStr,resolvedStatObjStr=statObjStr,customGameMeta=null;
+      if(useCustomGame){
+        customGameMeta=step1.game_meta||{};
+        const keys=customGameMeta.stat_keys||Object.keys(step1.ph[0]?.stats||{});
+        if(keys.length>0){sampleStats=keys;resolvedStatKeysStr=keys.join(", ");resolvedStatObjStr=keys.map(s=>`"${s}":N`).join(",");statMax=customGameMeta.stat_max||99;}
+      }
+
+      setAddStep(`Generating late-game and NG+ for "${step1.label}"...`);
+      const p2=`You previously generated the early phases of a "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the LATE progression phases 4-7.
+
+CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. No preamble, no commentary. Start with { and end with }.
+
+SCHEMA: {"ph":[<phase4>,<phase5>,<phase6>,<phase7_ngplus>]}
+
+Phases 4-6: {"name":"Phase Name","range":"Lv X-Y","stats":{${resolvedStatObjStr}},"sn":"stat note","weapons":[{"n":"...","ap":"~N","st":"...","eq":true,"d":"...","loc":"...","up":"...","tip":"..."}],"armor":[{"n":"...","wt":"~N","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"acc":[{"n":"...","ef":"...","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"spells":[{"n":"Spell","ef":"effect","eq":true,"d":"desc","loc":"where learned","up":"scaling","tip":"tip"}],"dmg":{"ps":"~N","sp":"...","bs":"...","n":"..."}}
+
+Phase 7 (NG+) SPECIAL structure: {"name":"NG+","range":"NG+1 to NG+7","stats":{${resolvedStatObjStr}},"sn":"NG+ overview","ngCycles":[{"label":"NG+1","stats":{${resolvedStatObjStr}},"notes":"NG+1 priorities"},{"label":"NG+3","stats":{${resolvedStatObjStr}},"notes":"NG+3 priorities"},{"label":"NG+5","stats":{${resolvedStatObjStr}},"notes":"NG+5 priorities"},{"label":"NG+7","stats":{${resolvedStatObjStr}},"notes":"NG+7 max"}],"weapons":[...],"armor":[...],"acc":[...],"spells":[...],"dmg":{"ps":"~N NG+1, ~N NG+7","sp":"...","bs":"...","n":"..."}}
+
+Generate: Phase 4 (Unlock Spells, Lv 25-40), Phase 5 (Mid-to-Late, Lv 35-55), Phase 6 (Endgame, Lv 55+), Phase 7 (NG+, with ngCycles)
+
+RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. Each NG+ cycle adds ~5-10 levels per stat. Use exact stat keys: ${resolvedStatKeysStr}.${urlRef}${knowledgeBlock}
+
+Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
+      const step2=await apiCall(p2,false);
+
+      setAddStep("Generating similar builds, alternatives & reference table...");
+      const p3=`You previously generated a full "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the VARIANTS SECTION.
+
+CRITICAL OUTPUT FORMAT: Single JSON object only. Start with { end with }. No preamble.
+
+SCHEMA: {"sim":[<variant1>,<variant2>],"oth":[<other1>,<other2>],"ref":[<refRow>,<refRow>,<refRow>,<refRow>,<refRow>]}
+
+Each variant in sim/oth: {"label":"Name","sub":"subtitle","icon":"emoji","a":"#hexcolor","cls":"class","why":"1-2 sentences","ph":[{"n":"Early","r":"Lv 1-20","s":{${resolvedStatObjStr}},"w":"weapon","ar":"armor","dm":"damage"},{"n":"Mid","r":"Lv 20-40","s":{${resolvedStatObjStr}},"w":"weapon","ar":"armor","dm":"damage"},{"n":"End","r":"Lv 40+","s":{${resolvedStatObjStr}},"w":"weapon","ar":"armor","dm":"damage"}],"key":[{"i":"Item","d":"brief desc and location"},{"i":"Item","d":"desc"},{"i":"Item","d":"desc"}],"steps":["Step 1","Step 2","Step 3","Step 4","Step 5"]}
+
+Each ref row: {"n":"Build Name","i":"emoji","w":"endgame weapon","ap":"~N damage","st":"status","ar":"endgame armor","s":"short style summary","a":"#hexcolor"}
+
+First ref row MUST be for the main build: {"n":"${step1.label}","i":"${step1.icon}","w":"main endgame weapon","ap":"~N damage","st":"status","ar":"endgame armor","s":"${step1.sub}","a":"${step1.accent}"}
+
+RULES: 2 sim = same archetype but different weapons/approach. 2 oth = completely different playstyles. 5 ref rows total. 3 condensed phases each. 3+ key items with locations. 5+ steps.${urlRef}${knowledgeBlock}
+
+Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
+      let step3;
+      try{step3=await apiCall(p3,false);}catch(e){step3={sim:[],oth:[],ref:[{n:step1.label,i:step1.icon,w:"—",ap:"—",st:"—",ar:"—",s:step1.sub,a:step1.accent}]};}
+
+      setAddStep("Finalizing build...");
+      const {game_meta,...step1Clean}=step1;
+      const fullBuild={...step1Clean,ph:[...(step1Clean.ph||[]),...(step2.ph||[])],sim:Array.isArray(step3.sim)?step3.sim:[],oth:Array.isArray(step3.oth)?step3.oth:[],ref:(Array.isArray(step3.ref)&&step3.ref.length>0)?step3.ref:[{n:step1.label,i:step1.icon,w:step1.ph[step1.ph.length-1]?.weapons?.[0]?.n||"—",ap:step1.ph[step1.ph.length-1]?.dmg?.ps||"—",st:step1.ph[step1.ph.length-1]?.dmg?.sp||"—",ar:step1.ph[step1.ph.length-1]?.armor?.[0]?.n||"—",s:step1.sub,a:step1.accent}],loadouts:Array.isArray(step1Clean.loadouts)&&step1Clean.loadouts.length>0?step1Clean.loadouts:null};
+
+      const newKey="custom_"+Date.now();
+      if(useCustomGame){
+        const newGameEntry={name:gameName,icon:customGameMeta?.icon||step1.icon||"🎮",builds:{[newKey]:fullBuild},statMax:statMax,softCaps:{},mats:[],weightInfo:{light:"Lighter = faster roll.",medium:"Balanced encumbrance.",heavy:"Slow roll, heavy armor.",note:"Materials tab will populate as you add more builds."}};
+        setDynamicGames(prev=>({...prev,[customKey]:newGameEntry}));
+        setGame(customKey);
+      }else{
+        setDynamicBuilds(prev=>({...prev,[addTargetGame]:{...(prev[addTargetGame]||{}),[newKey]:fullBuild}}));
+        setGame(addTargetGame);
+      }
+      setBuildKey(newKey);setTab("main");setPi(defaultPi(fullBuild));setLo(fullBuild.loadouts?.[0]?.id||"two_hand");
+      const newFacts=extractFactsFromBuild(fullBuild);
+      const finalCacheKey=useCustomGame?customKey:addTargetGame;
+      const finalCacheName=useCustomGame?gameName:games[addTargetGame]?.name||gameName;
+      if(newFacts.length>0)updateKnowledgeCache(finalCacheKey,finalCacheName,newFacts,null);
+      setShowAdd(false);setAddText("");setAddUrl("");setAddCustomGameName("");setAddStep("");resetForms();
+    }catch(e){
+      let msg=e.message||"Unknown error";
+      if(msg.toLowerCase().includes("stream idle timeout")||msg.toLowerCase().includes("partial response")){
+        msg="API stream timed out — the response was too long. Try a more specific build description, or use Semi-AI mode with stat targets to reduce generation length.";
+      }else if(msg.includes("exceeded_limit")||msg.includes("out_of_credits")||msg.includes("rate")){
+        msg="You've hit your Claude usage limit for this window. Try again later or upgrade your plan.";
+      }else if(msg.length>200){msg=msg.slice(0,200)+"... (Try a more specific request or different wording.)";}
+      else{msg=msg+" Try a more specific request or different wording.";}
+      setAddError(msg);setAddStep("");
+    }finally{setAdding(false);}
+  };
+
 /* >>>CONTINUE<<< */
