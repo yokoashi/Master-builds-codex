@@ -968,4 +968,48 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     {id:"ref",l:"Quick Ref",s:"Compare All",icon:"📊"}
   ];
 
+  return (
+    <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",background:C.bg,color:C.text,minHeight:"100vh",padding:"20px 0"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
+
+      {/* SETTINGS MODAL */}
+      {showSettings&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000000ee",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+        <div style={{background:C.card,border:`1px solid ${C.gold}66`,borderLeft:`4px solid ${C.gold}`,borderRadius:10,padding:24,maxWidth:460,width:"100%",boxShadow:"0 20px 60px #000"}}>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:"1.1rem",color:C.bright,fontWeight:800,marginBottom:6}}>⚙ Settings</div>
+          <div style={{fontSize:".78rem",color:C.dim,marginBottom:16,lineHeight:1.5}}>Enter your Anthropic API key. It is stored locally on your device and never sent anywhere except directly to api.anthropic.com through this app.</div>
+          <label style={{display:"block",marginBottom:8,fontSize:".74rem",color:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".08em"}}>ANTHROPIC API KEY</label>
+          <input value={settingsKeyDraft} onChange={e=>setSettingsKeyDraft(e.target.value)} placeholder="sk-ant-..." type="password" style={{width:"100%",background:"#ffffff0a",border:`1px solid ${C.gold}44`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".86rem",outline:"none",boxSizing:"border-box",marginBottom:14}} onKeyDown={e=>{if(e.key==="Enter"&&settingsKeyDraft.trim()){setApiKey(settingsKeyDraft.trim());try{localStorage.setItem("codex_apikey",settingsKeyDraft.trim());}catch(_){}setShowSettings(false);}}}/>
+          <div style={{display:"flex",gap:8}}>
+            {apiKey&&<button onClick={()=>setShowSettings(false)} style={{flex:1,background:"transparent",border:"1px solid #ffffff22",borderRadius:6,padding:"10px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>Cancel</button>}
+            <button onClick={()=>{if(settingsKeyDraft.trim()){setApiKey(settingsKeyDraft.trim());try{localStorage.setItem("codex_apikey",settingsKeyDraft.trim());}catch(_){}setShowSettings(false);}}} disabled={!settingsKeyDraft.trim()} style={{flex:2,background:settingsKeyDraft.trim()?C.gold:"#ffffff22",border:"none",borderRadius:6,padding:"10px",cursor:settingsKeyDraft.trim()?"pointer":"not-allowed",color:"#000",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:800}}>Save Key</button>
+          </div>
+          {!apiKey&&<div style={{marginTop:12,fontSize:".7rem",color:C.fire,fontStyle:"italic"}}>API key required to generate builds. Get one at console.anthropic.com</div>}
+        </div>
+      </div>}
+
+      {/* CONFIRM DELETE MODAL */}
+      {confirmDelete&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000000dd",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setConfirmDelete(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:C.card,border:"1px solid #e74c3c66",borderLeft:"4px solid #e74c3c",borderRadius:10,padding:22,maxWidth:420,width:"100%",boxShadow:"0 20px 60px #000"}}>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:"1.05rem",color:C.bright,fontWeight:800,marginBottom:8}}>✕ Delete Build</div>
+          <div style={{fontSize:".82rem",color:C.text,marginBottom:6,lineHeight:1.5}}>Delete <span style={{color:"#ff8a7a",fontWeight:700}}>{B.label}</span>?</div>
+          <div style={{fontSize:".72rem",color:C.dim,marginBottom:16,lineHeight:1.5}}>This will remove it from the selector. You can restore it later with the ↺ Reset button.</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setConfirmDelete(false)} style={{flex:1,background:"transparent",border:"1px solid #ffffff22",borderRadius:6,padding:"10px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>Cancel</button>
+            <button onClick={doDeleteBuild} style={{flex:1,background:"#e74c3c",border:"none",borderRadius:6,padding:"10px",cursor:"pointer",color:"#fff",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>✕ Delete</button>
+          </div>
+        </div>
+      </div>}
+
+      {/* CONFIRM RESET MODAL */}
+      {confirmReset&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000000dd",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>setConfirmReset(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:C.card,border:`1px solid ${a}66`,borderLeft:`4px solid ${a}`,borderRadius:10,padding:22,maxWidth:420,width:"100%",boxShadow:"0 20px 60px #000"}}>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:"1.05rem",color:C.bright,fontWeight:800,marginBottom:8}}>↺ Reset Codex</div>
+          <div style={{fontSize:".78rem",color:C.text,marginBottom:16,lineHeight:1.5}}>Restore all deleted builds and remove all AI-generated builds and games. This cannot be undone.</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setConfirmReset(false)} style={{flex:1,background:"transparent",border:"1px solid #ffffff22",borderRadius:6,padding:"10px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>Cancel</button>
+            <button onClick={doRestoreAll} style={{flex:1,background:a,border:"none",borderRadius:6,padding:"10px",cursor:"pointer",color:"#fff",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>↺ Reset</button>
+          </div>
+        </div>
+      </div>}
+
 /* >>>CONTINUE<<< */
