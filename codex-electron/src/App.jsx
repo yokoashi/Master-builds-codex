@@ -132,4 +132,32 @@ ref:[
 {n:"Lord of Flames",i:"🌋",w:"Fallen Lord's",ap:"~900–1,100",st:"Ignite(300)+Burn",ar:"Tancred's",s:"Fire melee+spells",a:C.fire},
 {n:"Wrath of Orius",i:"✨",w:"Pieta's Sword",ap:"~800–1,000",st:"Smite",ar:"Lightreaper's",s:"Holy caster",a:C.purple}]};
 
+const witherReaper={label:"Wither Reaper",sub:"Umbral Wither Build",icon:"🌑",accent:C.purple,
+playstyle:"Umbral warrior dealing withered damage that prevents enemies from regenerating health. Combines boss weapons with Umbral magic and hyperarmor charged attacks. Enemy HP bars turn grey and stay that way.",
+cls:"Mournstead Infantry or Orian Preacher",caps:"Soft 50 / Hard 75 (offensive)",weaponReq:"Varies — Elianne's 13 STR / scales with RAD",
+loadouts:[
+{id:"elianne_pieta",label:"Elianne + Pieta (Dual)",weaponWt:"~12",endReq:"18",armor:"Elianne's Set or Cursed Set. Light enough for any build.",pros:"Both swords at +10 unlock a special Radiant+Umbral combo explosion. Insane range and speed.",cons:"Requires pursuing the Inferno/Umbral ending to get Elianne's."},
+{id:"faithful_bludgeon",label:"Faithful Bludgeon 2H",weaponWt:"~22",endReq:"22",armor:"Sovereign Protector or Cursed Set.",pros:"Grand Hammer with Holy + Wither. High STR/RAD scaling. Smashes posture.",cons:"Slower attacks. Less wither per hit than Elianne combo."},
+{id:"dervla_martyr",label:"Dervla + Martyr's Sleeves",weaponWt:"~14",endReq:"18",armor:"Light armor, Martyr's Sleeves required for weapon art.",pros:"Harrower Dervla's Sword unique weapon art with Martyr's Sleeves. Long reach.",cons:"Must complete Dunmire's questline. Locks you into Martyr's Sleeves."}],
+ph:[
+{name:"Early Game",range:"Lv 1–20",stats:{VIT:15,END:13,STR:14,AGI:10,RAD:18,INF:12},sn:"Mournstead Infantry for balance. VIT/END to 18. RAD toward 18 for early spells.",
+weapons:[{n:"Mournstead Infantry Spear",ap:"~170",eq:true,d:"Starting weapon. Replace ASAP.",loc:"Starting gear.",up:"Don't invest.",tip:"Use until first wither option."}],
+armor:[{n:"Mournstead Infantry Set",wt:"~38",eq:true,d:"Decent balanced starter.",loc:"Starting gear.",up:"N/A",tip:"Light enough for fast combat."}],
+acc:[{n:"Use any rings you find",ef:"None build-defining yet",eq:true,d:"Save Vigor.",loc:"N/A",up:"N/A",tip:"N/A"}],spells:[],
+dmg:{ps:"~170–230",sp:"None",bs:"Slow",n:"Reach first boss fights to unlock real wither weapons."}},
+{name:"First Wither Weapon",range:"Lv 18–28",stats:{VIT:20,END:18,STR:16,AGI:10,RAD:22,INF:14},sn:"RAD to 22 to wield Pieta's Sword as transition. INF building for Umbral spells.",
+weapons:[
+{n:"Pieta's Sword (transition)",ap:"~300–500",st:"Smite",eq:true,wt:"~6",d:"Bridge weapon until Elianne's. Same moveset, Holy damage. Requires 25 RAD.",loc:"Defeat Pieta (first boss) → Trade Remembrance with Molhu at Skyrest Bridge.",up:"Small Deralium Fragments.",tip:"You'll swap to Elianne's later for pure wither."},
+{n:"Harrower Dervla's Sword (alt)",ap:"~280–400",st:"Wither",eq:false,wt:"~8",d:"Early wither longsword. Requires Dunmire questline + Martyr's Sleeves for weapon art.",loc:"Defeat Harrower Dervla in Lower Calrath → Trade Remembrance.",up:"Small Deralium Fragments.",tip:"Pick over Pieta's for immediate wither damage."}],
+armor:[{n:"Pieta's Set",wt:"57.6",eq:true,d:"Medium armor with Holy defense.",loc:"Trade Pieta's Remembrance.",up:"N/A",tip:"Swap to Cursed/Elianne's later."}],
+acc:[{n:"Use available rings",ef:"Transitional",eq:true,d:"Real accessories next phase.",loc:"Various.",up:"N/A",tip:"Hallowed Triptych is a good placeholder."}],spells:[],
+dmg:{ps:"~300–500",sp:"Smite builds on hits",bs:"Moderate",n:"Pieta's Sword is strong even as transition."}},
+{name:"Key Accessories",range:"Lv 25–35",stats:{VIT:25,END:22,STR:20,AGI:10,RAD:28,INF:18},sn:"Push RAD toward 30. INF to 18. STR to 20.",
+weapons:[{n:"Pieta's Sword (+3 to +5)",ap:"~500–650",st:"Smite",eq:true,d:"Upgrade while searching for Elianne's.",loc:"Acquired.",up:"Regular Deralium Nuggets.",tip:"Buff with Radiant Weapon for damage spikes."}],
+armor:[{n:"Pieta's or Cursed Set",wt:"57.6 / 75.2",eq:true,d:"Cursed Set has high wither + physical defense.",loc:"Cursed Set: Manse of Hallowed Brothers → Bone bridge Umbral → Soulflay Umbral Belly.",up:"N/A",tip:"Cursed Set makes Umbral exploration easier."}],
+acc:[
+{n:"Pendant of Atrophy",ef:"Boosts wither damage",eq:true,d:"CORE PENDANT. Amplifies all wither-based damage.",loc:"Late-mid game Umbral exploration.",up:"N/A",tip:"Never unequip."},
+{n:"Ring of Radiant Preeminence",ef:"Boosts Holy/Radiant damage",eq:true,d:"Works with Pieta's/Elianne's scaling.",loc:"Main campaign exploration.",up:"N/A",tip:"Core slot until endgame."},
+{n:"Manastone Ring",ef:"Mana regeneration",eq:true,d:"Infinite casting with regen rune on shield.",loc:"Vendors and exploration.",up:"N/A",tip:"Stack with regen rune."}],spells:[],
+dmg:{ps:"~500–650 + Pendant of Atrophy amp",sp:"Wither damage on hits",bs:"Fast",n:"Pendant of Atrophy turns on the damage. Enemy HP starts going grey."}},
 /* >>>CONTINUE<<< */
