@@ -35,36 +35,53 @@ function createWindow() {
   }
 }
 
-// ── Anthropic API proxy ────────────────────────────────────────────────────
+// ── Multi-provider AI proxy ────────────────────────────────────────────────
 // Routes API calls through the main process to avoid CORS restrictions.
-// The API key never leaves the user's machine.
-ipcMain.handle('anthropic-request', async (_event, { body, apiKey, useSearch }) => {
+// API keys never leave the user's machine.
+ipcMain.handle('ai-request', async (_event, { provider, body, apiKey }) => {
   if (!apiKey || !apiKey.trim()) {
-    return { error: { message: 'No API key provided. Open Settings to add your Anthropic API key.' } };
+    return { error: { message: `No API key for ${provider}. Open Settings to add your key.` } };
   }
 
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-api-key': apiKey.trim(),
-    'anthropic-version': '2023-06-01',
-  };
+  let url, headers;
 
+  if (provider === 'claude') {
+    url = 'https://api.anthropic.com/v1/messages';
+    headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey.trim(),
+      'anthropic-version': '2023-06-01',
+    };
+  } else if (provider === 'perplexity') {
+    url = 'https://api.perplexity.ai/chat/completions';
+    headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`,
+    };
+  } else if (provider === 'openai') {
+    url = 'https://api.openai.com/v1/chat/completions';
+    headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`,
+    };
+  } else {
+    return { error: { message: `Unknown provider: ${provider}` } };
+  }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
     });
-
     const text = await response.text();
     try {
       return JSON.parse(text);
     } catch {
-      return { error: { message: `API returned non-JSON response (HTTP ${response.status}): ${text.slice(0, 200)}` } };
+      return { error: { message: `API returned non-JSON (HTTP ${response.status}): ${text.slice(0, 200)}` } };
     }
   } catch (err) {
-    return { error: { message: err.message || 'Network error reaching Anthropic API' } };
+    return { error: { message: err.message || 'Network error reaching API' } };
   }
 });
 
