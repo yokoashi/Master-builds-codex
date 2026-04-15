@@ -594,4 +594,79 @@ export default function App(){
     try{localStorage.setItem("codex_knowledge",JSON.stringify(knowledgeCache));}catch(e){}
   },[storageLoaded,knowledgeCache]);
 
+  // Merge static and dynamic games, filter hidden static builds
+  const allGames={};
+  for(const [k,g] of Object.entries(games)){
+    const filteredStatic={};
+    for(const [bk,bv] of Object.entries(g.builds)){
+      if(!hiddenStaticBuilds.includes(`${k}:${bk}`))filteredStatic[bk]=bv;
+    }
+    const merged={...filteredStatic,...(dynamicBuilds[k]||{})};
+    if(Object.keys(merged).length>0)allGames[k]={...g,builds:merged};
+  }
+  for(const [k,g] of Object.entries(dynamicGames)){
+    if(g.builds&&Object.keys(g.builds).length>0)allGames[k]=g;
+  }
+
+  const gameKeys=Object.keys(allGames);
+  const safeGame=allGames[game]?game:(gameKeys[0]||"lotf");
+  const G=allGames[safeGame]||{builds:{},name:"—",icon:"❓",statMax:99,softCaps:{}};
+  const allBuilds=G.builds;
+  const buildKeys=Object.keys(allBuilds);
+  const safeBuildKey=buildKeys.includes(buildKey)?buildKey:buildKeys[0];
+  const B=allBuilds[safeBuildKey]||{label:"No builds",sub:"",icon:"—",accent:C.dim,playstyle:"All builds have been deleted. Add a new one to get started.",cls:"—",caps:"—",weaponReq:"—",ph:[{name:"—",range:"—",stats:{},sn:"",weapons:[],armor:[],acc:[],spells:[],dmg:{ps:"—",sp:"—",bs:"—",n:"—"}}],sim:[],oth:[],ref:[]};
+  const safePi=Math.min(pi,B.ph.length-1);
+  const p=B.ph[safePi];
+  const pv=safePi>0?B.ph[safePi-1]:null;
+  const a=B.accent;
+
+  const handleGameSwitch=(g)=>{
+    setGame(g);const gameObj=allGames[g];const firstBuild=Object.keys(gameObj.builds)[0];
+    setBuildKey(firstBuild);setTab("main");setPi(defaultPi(gameObj.builds[firstBuild]));
+    setLo(gameObj.builds[firstBuild].loadouts?.[0]?.id||"two_hand");setNgCycle(0);
+  };
+  const handleBuildSwitch=(k)=>{
+    setBuildKey(k);setTab("main");setPi(defaultPi(allBuilds[k]));
+    setLo(allBuilds[k].loadouts?.[0]?.id||"two_hand");setNgCycle(0);
+  };
+  const handleDeleteBuild=()=>{if(!safeBuildKey||B.label==="No builds")return;setConfirmDelete(true);};
+  const doDeleteBuild=()=>{
+    const curGame=safeGame;const curBuild=safeBuildKey;setConfirmDelete(false);
+    let newDynamicGames=dynamicGames,newDynamicBuilds=dynamicBuilds,newHidden=hiddenStaticBuilds;
+    if(dynamicGames[curGame]){
+      const gb={...dynamicGames[curGame].builds};delete gb[curBuild];
+      newDynamicGames={...dynamicGames};
+      if(Object.keys(gb).length===0)delete newDynamicGames[curGame];
+      else newDynamicGames[curGame]={...dynamicGames[curGame],builds:gb};
+    }else if(dynamicBuilds[curGame]?.[curBuild]){
+      const gb={...(dynamicBuilds[curGame]||{})};delete gb[curBuild];
+      newDynamicBuilds={...dynamicBuilds};
+      if(Object.keys(gb).length===0)delete newDynamicBuilds[curGame];
+      else newDynamicBuilds[curGame]=gb;
+    }else{newHidden=[...hiddenStaticBuilds,`${curGame}:${curBuild}`];}
+    const newAllGames={};
+    for(const [k,g] of Object.entries(games)){
+      const fs={};
+      for(const [bk,bv] of Object.entries(g.builds)){if(!newHidden.includes(`${k}:${bk}`))fs[bk]=bv;}
+      const merged={...fs,...(newDynamicBuilds[k]||{})};
+      if(Object.keys(merged).length>0)newAllGames[k]={...g,builds:merged};
+    }
+    for(const [k,g] of Object.entries(newDynamicGames)){if(g.builds&&Object.keys(g.builds).length>0)newAllGames[k]=g;}
+    setDynamicGames(newDynamicGames);setDynamicBuilds(newDynamicBuilds);setHiddenStaticBuilds(newHidden);
+    if(newAllGames[curGame]){
+      const nb=Object.keys(newAllGames[curGame].builds)[0];setBuildKey(nb);
+      setPi(defaultPi(newAllGames[curGame].builds[nb]));setLo(newAllGames[curGame].builds[nb].loadouts?.[0]?.id||"two_hand");
+    }else if(Object.keys(newAllGames).length>0){
+      const ng=Object.keys(newAllGames)[0];const nb=Object.keys(newAllGames[ng].builds)[0];
+      setGame(ng);setBuildKey(nb);setPi(defaultPi(newAllGames[ng].builds[nb]));setLo(newAllGames[ng].builds[nb].loadouts?.[0]?.id||"two_hand");
+    }
+    setTab("main");
+  };
+  const handleRestoreAll=()=>setConfirmReset(true);
+  const doRestoreAll=()=>{
+    setConfirmReset(false);setHiddenStaticBuilds([]);setDynamicBuilds({});setDynamicGames({});
+    setGame("lotf");setBuildKey(Object.keys(games.lotf.builds)[0]);
+    setPi(defaultPi(games.lotf.builds[Object.keys(games.lotf.builds)[0]]));setTab("main");
+  };
+
 /* >>>CONTINUE<<< */
