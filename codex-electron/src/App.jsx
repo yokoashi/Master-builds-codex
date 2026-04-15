@@ -510,4 +510,88 @@ const LoadoutSelector=({lo,setLo,a,loadouts})=>loadouts?(
   </div>
 ):null;
 
+/* ══ MAIN APP ══ */
+export default function App(){
+  const defaultPi=(build)=>{
+    if(!build||!build.ph)return 0;
+    const idx=build.ph.findIndex(ph=>ph.name==="Endgame"||ph.name==="Endgame / Meta");
+    return idx>=0?idx:build.ph.length-1;
+  };
+
+  const [game,setGame]=useState("lotf");
+  const initialBuild=Object.keys(games.lotf.builds)[0];
+  const [buildKey,setBuildKey]=useState(initialBuild);
+  const [tab,setTab]=useState("main");
+  const [pi,setPi]=useState(defaultPi(games.lotf.builds[initialBuild]));
+  const [lo,setLo]=useState("two_hand");
+  const [dynamicBuilds,setDynamicBuilds]=useState({});
+  const [dynamicGames,setDynamicGames]=useState({});
+  const [hiddenStaticBuilds,setHiddenStaticBuilds]=useState([]);
+  const [confirmDelete,setConfirmDelete]=useState(false);
+  const [confirmReset,setConfirmReset]=useState(false);
+  const [showAdd,setShowAdd]=useState(false);
+  const [addText,setAddText]=useState("");
+  const [addUrl,setAddUrl]=useState("");
+  const [addTargetGame,setAddTargetGame]=useState("lotf");
+  const [addCustomGameName,setAddCustomGameName]=useState("");
+  const [adding,setAdding]=useState(false);
+  const [addStep,setAddStep]=useState("");
+  const [addError,setAddError]=useState("");
+  const [updating,setUpdating]=useState(false);
+  const [updateMsg,setUpdateMsg]=useState("");
+  const [addMode,setAddMode]=useState("ai");
+  const [manualPhase,setManualPhase]=useState(0);
+  const [semiForm,setSemiForm]=useState({label:"",playstyle:"",accent:"",endgameStats:{},preferredWeapon:"",notes:""});
+  const [manualForm,setManualForm]=useState({
+    label:"",sub:"",icon:"⚔️",accent:"#e74c3c",cls:"",caps:"",weaponReq:"",playstyle:"",
+    phases:[
+      {stats:{},weapons:[{n:"",st:""}],armor:[{n:""}],acc:[{n:"",ef:""}],spells:[]},
+      {stats:{},weapons:[{n:"",st:""}],armor:[{n:""}],acc:[{n:"",ef:""}],spells:[]},
+      {stats:{},weapons:[{n:"",st:""}],armor:[{n:""}],acc:[{n:"",ef:""}],spells:[]}
+    ]
+  });
+  const [ngCycle,setNgCycle]=useState(0);
+  const [storageLoaded,setStorageLoaded]=useState(false);
+  const [knowledgeCache,setKnowledgeCache]=useState({});
+  const [apiKey,setApiKey]=useState("");
+  const [showSettings,setShowSettings]=useState(false);
+  const [settingsKeyDraft,setSettingsKeyDraft]=useState("");
+
+  // Load saved state on mount
+  useEffect(()=>{
+    try{
+      const raw=localStorage.getItem("codex_state");
+      if(raw){
+        const state=JSON.parse(raw);
+        if(state.dynamicBuilds)setDynamicBuilds(state.dynamicBuilds);
+        if(state.dynamicGames)setDynamicGames(state.dynamicGames);
+        if(state.hiddenStaticBuilds)setHiddenStaticBuilds(state.hiddenStaticBuilds);
+        if(state.game)setGame(state.game);
+        if(state.buildKey)setBuildKey(state.buildKey);
+      }
+    }catch(e){}
+    try{
+      const rawK=localStorage.getItem("codex_knowledge");
+      if(rawK){const k=JSON.parse(rawK);if(k&&typeof k==="object")setKnowledgeCache(k);}
+    }catch(e){}
+    try{
+      const savedKey=localStorage.getItem("codex_apikey");
+      if(savedKey)setApiKey(savedKey);
+      else setShowSettings(true);
+    }catch(e){}
+    setStorageLoaded(true);
+  },[]);
+
+  // Save state when it changes (after initial load)
+  useEffect(()=>{
+    if(!storageLoaded)return;
+    try{localStorage.setItem("codex_state",JSON.stringify({dynamicBuilds,dynamicGames,hiddenStaticBuilds,game,buildKey}));}catch(e){}
+  },[storageLoaded,dynamicBuilds,dynamicGames,hiddenStaticBuilds,game,buildKey]);
+
+  // Save knowledge cache
+  useEffect(()=>{
+    if(!storageLoaded)return;
+    try{localStorage.setItem("codex_knowledge",JSON.stringify(knowledgeCache));}catch(e){}
+  },[storageLoaded,knowledgeCache]);
+
 /* >>>CONTINUE<<< */
