@@ -160,4 +160,55 @@ acc:[
 {n:"Ring of Radiant Preeminence",ef:"Boosts Holy/Radiant damage",eq:true,d:"Works with Pieta's/Elianne's scaling.",loc:"Main campaign exploration.",up:"N/A",tip:"Core slot until endgame."},
 {n:"Manastone Ring",ef:"Mana regeneration",eq:true,d:"Infinite casting with regen rune on shield.",loc:"Vendors and exploration.",up:"N/A",tip:"Stack with regen rune."}],spells:[],
 dmg:{ps:"~500–650 + Pendant of Atrophy amp",sp:"Wither damage on hits",bs:"Fast",n:"Pendant of Atrophy turns on the damage. Enemy HP starts going grey."}},
+{name:"Unlock Umbral Spells",range:"Lv 30–45",stats:{VIT:28,END:24,STR:22,AGI:10,RAD:35,INF:22},sn:"RAD 35 unlocks most Umbral spells. INF 22 for advanced casting.",
+weapons:[{n:"Pieta's Sword (+5 to +7)",ap:"~650–800",st:"Smite + Wither buffed",eq:true,d:"With Umbral Weapon buff, significant wither on top of holy.",loc:"Acquired.",up:"Large Deralium Shards. Holy Bulwark farm.",tip:"Always pre-cast Umbral Weapon."}],
+armor:[{n:"Cursed Set or Elianne's Set",wt:"75.2 / 56.5",eq:true,d:"Elianne's has best wither + frost resistance.",loc:"Elianne's: Trade Remembrance (requires alternate ending path).",up:"N/A",tip:"Cursed as stopgap, Elianne's as goal."}],
+acc:[
+{n:"Pendant of Atrophy",ef:"Wither boost",eq:true,d:"Core.",loc:"Acquired.",up:"N/A",tip:"Permanent."},
+{n:"Umbral Eye of Loash",ef:"Hyperarmor on charged attacks + damage→wither",eq:true,d:"GAME CHANGER. Charging heavy attacks = unstaggerable AND all damage taken converts to wither.",loc:"Umbral Eye slot. Umbral realm exploration.",up:"Socket into Umbral Lamp.",tip:"Pairs with Grand Weapons. Unstaggerable charged R2s."},
+{n:"Ring of Radiant Preeminence",ef:"Holy/Radiant boost",eq:true,d:"Core slot.",loc:"Acquired.",up:"N/A",tip:"Permanent."}],
+spells:[
+{n:"Umbral Weapon",ef:"Coats weapon with Wither damage",eq:true,d:"Core buff. Adds significant umbral damage for generous duration.",loc:"Umbral spell vendors. ~22 INF.",up:"Scales RAD+INF.",tip:"Cast first in rotation."},
+{n:"Grieving Gaze",ef:"Ranged umbral beam",eq:true,d:"Ranged option for chipping HP.",loc:"Umbral realm vendors.",up:"Scales spell power.",tip:"For mages and archers."}],
+dmg:{ps:"~650–800 + Umbral Weapon buff",sp:"Wither stacks with each swing",bs:"Very fast",n:"Umbral Weapon + Pendant + Loash hyperarmor = trade hits and win."}},
+{name:"Boss Weapons",range:"Lv 40–55",stats:{VIT:30,END:26,STR:25,AGI:10,RAD:40,INF:25},sn:"RAD 40 for max Elianne scaling. STR 25 for Faithful Bludgeon.",
+weapons:[
+{n:"Elianne the Starved's Sword",ap:"~700–850",st:"Wither",eq:true,wt:"~6",d:"THE wither weapon. Pure wither with RAD scaling. Special combo with Pieta's when both +5+.",loc:"Defeat Elianne the Starved (Inferno/Umbral ending path). Trade Remembrance.",up:"Large Deralium Shards.",tip:"Pair with Pieta's + Odd Stone (Lower Calrath Umbral) for combo."},
+{n:"Faithful Bludgeon (alt)",ap:"~800–950",st:"Holy + Wither",eq:false,wt:"~22",d:"Grand Hammer with Holy + Wither. B+ STR / B RAD. Unstaggerable charged R2 with Loash.",loc:"Campaign drop mid-late game.",up:"Same materials.",tip:"Best wither-STR weapon. Two-hand."}],
+armor:[{n:"Elianne the Starved's Set",wt:"56.5",eq:true,d:"Best wither + frost + physical resistance.",loc:"Trade Elianne's Remembrance.",up:"N/A",tip:"Perfect thematic match."}],
+acc:[
+{n:"Pendant of Atrophy",ef:"Wither boost",eq:true,d:"Core.",loc:"Acquired.",up:"N/A",tip:"Never remove."},
+{n:"Umbral Eye of Loash",ef:"Hyperarmor + damage→wither",eq:true,d:"Core.",loc:"Acquired.",up:"N/A",tip:"Core slot."},
+{n:"Ring of Radiant Preeminence",ef:"Holy boost",eq:true,d:"Stacks with Elianne's scaling.",loc:"Acquired.",up:"N/A",tip:"Or swap Manastone."}],
+spells:[
+{n:"Umbral Weapon",ef:"Wither weapon buff",eq:true,d:"Core.",loc:"Acquired.",up:"Scales RAD+INF.",tip:"Pre-cast."},
+{n:"Grieving Gaze",ef:"Ranged beam",eq:true,d:"Ranged option.",loc:"Acquired.",up:"Scales spell power.",tip:"Gap closing."}],
+dmg:{ps:"~700–850 Elianne's / ~800–950 Faithful",sp:"Pure Wither",bs:"Very fast",n:"Full setup. Boss HP goes grey and stays."}},
+{name:"Endgame",range:"Lv 55+",stats:{VIT:35,END:28,STR:30,AGI:10,RAD:45,INF:28},sn:"RAD approaching 50 (soft cap). STR 30 for flex. VIT 35 for tanking.",
+weapons:[
+{n:"Elianne the Starved's Sword +10",ap:"~950–1,050",st:"Wither",eq:true,wt:"~6",d:"Fully upgraded. Dual-wield combo with Pieta's +10 unlocks special attack.",loc:"Acquired.",up:"Deralium Chunk.",tip:"Socket Crafter's Essence for zero weight."},
+{n:"Pieta's Sword +10 (combo partner)",ap:"~800–1,000",st:"Smite",eq:true,wt:"~6",d:"Dual-wield for Radiance+Umbral combo explosion. Requires Odd Stone delivered to Pieta.",loc:"Acquired.",up:"Another Deralium Chunk.",tip:"L2+R2 after Odd Stone dialogue."},
+{n:"Faithful Bludgeon +10 (alt)",ap:"~950–1,100",st:"Holy + Wither",eq:false,wt:"~22",d:"Alternative heavy option for pure STR playstyle.",loc:"Acquired.",up:"Deralium Chunk.",tip:"Use if preferring Grand Hammer moveset."}],
+armor:[{n:"Elianne the Starved's Set",wt:"56.5",eq:true,d:"Best wither defense in game.",loc:"Acquired.",up:"N/A",tip:"Alt: Cursed Set (75.2) for max physical tanking."}],
+acc:[
+{n:"Pendant of Atrophy",ef:"Wither boost",eq:true,d:"Permanent.",loc:"Acquired.",up:"N/A",tip:"Irreplaceable."},
+{n:"Umbral Eye of Loash",ef:"Hyperarmor + wither conversion",eq:true,d:"Permanent.",loc:"Acquired.",up:"N/A",tip:"Permanent."},
+{n:"Ring of Radiant Preeminence",ef:"Holy boost",eq:true,d:"Best general option.",loc:"Acquired.",up:"N/A",tip:"Permanent."}],
+spells:[
+{n:"Umbral Weapon",ef:"Wither weapon buff",eq:true,d:"Core.",loc:"Acquired.",up:"Max RAD+INF.",tip:"Pre-buff."},
+{n:"Grieving Gaze",ef:"Ranged beam",eq:true,d:"Ranged option.",loc:"Acquired.",up:"Max spell power.",tip:"For range."}],
+dmg:{ps:"~950–1,050/swing, ~2,000+ with dual combo explosion",sp:"Pure Wither, cannot be regenerated",bs:"Bosses 20–40s",n:"Final form. HP bars grey permanently."}},
+{name:"NG+",range:"NG+1 to NG+7",stats:{VIT:40,END:32,STR:35,AGI:10,RAD:55,INF:32},
+sn:"NG+ wither shines — bosses can't heal. Cycle selector shows growth toward LotF hard cap (75).",
+ngCycles:[
+{label:"NG+1",stats:{VIT:40,END:32,STR:35,AGI:10,RAD:55,INF:32},notes:"Past soft caps. RAD pushed to 55 for stronger Elianne's scaling. INF up for spell power."},
+{label:"NG+3",stats:{VIT:48,END:35,STR:40,AGI:10,RAD:65,INF:38},notes:"Mid NG+. RAD nearing hard cap. Spell damage scaling significantly."},
+{label:"NG+5",stats:{VIT:55,END:38,STR:45,AGI:10,RAD:75,INF:45},notes:"RAD at hard cap (75). Maximum Elianne's scaling. Heavy INF for Umbral spells."},
+{label:"NG+7",stats:{VIT:60,END:40,STR:50,AGI:10,RAD:75,INF:55},notes:"All key stats at or near hard caps. Total ~290 = SL ~225+. Maximum theoretical wither output."}],
+weapons:[{n:"Elianne's + Pieta's +10 (combo build)",ap:"~1,100+ each",st:"Wither + Smite",eq:true,wt:"~12",d:"Both swords +10 with Crafter's Essence option.",loc:"Acquired.",up:"Already +10. Sockets reset.",tip:"NG+ is when the dual combo explosion really shines."}],
+armor:[{n:"Elianne the Starved's Set",wt:"56.5",eq:true,d:"Best wither defense.",loc:"Acquired.",up:"N/A",tip:"With higher VIT/END, fast roll comfortably."}],
+acc:[{n:"Pendant of Atrophy + Loash + Radiant Preeminence",ef:"Same trinity",eq:true,d:"Same trinity as endgame.",loc:"Acquired.",up:"N/A",tip:"All slots locked."}],
+spells:[{n:"Umbral Weapon + Grieving Gaze",ef:"Buff + ranged",eq:true,d:"Pre-buff Umbral Weapon every fight.",loc:"Acquired.",up:"Max RAD+INF scaling.",tip:"Always pre-buff before bosses."}],
+dmg:{ps:"~1,100/swing NG+1, ~1,800+/swing NG+7, ~3,000+ combo explosion",sp:"Pure Wither — bosses can't recover any of it",bs:"NG+ bosses 25–50s",n:"Wither builds get STRONGER in NG+ since enemies have more HP that can never come back."}}
+],
 /* >>>CONTINUE<<< */
