@@ -457,4 +457,57 @@ const DBox=({d,a})=>(
   </div>
 );
 
+const ABC=({b,statMax,softCaps})=>{
+  const [pi,setPi]=useState(b.ph.length-1);
+  const [sk,setSk]=useState(false);
+  const [ki,setKi]=useState(false);
+  const p=b.ph[pi]; const pv=pi>0?b.ph[pi-1]:null;
+  return (
+    <div style={{border:`1px solid ${b.a}33`,borderLeft:`3px solid ${b.a}`,borderRadius:7,marginBottom:14,overflow:"hidden",background:C.card}}>
+      <div style={{padding:"14px 16px",borderBottom:`1px solid ${b.a}22`}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:"1.5rem"}}>{b.icon}</span>
+          <div><div style={{fontFamily:"'Cinzel',serif",fontSize:"1.05rem",color:C.bright,fontWeight:700}}>{b.label}</div><div style={{fontSize:".66rem",color:b.a,letterSpacing:".09em",textTransform:"uppercase",marginTop:1,fontWeight:600}}>{b.sub} · {b.cls}</div></div>
+        </div>
+        <div style={{fontSize:".8rem",color:C.text,lineHeight:1.55,marginTop:9,fontStyle:"italic"}}>{b.why}</div>
+      </div>
+      <div style={{padding:"12px 16px"}}>
+        <div style={{display:"flex",gap:4,marginBottom:13}}>{b.ph.map((ph,i)=>(<button key={i} onClick={()=>setPi(i)} style={{flex:1,background:i===pi?`${b.a}22`:"transparent",border:`1px solid ${i===pi?b.a:"#ffffff14"}`,borderRadius:5,padding:"6px 4px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:".72rem",color:i===pi?C.bright:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{ph.n}</div><div style={{fontSize:".6rem",color:C.dim}}>{ph.r}</div></button>))}</div>
+        <div style={{marginBottom:11}}>{Object.entries(p.s).map(([k,v])=><StatBar key={k} l={k} v={v} max={statMax} a={b.a} p={pv?pv.s[k]:null} softCap={softCaps?softCaps[k]:null}/>)}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:11,fontSize:".78rem"}}>
+          <div style={{background:"#ffffff06",borderRadius:5,padding:"8px 10px",borderLeft:`2px solid ${b.a}`}}><div style={{color:b.a,fontWeight:700,fontSize:".66rem",marginBottom:3}}>WEAPON</div><div style={{color:C.bright}}>{p.w}</div></div>
+          <div style={{background:"#ffffff06",borderRadius:5,padding:"8px 10px",borderLeft:`2px solid ${b.a}`}}><div style={{color:b.a,fontWeight:700,fontSize:".66rem",marginBottom:3}}>ARMOR</div><div style={{color:C.text}}>{p.ar}</div></div>
+        </div>
+        <div style={{background:"#ffffff06",border:`1px solid ${b.a}22`,borderLeft:`3px solid ${b.a}`,borderRadius:5,padding:"8px 10px",fontSize:".78rem",marginBottom:11}}><span style={{color:b.a,fontWeight:700,fontSize:".68rem"}}>DAMAGE: </span><span style={{color:C.text}}>{p.dm}</span></div>
+        {[{l:"KEY ITEMS & LOCATIONS",o:ki,s:setKi,c:b.key.map((k,i)=><div key={i} style={{padding:"6px 10px",borderBottom:"1px solid #ffffff08",lineHeight:1.5,fontSize:".8rem"}}><span style={{color:b.a,fontWeight:700}}>{k.i}: </span><span style={{color:C.text}}>{k.d}</span></div>)},
+          {l:"PROGRESSION STEPS",o:sk,s:setSk,c:b.steps.map((s,i)=><div key={i} style={{display:"flex",gap:7,padding:"4px 10px",fontSize:".8rem",color:C.text,lineHeight:1.5}}><span style={{color:b.a,fontWeight:700,fontSize:".7rem",flexShrink:0}}>{i+1}.</span><span>{s}</span></div>)}
+        ].map((sec,i)=><div key={i} style={{marginBottom:6}}><button onClick={()=>sec.s(!sec.o)} style={{width:"100%",background:"#ffffff06",border:`1px solid ${b.a}33`,borderRadius:5,padding:"8px 12px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:b.a,letterSpacing:".08em",fontWeight:700}}>{sec.l}</span><span style={{color:b.a,fontSize:".62rem",transform:sec.o?"rotate(90deg)":"rotate(0)",transition:"transform .2s"}}>▶</span></button>{sec.o&&<div style={{padding:"7px 0 4px"}}>{sec.c}</div>}</div>)}
+      </div>
+    </div>
+  );
+};
+
+const LoadoutSelector=({lo,setLo,a,loadouts})=>loadouts?(
+  <div style={{marginBottom:18}}>
+    <SL a={a}>Loadout Variant</SL>
+    <div style={{display:"flex",gap:5,marginBottom:11,flexWrap:"wrap"}}>
+      {loadouts.map(l=>(
+        <button key={l.id} onClick={()=>setLo(l.id)} style={{flex:"1 1 auto",background:lo===l.id?`${a}22`:"transparent",border:`1px solid ${lo===l.id?a:"#ffffff14"}`,borderRadius:5,padding:"8px 11px",cursor:"pointer",textAlign:"center",minWidth:130,transition:"all .2s"}}>
+          <div style={{fontSize:".76rem",color:lo===l.id?C.bright:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{l.label}</div>
+          <div style={{fontSize:".62rem",color:C.dim,marginTop:2}}>Wt: {l.weaponWt}</div>
+        </button>
+      ))}
+    </div>
+    {(()=>{const sel=loadouts.find(x=>x.id===lo); return sel?(
+      <div style={{background:C.card,border:`1px solid ${a}44`,borderLeft:`3px solid ${a}`,borderRadius:6,padding:13,fontSize:".8rem",lineHeight:1.65}}>
+        <div style={{marginBottom:5}}><span style={{color:a,fontWeight:700}}>Weapon Weight: </span><span style={{color:C.bright}}>{sel.weaponWt}</span></div>
+        <div style={{marginBottom:5}}><span style={{color:a,fontWeight:700}}>END Needed: </span><span style={{color:C.text}}>{sel.endReq}</span></div>
+        <div style={{marginBottom:5}}><span style={{color:a,fontWeight:700}}>Best Armor: </span><span style={{color:C.text}}>{sel.armor}</span></div>
+        <div style={{marginBottom:5}}><span style={{color:C.green,fontWeight:700}}>✓ Pros: </span><span style={{color:C.text}}>{sel.pros}</span></div>
+        <div><span style={{color:C.fire,fontWeight:700}}>✗ Cons: </span><span style={{color:C.text}}>{sel.cons}</span></div>
+      </div>
+    ):null;})()}
+  </div>
+):null;
+
 /* >>>CONTINUE<<< */
