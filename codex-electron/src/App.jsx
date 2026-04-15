@@ -669,4 +669,77 @@ export default function App(){
     setPi(defaultPi(games.lotf.builds[Object.keys(games.lotf.builds)[0]]));setTab("main");
   };
 
+  const extractFactsFromBuild=(build)=>{
+    const facts=[];
+    if(build.label)facts.push(`Build "${build.label}" (${build.sub||"—"}): class=${build.cls||"?"}, caps=${build.caps||"?"}, req=${build.weaponReq||"?"}`);
+    (build.ph||[]).forEach(ph=>{
+      (ph.weapons||[]).forEach(w=>{
+        const parts=[];
+        if(w.loc&&w.loc!=="Acquired."&&w.loc!=="N/A")parts.push(`loc: ${w.loc}`);
+        if(w.up&&w.up!=="N/A"&&w.up!=="Acquired.")parts.push(`upgrade: ${w.up}`);
+        if(w.ap)parts.push(`AP: ${w.ap}`);if(w.st)parts.push(`status: ${w.st}`);
+        if(parts.length>0)facts.push(`WEAPON ${w.n} — ${parts.join(" | ")}`);
+      });
+      (ph.armor||[]).forEach(ar=>{
+        if(ar.loc&&ar.loc!=="Acquired."&&ar.loc!=="N/A")facts.push(`ARMOR ${ar.n} — loc: ${ar.loc}${ar.wt?` | wt: ${ar.wt}`:""}`);
+      });
+      (ph.acc||[]).forEach(ac=>{
+        if(ac.loc&&ac.loc!=="Acquired."&&ac.loc!=="N/A")facts.push(`RING/ACC ${ac.n} — ${ac.ef||""} — loc: ${ac.loc}`);
+      });
+      (ph.spells||[]).forEach(s=>{
+        if(s.loc&&s.loc!=="Acquired."&&s.loc!=="N/A")facts.push(`SPELL ${s.n} — ${s.ef||""} — loc: ${s.loc}`);
+      });
+    });
+    return facts;
+  };
+
+  const updateKnowledgeCache=(gameKey,gameName,newFacts,patchNote)=>{
+    setKnowledgeCache(prev=>{
+      const existing=prev[gameKey]||{name:gameName,lastUpdated:null,facts:[],patchNote:null};
+      const seen=new Set(existing.facts.map(f=>f.slice(0,40)));
+      const merged=[...existing.facts];
+      for(const f of newFacts){const key=f.slice(0,40);if(!seen.has(key)){merged.push(f);seen.add(key);}}
+      const capped=merged.slice(-200);
+      return {...prev,[gameKey]:{name:gameName,lastUpdated:Date.now(),facts:capped,patchNote:patchNote||existing.patchNote}};
+    });
+  };
+
+  const buildKnowledgeBlock=(gameKey)=>{
+    const k=knowledgeCache[gameKey];
+    if(!k||!k.facts||k.facts.length===0)return "";
+    const factList=k.facts.slice(-80).join("\n");
+    const ageHours=k.lastUpdated?Math.round((Date.now()-k.lastUpdated)/3600000):null;
+    return `\n\nKNOWN FACTS FROM PREVIOUS BUILDS IN THIS CODEX (verified from earlier research${ageHours!=null?`, ${ageHours}h old`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}Use these as authoritative references. Only web search for things NOT in this list.\n`;
+  };
+
+  const apiCall=async(prompt,useSearch=true)=>{
+    const body={model:"claude-opus-4-6",max_tokens:8000,messages:[{role:"user",content:prompt}]};
+    if(useSearch){body.tools=[{type:"web_search_20250305",name:"web_search"}];}
+    let data;
+    if(window.electronAPI){
+      data=await window.electronAPI.callAnthropic(body,apiKey,useSearch);
+    }else{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01"},body:JSON.stringify(body)});
+      data=await r.json();
+    }
+    if(data.error)throw new Error(data.error.message||"API error");
+    const textBlocks=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text);
+    if(textBlocks.length===0)throw new Error("No text in response");
+    const tryParse=(raw)=>{
+      if(!raw)return null;
+      let text=raw.replace(/```json|```/g,"").trim();
+      const s=text.indexOf("{");if(s===-1)return null;text=text.slice(s);
+      try{return JSON.parse(text);}catch(_){}
+      const eF=text.lastIndexOf("}");
+      if(eF!==-1){try{return JSON.parse(text.slice(0,eF+1));}catch(_){}}
+      let depth=0,inStr=false,esc=false,lastV=-1;
+      for(let i=0;i<text.length;i++){const ch=text[i];if(esc){esc=false;continue;}if(ch==="\\"){esc=true;continue;}if(ch==='"'){inStr=!inStr;continue;}if(inStr)continue;if(ch==="{"||ch==="[")depth++;else if(ch==="}"||ch==="]"){depth--;if(depth===0)lastV=i;}}
+      if(lastV!==-1){try{return JSON.parse(text.slice(0,lastV+1));}catch(_){}}
+      return null;
+    };
+    const candidates=[textBlocks[textBlocks.length-1],...textBlocks.slice().sort((a,b)=>b.length-a.length),textBlocks.join("\n")];
+    for(const cand of candidates){const parsed=tryParse(cand);if(parsed)return parsed;}
+    throw new Error(`Couldn't extract JSON. Preview: "${textBlocks[textBlocks.length-1].slice(0,150)}..."`);
+  };
+
 /* >>>CONTINUE<<< */
