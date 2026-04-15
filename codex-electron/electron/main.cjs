@@ -49,10 +49,6 @@ ipcMain.handle('anthropic-request', async (_event, { body, apiKey, useSearch }) 
     'anthropic-version': '2023-06-01',
   };
 
-  // Web search requires the beta header
-  if (useSearch) {
-    headers['anthropic-beta'] = 'web-search-20250305';
-  }
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
