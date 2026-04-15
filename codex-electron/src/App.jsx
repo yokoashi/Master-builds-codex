@@ -1105,4 +1105,52 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         </div>
       </div>}
 
+      <div style={{maxWidth:920,margin:"0 auto",padding:"0 16px"}}>
+
+        {/* HEADER */}
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:".58rem",letterSpacing:".35em",color:a,textTransform:"uppercase",marginBottom:3,fontWeight:600}}>Master Build Codex</div>
+          <h1 style={{fontFamily:"'Cinzel',serif",fontSize:"1.6rem",color:C.bright,letterSpacing:".1em",margin:0,fontWeight:800}}>OP BUILDS</h1>
+          <div style={{width:80,height:2,background:a,margin:"8px auto 0",borderRadius:1}}/>
+          <button onClick={()=>{setSettingsKeyDraft(apiKey);setShowSettings(true);}} title="Settings" style={{position:"absolute",top:20,right:20,background:"transparent",border:"1px solid #ffffff22",borderRadius:5,padding:"6px 10px",cursor:"pointer",color:C.dim,fontSize:".72rem",fontFamily:"'Cinzel',serif",fontWeight:700}}>⚙ Settings</button>
+        </div>
+
+        {/* GAME SELECTOR */}
+        <div style={{display:"flex",gap:8,marginBottom:14,padding:"5px",background:C.card,borderRadius:8,border:"1px solid #ffffff0d",flexWrap:"wrap"}}>
+          {Object.entries(allGames).map(([k,g])=>{
+            const isActive=game===k;const isCustomGame=!games[k];
+            return(<button key={k} onClick={()=>handleGameSwitch(k)} style={{flex:"1 1 140px",background:isActive?C.cardHi:"transparent",border:`1px solid ${isActive?a+"66":"transparent"}`,borderRadius:6,padding:"11px 12px",cursor:"pointer",textAlign:"center",transition:"all .2s",position:"relative"}}>
+              <div style={{fontSize:"1.5rem",marginBottom:3,filter:isActive?"none":"grayscale(50%) opacity(0.5)"}}>{g.icon}</div>
+              <div style={{fontFamily:"'Cinzel',serif",fontSize:".78rem",color:isActive?C.bright:C.dim,fontWeight:700,letterSpacing:".06em"}}>{g.name}</div>
+              {isCustomGame&&<div style={{position:"absolute",top:4,right:6,fontSize:".5rem",color:a,fontWeight:700}}>✦ AI</div>}
+            </button>);
+          })}
+        </div>
+
+        {/* BUILD SELECTOR */}
+        <div style={{display:"flex",gap:6,marginBottom:8,padding:"4px",background:C.card,borderRadius:7,border:"1px solid #ffffff0d",flexWrap:"wrap",alignItems:"stretch"}}>
+          {buildKeys.map(k=>{
+            const bld=allBuilds[k];const isActive=safeBuildKey===k;const isCustom=k.startsWith("custom_");
+            return(<button key={k} onClick={()=>handleBuildSwitch(k)} style={{flex:"1 1 120px",background:isActive?C.cardHi:"transparent",border:`1px solid ${isActive?bld.accent+"66":"transparent"}`,borderRadius:5,padding:"8px 10px",cursor:"pointer",textAlign:"center",transition:"all .2s",position:"relative"}}>
+              <div style={{fontSize:"1.1rem",marginBottom:2}}>{bld.icon}</div>
+              <div style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:isActive?C.bright:C.dim,fontWeight:700,letterSpacing:".05em"}}>{bld.label}</div>
+              {isCustom&&<div style={{position:"absolute",top:3,right:5,fontSize:".5rem",color:bld.accent,fontWeight:700}}>✦ AI</div>}
+            </button>);
+          })}
+        </div>
+
+        {/* ACTION BUTTONS + CACHE STATUS */}
+        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+          <button onClick={()=>{setAddTargetGame(safeGame);setShowAdd(true);setAddError("");}} style={{background:"transparent",border:`1px dashed ${a}66`,borderRadius:5,padding:"8px 14px",cursor:"pointer",color:a,fontFamily:"'Cinzel',serif",fontSize:".72rem",fontWeight:700,whiteSpace:"nowrap",transition:"all .2s"}}>+ Add Build</button>
+          <button onClick={handleUpdateGame} disabled={updating} style={{background:updating?"#ffffff08":"transparent",border:`1px dashed ${a}66`,borderRadius:5,padding:"8px 12px",cursor:updating?"not-allowed":"pointer",color:a,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap",opacity:updating?0.6:1}}>{updating?"⟳ Checking...":"↻ Update"}</button>
+          <button onClick={handleExport} style={{background:"transparent",border:"1px dashed #ffffff22",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap"}}>💾 Save</button>
+          <label style={{background:"transparent",border:"1px dashed #ffffff22",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center"}}>📂 Load<input type="file" accept=".json,application/json" onChange={handleImport} style={{display:"none"}}/></label>
+          {(hiddenStaticBuilds.length>0||Object.keys(dynamicBuilds).length>0||Object.keys(dynamicGames).length>0)&&<button onClick={handleRestoreAll} style={{background:"transparent",border:"1px dashed #ffffff22",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap"}}>↺ Reset</button>}
+          {(safeBuildKey&&B.label!=="No builds")&&<button onClick={handleDeleteBuild} title="Delete this build" style={{background:"transparent",border:"1px dashed #e74c3c44",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:"#e74c3c88",fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap",marginLeft:"auto"}}>✕ Delete</button>}
+        </div>
+        {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0)&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14,padding:"6px 11px",background:C.card,border:"1px solid #ffffff0d",borderRadius:6,fontSize:".68rem"}}>
+          <div style={{color:C.dim}}>{knowledgeCache[safeGame]?.facts?.length>0&&<span>🧠 <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text}}>{G.name}</span>{knowledgeCache[safeGame]?.patchNote&&<span style={{color:C.dim}}> · {knowledgeCache[safeGame].patchNote.slice(0,60)}{knowledgeCache[safeGame].patchNote.length>60?"…":""}</span>}</span>}</div>
+          {updateMsg&&<div style={{color:updateMsg.startsWith("✓")?"#7ddb8a":updateMsg.startsWith("✗")?"#ff8a7a":C.dim,fontStyle:"italic",fontWeight:600}}>{updateMsg}</div>}
+        </div>}
+
 /* >>>CONTINUE<<< */
