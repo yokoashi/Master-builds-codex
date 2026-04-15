@@ -1153,4 +1153,80 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
           {updateMsg&&<div style={{color:updateMsg.startsWith("✓")?"#7ddb8a":updateMsg.startsWith("✗")?"#ff8a7a":C.dim,fontStyle:"italic",fontWeight:600}}>{updateMsg}</div>}
         </div>}
 
-/* >>>CONTINUE<<< */
+        {/* TABS NAV */}
+        <div style={{display:"flex",gap:2,marginBottom:18,borderBottom:`1px solid #ffffff14`,overflowX:"auto"}}>
+          {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?C.card:"transparent",border:"none",borderBottom:tab===t.id?`2px solid ${a}`:"2px solid transparent",padding:"9px 14px",cursor:"pointer",textAlign:"left",flexShrink:0,transition:"all .2s"}}><div style={{fontSize:".82rem",color:tab===t.id?C.bright:C.dim,fontWeight:700,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}><span>{t.icon}</span>{t.l}</div><div style={{fontSize:".6rem",color:tab===t.id?a:"#555",marginTop:1,whiteSpace:"nowrap"}}>{t.s}</div></button>))}
+        </div>
+
+        {/* MAIN TAB */}
+        {tab==="main"&&<div>
+          <div style={{background:C.card,border:`1px solid ${a}55`,borderLeft:`4px solid ${a}`,borderRadius:8,padding:16,marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+              <span style={{fontSize:"1.9rem"}}>{B.icon}</span>
+              <div><div style={{fontFamily:"'Cinzel',serif",fontSize:"1.2rem",color:C.bright,fontWeight:800,letterSpacing:".04em"}}>{B.label}</div><div style={{fontSize:".7rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginTop:2,fontWeight:700}}>{B.sub}</div></div>
+            </div>
+            <div style={{fontSize:".85rem",color:C.text,lineHeight:1.6,marginBottom:11}}>{B.playstyle}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:".7rem"}}>
+              <span style={{background:`${a}22`,color:C.bright,padding:"4px 11px",borderRadius:11,border:`1px solid ${a}66`,fontWeight:600}}>Class: {B.cls}</span>
+              <span style={{background:"#ffffff08",color:C.text,padding:"4px 11px",borderRadius:11,border:"1px solid #ffffff14"}}>Caps: {B.caps}</span>
+              <span style={{background:"#ffffff08",color:C.text,padding:"4px 11px",borderRadius:11,border:"1px solid #ffffff14"}}>Req: {B.weaponReq}</span>
+            </div>
+          </div>
+          <div style={{fontSize:".76rem",color:C.dim,marginBottom:14,fontStyle:"italic",borderLeft:`2px solid ${a}66`,paddingLeft:10,lineHeight:1.5}}>Click phase buttons to see progression. Click items to expand for location/upgrade info. Green +numbers = gains from previous phase.</div>
+          {B.loadouts&&<LoadoutSelector lo={lo} setLo={setLo} a={a} loadouts={B.loadouts}/>}
+          <div style={{display:"flex",gap:4,marginBottom:18,flexWrap:"wrap"}}>
+            {B.ph.map((ph,i)=>{const isActive=i===safePi;const isPast=i<safePi;return(<button key={i} onClick={()=>{setPi(i);setNgCycle(0);}} style={{flex:"1 1 auto",minWidth:90,background:isActive?a:"transparent",border:`1px solid ${isActive?a:isPast?a+"66":"#ffffff22"}`,borderRadius:6,padding:"8px 10px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:".72rem",color:isActive?"#fff":isPast?a:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{ph.name}</div><div style={{fontSize:".58rem",color:isActive?"#ffffffbb":C.dim,marginTop:1}}>{ph.range}</div></button>);})}
+          </div>
+          <SL a={a}>Stats — {p.name}</SL>
+          {p.ngCycles&&<div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>{p.ngCycles.map((c,i)=>(<button key={i} onClick={()=>setNgCycle(i)} style={{flex:"1 1 auto",minWidth:70,background:i===ngCycle?`${a}33`:"transparent",border:`1px solid ${i===ngCycle?a:"#ffffff14"}`,borderRadius:5,padding:"6px 8px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:".7rem",color:i===ngCycle?C.bright:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{c.label}</div></button>))}</div>}
+          {(()=>{const cur=p.ngCycles?p.ngCycles[ngCycle]:null;const stats=cur?cur.stats:p.stats;return Object.entries(stats).map(([k,v])=><StatBar key={k} l={k} v={v} max={G.statMax} a={a} p={pv?pv.stats[k]:null} softCap={G.softCaps?G.softCaps[k]:null}/>);})()}
+          <div style={{fontSize:".78rem",color:C.dim,fontStyle:"italic",marginBottom:14,paddingLeft:10,borderLeft:`2px solid ${a}66`,lineHeight:1.5}}>{p.ngCycles&&p.ngCycles[ngCycle]?p.ngCycles[ngCycle].notes:p.sn}</div>
+          <SL a={a}>Weapons</SL>{p.weapons.map((w,i)=><ItemCard key={i} item={w} a={a}/>)}
+          <SL a={a}>Armor</SL>{p.armor.map((ar,i)=><ItemCard key={i} item={ar} a={a}/>)}
+          <SL a={a}>Accessories / Rings</SL>{p.acc.map((ac,i)=><ItemCard key={i} item={ac} a={a}/>)}
+          <SL a={a}>Spells / Buffs</SL>{p.spells.length>0?p.spells.map((s,i)=><ItemCard key={i} item={s} a={a}/>):<div style={{fontSize:".78rem",color:C.dim,fontStyle:"italic",padding:"6px 0"}}>No spells at this phase.</div>}
+          <SL a={a}>Damage — {p.name}</SL><DBox d={p.dmg} a={a}/>
+        </div>}
+
+        {/* MATERIALS TAB */}
+        {tab==="mats"&&<div>
+          <SL a={a}>Upgrade Material Guide</SL>
+          {G.mats.map((m,i)=><div key={i} style={{border:`1px solid ${a}33`,borderLeft:`3px solid ${a}`,borderRadius:7,marginBottom:10,background:C.card,padding:13}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}><span style={{fontFamily:"'Cinzel',serif",fontSize:".86rem",color:C.bright,fontWeight:700}}>{m.tier}</span><span style={{fontSize:".68rem",background:`${a}22`,color:C.bright,padding:"3px 10px",borderRadius:11,border:`1px solid ${a}55`,fontWeight:700}}>{m.range}</span></div>
+            {[{l:"🛒 BUY",v:m.buy},{l:"⚔ FARM",v:m.farm},{l:"📍 FIND",v:m.find},{l:"💡 TIP",v:m.tip}].map((x,j)=>(<div key={j} style={{background:"#ffffff06",borderRadius:5,padding:"7px 10px",marginBottom:5,fontSize:".8rem",borderLeft:`2px solid ${a}66`}}><span style={{color:a,fontWeight:700,fontSize:".7rem"}}>{x.l}: </span><span style={{color:C.text}}>{x.v}</span></div>))}
+          </div>)}
+          <SL a={a}>Encumbrance & Weight</SL>
+          <div style={{background:C.card,border:`1px solid ${a}33`,borderLeft:`3px solid ${a}`,borderRadius:7,padding:13,fontSize:".8rem",lineHeight:1.7}}>
+            <div style={{marginBottom:8}}><span style={{color:C.green,fontWeight:700,fontFamily:"'Cinzel',serif"}}>LIGHT</span> — {G.weightInfo.light}</div>
+            <div style={{marginBottom:8}}><span style={{color:C.yellow,fontWeight:700,fontFamily:"'Cinzel',serif"}}>MEDIUM</span> — {G.weightInfo.medium}</div>
+            <div style={{marginBottom:8}}><span style={{color:C.fire,fontWeight:700,fontFamily:"'Cinzel',serif"}}>HEAVY</span> — {G.weightInfo.heavy}</div>
+            <div style={{borderTop:"1px solid #ffffff14",paddingTop:9,marginTop:5,color:C.text}}>{G.weightInfo.note}</div>
+          </div>
+        </div>}
+
+        {/* SIMILAR TAB */}
+        {tab==="sim"&&<div>
+          <div style={{fontSize:".8rem",color:C.dim,marginBottom:14,fontStyle:"italic",borderLeft:`2px solid ${a}66`,paddingLeft:10,lineHeight:1.5}}>Variants of <span style={{color:C.bright,fontWeight:600}}>{B.label}</span> with the same archetype.</div>
+          {B.sim.map((b,i)=><ABC key={i} b={b} statMax={G.statMax} softCaps={G.softCaps}/>)}
+        </div>}
+
+        {/* OTHER OP TAB */}
+        {tab==="oth"&&<div>
+          <div style={{fontSize:".8rem",color:C.dim,marginBottom:14,fontStyle:"italic",borderLeft:`2px solid ${a}66`,paddingLeft:10,lineHeight:1.5}}>Different playstyles than <span style={{color:C.bright,fontWeight:600}}>{B.label}</span>, equally overpowered.</div>
+          {B.oth.map((b,i)=><ABC key={i} b={b} statMax={G.statMax} softCaps={G.softCaps}/>)}
+        </div>}
+
+        {/* REF TAB */}
+        {tab==="ref"&&<div>
+          <SL a={a}>{B.label} Build Family</SL>
+          <div style={{overflowX:"auto",border:`1px solid ${a}33`,borderRadius:7,background:C.card}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:".76rem"}}>
+              <thead><tr>{["Build","Weapon","AP","Status","Armor","Style"].map((h,i)=><th key={i} style={{textAlign:"left",padding:"9px 8px",background:`${a}18`,color:C.bright,fontFamily:"'Cinzel',serif",fontSize:".66rem",letterSpacing:".1em",textTransform:"uppercase",borderBottom:`2px solid ${a}`,whiteSpace:"nowrap",fontWeight:700}}>{h}</th>)}</tr></thead>
+              <tbody>{B.ref.map((d,i)=><tr key={i} style={{borderBottom:"1px solid #ffffff0a"}}><td style={{padding:"8px",whiteSpace:"nowrap"}}><span style={{marginRight:5}}>{d.i}</span><span style={{color:C.bright,fontWeight:700}}>{d.n}</span></td><td style={{padding:"8px",color:C.text}}>{d.w}</td><td style={{padding:"8px",color:d.a,fontWeight:600}}>{d.ap}</td><td style={{padding:"8px",color:C.dim}}>{d.st}</td><td style={{padding:"8px",color:C.dim}}>{d.ar}</td><td style={{padding:"8px",color:C.dim,fontStyle:"italic"}}>{d.s}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>}
+      </div>
+    </div>
+  );
+}
