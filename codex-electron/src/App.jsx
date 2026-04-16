@@ -824,39 +824,75 @@ export default function App(){
       else{const r=await fetch(urlMap[tProv],{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});data=await r.json();}
       if(data.error)throw new Error(data.error.message||(data.error?.code?"API error: "+data.error.code:"API error"));
       const choice=data.choices?.[0]?.message?.content;
+      const finishReason=data.choices?.[0]?.finish_reason||data.choices?.[0]?.finish_message||"";
       if(!choice){
-        const finish=data.choices?.[0]?.finish_reason||data.choices?.[0]?.finish_message||"";
-        if(/safety|content_filter/i.test(finish))throw new Error(`${PROVIDERS[tProv].label} blocked this request (safety filter). Switch to a different provider.`);
-        if(/length/i.test(finish))throw new Error(`${PROVIDERS[tProv].label} hit its output token limit mid-response. Try Claude for longer builds.`);
+        if(/safety|content_filter/i.test(finishReason))throw new Error(`${PROVIDERS[tProv].label} blocked this request (safety filter). Switch to a different provider.`);
+        if(/length/i.test(finishReason))throw new Error(`${PROVIDERS[tProv].label} hit its output token limit. Try Claude for longer builds.`);
         const preview=JSON.stringify(data).slice(0,200);
         throw new Error(`${PROVIDERS[tProv].label} returned no content. Raw: ${preview}`);
       }
       rawText=choice;
+      // Flag truncated responses so tryParse knows to attempt recovery
+      if(/length/i.test(finishReason))rawText="__TRUNCATED__"+rawText;
     }
 
     if(opts.rawText)return rawText; // raw text for research steps — skip JSON parsing
 
     const tryParse=(raw)=>{
       if(!raw)return null;
+      const wasTruncated=raw.startsWith("__TRUNCATED__");
+      // Strip Perplexity inline citation markers [1], [2,3], etc. — they corrupt JSON if outside strings
+      let cleaned=raw.replace(/^__TRUNCATED__/,"").replace(/\[\d+(?:,\s*\d+)*\]/g,"");
       // Prefer content BETWEEN code fences — this excludes Perplexity's trailing citations
-      const fenceMatch=raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-      let text=fenceMatch?fenceMatch[1].trim():raw.replace(/```json|```/g,"").trim();
+      const fenceMatch=cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+      let text=fenceMatch?fenceMatch[1].trim():cleaned.replace(/```json|```/g,"").trim();
       // Find start of outermost JSON object OR array
       const sObj=text.indexOf("{"),sArr=text.indexOf("[");
       const s=(sObj===-1)?sArr:(sArr===-1?sObj:Math.min(sObj,sArr));
       if(s===-1)return null;
       text=text.slice(s);
       try{return JSON.parse(text);}catch(_){}
-      // Walk chars and STOP at the FIRST balanced close — avoids being misled by
-      // citation URLs containing { } after the JSON block (Perplexity appends these)
-      let depth=0,inStr=false,esc=false,end=-1;
-      for(let i=0;i<text.length;i++){const ch=text[i];if(esc){esc=false;continue;}if(ch==="\\"){esc=true;continue;}if(ch==='"'){inStr=!inStr;continue;}if(inStr)continue;if(ch==="{"||ch==="[")depth++;else if(ch==="}"||ch==="]"){depth--;if(depth===0){end=i;break;}}}
+      // Balanced-brace walk — stops at first complete top-level close.
+      // Also records the last position where depth returned to 1 (end of an array item),
+      // so we can recover partial data if the JSON was truncated.
+      let depth=0,inStr=false,esc=false,end=-1,lastD1=-1;
+      for(let i=0;i<text.length;i++){
+        const ch=text[i];
+        if(esc){esc=false;continue;}
+        if(inStr){if(ch==="\\"){esc=true;}else if(ch==='"'){inStr=false;}continue;}
+        if(ch==='"'){inStr=true;continue;}
+        if(ch==="{"||ch==="[")depth++;
+        else if(ch==="}"||ch==="]"){depth--;if(depth===0){end=i;break;}if(depth===1)lastD1=i;}
+      }
       if(end!==-1){try{return JSON.parse(text.slice(0,end+1));}catch(_){}}
+      // JSON appears truncated (token limit hit) — recover the last fully-closed item
+      if(lastD1>0){
+        let partial=text.slice(0,lastD1+1).trimEnd();
+        if(partial.endsWith(","))partial=partial.slice(0,-1);
+        // Count remaining open depth to know what to close
+        let dP=0,iSP=false,eSP=false;
+        for(let i=0;i<partial.length;i++){
+          const ch=partial[i];
+          if(eSP){eSP=false;continue;}
+          if(iSP){if(ch==="\\"){eSP=true;}else if(ch==='"'){iSP=false;}continue;}
+          if(ch==='"'){iSP=true;continue;}
+          if(ch==="{"||ch==="[")dP++;
+          else if(ch==="}"||ch==="]")dP--;
+        }
+        // Close all open structures (outermost last)
+        const suffix=text[0]==="["?"]}":"}";
+        while(dP>1){partial+="}";dP--;}
+        if(dP===1)partial+=suffix;
+        try{return JSON.parse(partial);}catch(_){}
+      }
       return null;
     };
     const parsed=tryParse(rawText);
     if(parsed)return parsed;
-    throw new Error(`Couldn't extract JSON. Preview: "${rawText.slice(0,150)}..."`);
+    const wasTruncated=rawText.startsWith("__TRUNCATED__");
+    const preview=rawText.replace(/^__TRUNCATED__/,"").slice(0,150);
+    if(wasTruncated)throw new Error(`${PROVIDERS[tProv].label} hit its token limit and the JSON was cut off. The partial data could not be recovered. Try Claude, which supports longer outputs.`);
+    throw new Error(`Couldn't extract JSON. Preview: "${preview}..."`);
   };
 
   const handleAddBuild=async()=>{
