@@ -1020,9 +1020,73 @@ RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. 
 Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       const step2=await apiCall(p2,false,{prov:contProv,maxTokens:7000});
 
+      // ── Step 3: Perplexity fact-check — always runs if a Perplexity key is present,
+      // regardless of which AI generated the build. Verifies item types, existence, and
+      // locations via web search and removes/corrects errors before saving.
+      let verifiedStep1Ph=[...(step1.ph||[])];
+      let verifiedStep2Ph=[...(step2.ph||[])];
+      if((apiKeys.perplexity||"").trim()){
+        setAddStep("🔵 Perplexity — fact-checking item types & locations...");
+        setGenInfo({prov:"perplexity",label:"verifying items via web search",step:2,total:4});
+        try{
+          // Collect every unique item across all 7 phases
+          const seen=new Set();
+          const itemList=[];
+          [...verifiedStep1Ph,...verifiedStep2Ph].forEach(ph=>{
+            const cats=[["weapon",ph.weapons],["armor",ph.armor],["ring/acc",ph.acc],["spell",ph.spells]];
+            cats.forEach(([cat,arr])=>{
+              (arr||[]).forEach(it=>{
+                if(!it.n||it.n.length<3)return;
+                const key=it.n.toLowerCase();
+                if(seen.has(key))return;
+                seen.add(key);
+                itemList.push(`${cat} | "${it.n}" | ${it.loc||"unknown"}`);
+              });
+            });
+          });
+          if(itemList.length>0){
+            const fcPrompt=`You are fact-checking a ${gameName} build guide. Use web search to verify each item listed below.
+
+For each item verify:
+1. CORRECT TYPE — is the category right? (e.g. a shield must NEVER be listed as "weapon". A ring must be "ring/acc". Spells must be "spell".)
+2. EXISTS IN GAME — does this item actually exist in ${gameName}?
+3. CORRECT LOCATION — is the listed location a real, specific place in ${gameName}?
+
+Items to verify (format: claimed_category | "item name" | listed location):
+${itemList.join("\n")}
+
+Return ONLY a single JSON object:
+{
+  "corrections":[
+    {"name":"exact item name","issue":"wrong_type","details":"e.g. Pale Eye is a shield/offhand, not a greatsword","fixedLoc":"correct location if known"},
+    {"name":"exact item name","issue":"wrong_loc","details":"what is wrong","fixedLoc":"correct specific location — zone + landmark/NPC/chest"}
+  ],
+  "remove":["name of item that does not exist in ${gameName}"]
+}
+
+Only include items with genuine errors. If all items are correct output: {"corrections":[],"remove":[]}`;
+            const fc=await apiCall(fcPrompt,true,{prov:"perplexity",maxTokens:3000});
+            if(fc&&typeof fc==="object"){
+              const wrongType=new Set((fc.corrections||[]).filter(c=>c.issue==="wrong_type").map(c=>c.name.toLowerCase()));
+              const removals=new Set((fc.remove||[]).map(n=>n.toLowerCase()));
+              const locFixes=Object.fromEntries((fc.corrections||[]).filter(c=>c.fixedLoc&&c.fixedLoc.length>5&&!wrongType.has(c.name.toLowerCase())).map(c=>[c.name.toLowerCase(),c.fixedLoc]));
+              const prunePhase=(ph)=>({
+                ...ph,
+                weapons:(ph.weapons||[]).filter(w=>!wrongType.has(w.n?.toLowerCase())&&!removals.has(w.n?.toLowerCase())).map(w=>locFixes[w.n?.toLowerCase()]?{...w,loc:locFixes[w.n?.toLowerCase()]}:w),
+                armor:(ph.armor||[]).filter(a=>!wrongType.has(a.n?.toLowerCase())&&!removals.has(a.n?.toLowerCase())).map(a=>locFixes[a.n?.toLowerCase()]?{...a,loc:locFixes[a.n?.toLowerCase()]}:a),
+                acc:(ph.acc||[]).filter(a=>!wrongType.has(a.n?.toLowerCase())&&!removals.has(a.n?.toLowerCase())).map(a=>locFixes[a.n?.toLowerCase()]?{...a,loc:locFixes[a.n?.toLowerCase()]}:a),
+                spells:(ph.spells||[]).filter(s=>!wrongType.has(s.n?.toLowerCase())&&!removals.has(s.n?.toLowerCase())).map(s=>locFixes[s.n?.toLowerCase()]?{...s,loc:locFixes[s.n?.toLowerCase()]}:s),
+              });
+              verifiedStep1Ph=verifiedStep1Ph.map(prunePhase);
+              verifiedStep2Ph=verifiedStep2Ph.map(prunePhase);
+            }
+          }
+        }catch(e){/* non-fatal — use unverified data */}
+      }
+
       const vp=PROVIDERS[variantsProv];
       setAddStep(`${vp.icon} ${vp.label} — variants & comparison...`);
-      setGenInfo({prov:variantsProv,label:"similar builds + comparison table",step:3,total:3});
+      setGenInfo({prov:variantsProv,label:"similar builds + comparison table",step:3,total:4});
       const p3=`You previously generated a full "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the VARIANTS SECTION.
 
 CRITICAL OUTPUT FORMAT: Single JSON object only. Start with { end with }. No preamble.
@@ -1043,7 +1107,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
 
       setAddStep("Finalizing build...");
       const {game_meta,...step1Clean}=step1;
-      const fullBuild={...step1Clean,ph:[...(step1Clean.ph||[]),...(step2.ph||[])],sim:Array.isArray(step3.sim)?step3.sim:[],oth:Array.isArray(step3.oth)?step3.oth:[],ref:(Array.isArray(step3.ref)&&step3.ref.length>0)?step3.ref:[{n:step1.label,i:step1.icon,w:step1.ph[step1.ph.length-1]?.weapons?.[0]?.n||"—",ap:step1.ph[step1.ph.length-1]?.dmg?.ps||"—",st:step1.ph[step1.ph.length-1]?.dmg?.sp||"—",ar:step1.ph[step1.ph.length-1]?.armor?.[0]?.n||"—",s:step1.sub,a:step1.accent}],loadouts:Array.isArray(step1Clean.loadouts)&&step1Clean.loadouts.length>0?step1Clean.loadouts:null};
+      const fullBuild={...step1Clean,ph:[...verifiedStep1Ph,...verifiedStep2Ph],sim:Array.isArray(step3.sim)?step3.sim:[],oth:Array.isArray(step3.oth)?step3.oth:[],ref:(Array.isArray(step3.ref)&&step3.ref.length>0)?step3.ref:[{n:step1.label,i:step1.icon,w:step1.ph[step1.ph.length-1]?.weapons?.[0]?.n||"—",ap:step1.ph[step1.ph.length-1]?.dmg?.ps||"—",st:step1.ph[step1.ph.length-1]?.dmg?.sp||"—",ar:step1.ph[step1.ph.length-1]?.armor?.[0]?.n||"—",s:step1.sub,a:step1.accent}],loadouts:Array.isArray(step1Clean.loadouts)&&step1Clean.loadouts.length>0?step1Clean.loadouts:null};
 
       const newKey="custom_"+Date.now();
       if(useCustomGame){
