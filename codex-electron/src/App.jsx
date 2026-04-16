@@ -557,7 +557,7 @@ export default function App(){
   const [knowledgeCache,setKnowledgeCache]=useState({});
   const [provider,setProvider]=useState("claude");
   const [selectedProviders,setSelectedProviders]=useState(["claude"]); // ordered: [core, cont, variants]
-  const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
+  const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",gemini:""});
   const [genInfo,setGenInfo]=useState(null); // {prov,label,step,total} — shown in floating indicator
   const [confirmClearCache,setConfirmClearCache]=useState(false); // inline confirm to avoid window.confirm() Electron focus bug
   const [wikiUrl,setWikiUrl]=useState(""); // wiki import URL input
@@ -579,7 +579,7 @@ export default function App(){
     });
   };
   const [showSettings,setShowSettings]=useState(false);
-  const [settingsDraft,setSettingsDraft]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
+  const [settingsDraft,setSettingsDraft]=useState({claude:"",perplexity:"",gemini:""});
   // legacy compat
   const apiKey=apiKeys[provider]||"";
 
@@ -612,7 +612,7 @@ export default function App(){
         // migrate old single key to claude slot
         setApiKeys(prev=>({...prev,claude:legacyKey}));
         setSettingsDraft(prev=>({...prev,claude:legacyKey}));
-        localStorage.setItem("codex_apikeys",JSON.stringify({claude:legacyKey,perplexity:"",openai:"",gemini:"",groq:""}));
+        localStorage.setItem("codex_apikeys",JSON.stringify({claude:legacyKey,perplexity:"",gemini:""}));
       }else{setShowSettings(true);}
       const savedProvider=localStorage.getItem("codex_provider");
       if(savedProvider){setProvider(savedProvider);setSelectedProviders([savedProvider]);}
@@ -781,9 +781,7 @@ export default function App(){
   const PROVIDERS={
     claude:{label:"Claude",icon:"🟠",model:"claude-sonnet-4-6",hint:"sk-ant-...",url:"console.anthropic.com",note:"Best structured JSON & reasoning. Web search built-in.",searchCapable:true},
     perplexity:{label:"Perplexity",icon:"🔵",model:"sonar-pro",hint:"pplx-...",url:"perplexity.ai/settings/api",note:"Real-time web search. Used as research step automatically.",searchCapable:true},
-    openai:{label:"OpenAI",icon:"🟢",model:"gpt-4o",hint:"sk-...",url:"platform.openai.com/api-keys",note:"GPT-4o. Great for creative variants & alternatives.",searchCapable:false},
-    gemini:{label:"Gemini",icon:"🔴",model:"gemini-2.0-flash",hint:"AIza...",url:"aistudio.google.com/apikey",note:"Google Gemini Flash. Fast with Search grounding.",searchCapable:true},
-    groq:{label:"Groq",icon:"⚡",model:"llama-3.3-70b-versatile",hint:"gsk_...",url:"console.groq.com/keys",note:"Ultra-fast Llama 3.3 70B. Free tier available.",searchCapable:false},
+    gemini:{label:"Gemini",icon:"🔴",model:"gemini-2.0-flash",hint:"AIza...",url:"aistudio.google.com/apikey",note:"Google Gemini Flash. Fast and free tier available.",searchCapable:true},
   };
 
   // opts: { prov: string (override active provider), rawText: bool (skip JSON parsing, return string) }
@@ -808,7 +806,7 @@ export default function App(){
       const systemMsg=opts.rawText
         ?"You are a game research assistant. Search for and provide accurate, concise, up-to-date information. Be specific with item names, locations, and stats."
         :"You are an expert soulslike build theorycrafter and game database. Your ENTIRE response must be a single valid JSON object — output ONLY the JSON with no markdown code fences, no text before or after, no citation markers, no footnotes. Start immediately with { and end with }. Every item field (d, loc, tip, ef) MUST contain specific non-placeholder text. Vague values like 'Exploration', 'Acquired', 'Mid-game', 'Various locations', or 'N/A' are NEVER acceptable for loc or d fields.";
-      const urlMap={perplexity:"https://api.perplexity.ai/chat/completions",openai:"https://api.openai.com/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions"};
+      const urlMap={perplexity:"https://api.perplexity.ai/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"};
       body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1000:(opts.maxTokens||6000),messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
       // Perplexity-specific: disable return_citations (they appear inline and corrupt JSON),
       // and enable web_search_options so sonar-pro actively searches gaming wikis for item locations
@@ -819,7 +817,7 @@ export default function App(){
       }
       let data;
       if(window.electronAPI){data=await window.electronAPI.callAI(tProv,body,curKey);}
-      else{const r=await fetch(urlMap[tProv]||urlMap.openai,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});data=await r.json();}
+      else{const r=await fetch(urlMap[tProv],{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});data=await r.json();}
       if(data.error)throw new Error(data.error.message||(data.error?.code?"API error: "+data.error.code:"API error"));
       const choice=data.choices?.[0]?.message?.content;
       if(!choice)throw new Error("No content in response");
@@ -903,10 +901,10 @@ export default function App(){
       const researchProv=
         selectedProviders.find(p=>p!==provCore&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable)
         ||["perplexity","gemini"].find(p=>!selectedProviders.includes(p)&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable);
-      // Step 2 Continuation: use explicit selection if set, otherwise auto-pick fast/free
-      const contProv=provCont2||(["groq","gemini","openai","perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore);
-      // Step 3 Variants: use explicit selection if set, otherwise auto-pick creative
-      const variantsProv=provVars2||(["openai","gemini","claude","groq","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore);
+      // Step 2 Continuation: use explicit selection if set, otherwise auto-pick
+      const contProv=provCont2||(["gemini","perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore);
+      // Step 3 Variants: use explicit selection if set, otherwise auto-pick
+      const variantsProv=provVars2||(["gemini","claude","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore);
 
       // ── Step 0: Web research — short, targeted, non-fatal ───────────────────
       // Only runs if a search-capable provider is available AND different from main
@@ -1484,7 +1482,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
 
         {/* Settings */}
         <div style={{padding:"8px 10px",borderTop:"1px solid #1c1810",flexShrink:0}}>
-          <button onClick={()=>{setSettingsDraft({claude:"",perplexity:"",openai:"",gemini:"",groq:""});setShowSettings(true);}} className="sb-btn" style={{width:"100%",background:"transparent",border:"1px solid #ffffff0e",borderRadius:6,padding:"9px 11px",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={()=>{setSettingsDraft({claude:"",perplexity:"",gemini:""});setShowSettings(true);}} className="sb-btn" style={{width:"100%",background:"transparent",border:"1px solid #ffffff0e",borderRadius:6,padding:"9px 11px",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:"1.05rem"}}>{PROVIDERS[provider]?.icon||"⚙"}</span>
             <div style={{flex:1,textAlign:"left"}}>
               <div style={{fontFamily:"'Cinzel',serif",fontSize:".62rem",color:apiKey?C.text:C.fire,fontWeight:700}}>{apiKey?PROVIDERS[provider]?.label:"No API Key!"}</div>
