@@ -572,6 +572,7 @@ export default function App(){
   const [showCacheViewer,setShowCacheViewer]=useState(false);
   const [wikiUrls,setWikiUrls]=useState(""); // wiki import URLs (one per line)
   const [wikiImporting,setWikiImporting]=useState(false); // wiki fetch in progress
+  const [learning,setLearning]=useState(false); // AI Learn crawl in progress
 
   // Toggle a provider in the modal multi-select (max 3, order = step assignment)
   const toggleModalProv=(key)=>{
@@ -1390,9 +1391,10 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
   // ── Wiki import ────────────────────────────────────────────────────────────
   // Fetches one or more wiki URLs (one per line), strips HTML, asks an AI to
   // extract item facts per page, then bulk-stores everything into the cache.
+  // Auto-follows intra-wiki links for item category/list pages (up to 12 extra).
   const handleWikiImport=async()=>{
-    const urls=wikiUrls.split("\n").map(u=>u.trim()).filter(u=>u.startsWith("http"));
-    if(urls.length===0)return;
+    const explicitUrls=wikiUrls.split("\n").map(u=>u.trim()).filter(u=>u.startsWith("http"));
+    if(explicitUrls.length===0)return;
     const coreKey=selectedProviders[0]||provider;
     if(!(apiKeys[coreKey]||"").trim()){setUpdateMsg("✗ Add an API key in Settings first.");setTimeout(()=>setUpdateMsg(""),4000);return;}
     setWikiImporting(true);
@@ -1400,62 +1402,91 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     const gameName=G.name;
     const allLines=[];
     let errors=0;
-    for(let i=0;i<urls.length;i++){
-      const url=urls[i];
-      setUpdateMsg(`📥 Page ${i+1}/${urls.length} — fetching...`);
-      try{
-      let rawHtml="";
-      if(window.electronAPI?.fetchUrl){
-        const r=await window.electronAPI.fetchUrl(url);
-        if(r.error)throw new Error(r.error);
-        rawHtml=r.html||"";
-      }else{
-        const r=await fetch(url);
-        if(!r.ok)throw new Error(`HTTP ${r.status}`);
-        rawHtml=await r.text();
-      }
-      // Strip scripts/styles first, then try to isolate the main content section.
-      // Fextralife and most game wikis put item tables inside specific containers —
-      // extracting just that section avoids wasting the token budget on nav menus.
-      let workHtml=rawHtml
+    // Item-related path keywords — used to filter discovered links worth crawling
+    const ITEM_PATH_RE=/\/(weapon|armor|ring|spell|staff|shield|bow|talisman|accessory|catalyst|incantation|sorcery|pyromancy|ash[\-_]of[\-_]war|equip|gear|item)/i;
+    const MAX_AUTO_LINKS=12; // extra pages discovered by link-following
+    // Mutable queue: starts with explicit URLs, grows as we discover item links
+    const urlQueue=[...explicitUrls];
+    const explicitSet=new Set(explicitUrls);
+    const visited=new Set();
+    let autoCount=0;
+    // Helper: strip HTML noise and return plain text (shared by import + follow)
+    const htmlToText=(rawHtml)=>{
+      let w=rawHtml
         .replace(/<script[\s\S]*?<\/script>/gi,"")
         .replace(/<style[\s\S]*?<\/style>/gi,"")
         .replace(/<nav[\s\S]*?<\/nav>/gi," ")
         .replace(/<header[\s\S]*?<\/header>/gi," ")
         .replace(/<footer[\s\S]*?<\/footer>/gi," ");
-      // Try to extract just the main content container (wiki-content, main, article, #mw-content-text)
-      const contentPatterns=[
+      const patterns=[
         /id=["']wiki-?content["'][^>]*>([\s\S]{500,})/i,
         /class=["'][^"']*wiki[-_]?content[^"']*["'][^>]*>([\s\S]{500,})/i,
         /<main[^>]*>([\s\S]{500,})<\/main>/i,
         /<article[^>]*>([\s\S]{500,})<\/article>/i,
         /id=["']mw-content-text["'][^>]*>([\s\S]{500,})/i,
       ];
-      for(const pat of contentPatterns){
-        const m=workHtml.match(pat);
-        if(m){workHtml=m[1];break;}
-      }
-      const plainText=workHtml
-        .replace(/<[^>]+>/g," ")
-        .replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&nbsp;/g," ").replace(/&#\d+;/g," ").replace(/&[a-z]+;/g," ")
-        .replace(/\s{2,}/g," ")
-        .trim()
-        .slice(0,40000); // 40k chars — enough to cover large item tables
-      if(plainText.length<50){errors++;setUpdateMsg(`⚠ Page ${i+1}/${urls.length} — could not extract content, skipping`);await new Promise(r=>setTimeout(r,1200));continue;}
-      setUpdateMsg(`📥 Page ${i+1}/${urls.length} — extracting items...`);
-      const prompt=`You are extracting item data from a ${gameName} wiki page to build a reference database. Extract EVERY weapon, armor, ring/accessory, or spell mentioned.\n\nFor each item output one line in this exact format:\nITEM_TYPE Name — effect/description — loc: location (write "loc: unknown" if not on page) — stat: requirement or value\n\nRules:\n- ITEM_TYPE must be: WEAPON, ARMOR, RING/ACC, or SPELL\n- Extract ALL items even if location is not listed — write "loc: unknown" in that case\n- For location: use the most specific text from the page (zone name, boss drop, merchant name, etc.)\n- Include stat requirements, damage values, weight, or any numeric data after "stat:"\n- Skip consumables, key items, lore items\n- Output ONLY the item lines, nothing else\n\nWiki page content:\n${plainText}`;
-      const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:4000});
-      const lines=(rawFacts||"").split("\n").map(l=>l.trim()).filter(l=>l.length>8&&/^(WEAPON|ARMOR|RING\/ACC|SPELL)\s/i.test(l));
-      const flexLines=(rawFacts||"").split("\n").map(l=>l.trim()).filter(l=>l.length>12&&l.includes("—")&&!lines.includes(l)&&/^(weapon|armor|ring|acc|spell)/i.test(l)).map(l=>{
-        const m=l.match(/^(weapon|armor|ring\/?acc?|spell)/i);
-        if(!m)return null;
-        const type=m[1].toLowerCase().startsWith("ring")||m[1].toLowerCase().startsWith("acc")?"RING/ACC":m[1].toUpperCase();
-        return type+" "+l.replace(/^(weapon|armor|ring\/?acc?|spell)\s*/i,"");
+      for(const p of patterns){const m=w.match(p);if(m){w=m[1];break;}}
+      return w.replace(/<[^>]+>/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&nbsp;/g," ").replace(/&#\d+;/g," ").replace(/&[a-z]+;/g," ").replace(/\s{2,}/g," ").trim().slice(0,40000);
+    };
+    // Helper: parse AI fact lines
+    const parseFactLines=(raw)=>{
+      const lines=(raw||"").split("\n").map(l=>l.trim()).filter(l=>l.length>8&&/^(WEAPON|ARMOR|RING\/ACC|SPELL)\s/i.test(l));
+      const flex=(raw||"").split("\n").map(l=>l.trim()).filter(l=>l.length>12&&l.includes("—")&&!lines.includes(l)&&/^(weapon|armor|ring|acc|spell)/i.test(l)).map(l=>{
+        const m=l.match(/^(weapon|armor|ring\/?acc?|spell)/i);if(!m)return null;
+        const t=m[1].toLowerCase().startsWith("ring")||m[1].toLowerCase().startsWith("acc")?"RING/ACC":m[1].toUpperCase();
+        return t+" "+l.replace(/^(weapon|armor|ring\/?acc?|spell)\s*/i,"");
       }).filter(Boolean);
-      allLines.push(...lines,...flexLines);
+      return[...lines,...flex];
+    };
+    let qi=0;
+    while(qi<urlQueue.length){
+      const url=urlQueue[qi++];
+      if(visited.has(url)){continue;}
+      visited.add(url);
+      const isAuto=!explicitSet.has(url);
+      const pageNum=visited.size;
+      const totalPages=urlQueue.length;
+      setUpdateMsg(`📥 Page ${pageNum}/${totalPages}${isAuto?" (auto)":""} — fetching...`);
+      try{
+        let rawHtml="";
+        if(window.electronAPI?.fetchUrl){
+          const r=await window.electronAPI.fetchUrl(url);
+          if(r.error)throw new Error(r.error);
+          rawHtml=r.html||"";
+        }else{
+          const r=await fetch(url);
+          if(!r.ok)throw new Error(`HTTP ${r.status}`);
+          rawHtml=await r.text();
+        }
+        // Discover intra-wiki item links on explicitly-entered pages (not auto pages, to avoid snowball)
+        if(explicitSet.has(url)&&autoCount<MAX_AUTO_LINKS){
+          try{
+            const baseHost=new URL(url).hostname;
+            const hrefRe=/href=["']([^"'#][^"']*?)["']/g;
+            let m;
+            while((m=hrefRe.exec(rawHtml))!==null&&autoCount<MAX_AUTO_LINKS){
+              try{
+                const abs=new URL(m[1],url).href;
+                if(new URL(abs).hostname!==baseHost)continue;
+                if(visited.has(abs)||urlQueue.includes(abs))continue;
+                if(ITEM_PATH_RE.test(new URL(abs).pathname)){
+                  urlQueue.push(abs);
+                  autoCount++;
+                }
+              }catch(_){}
+            }
+            if(autoCount>0)setUpdateMsg(`📥 Found ${autoCount} item pages — crawling...`);
+          }catch(_){}
+        }
+        const plainText=htmlToText(rawHtml);
+        if(plainText.length<50){errors++;setUpdateMsg(`⚠ Page ${pageNum} — no content, skipping`);await new Promise(r=>setTimeout(r,900));continue;}
+        setUpdateMsg(`📥 Page ${pageNum}/${urlQueue.length}${isAuto?" (auto)":""} — extracting items...`);
+        const prompt=`You are extracting item data from a ${gameName} wiki page to build a reference database. Extract EVERY weapon, armor, ring/accessory, or spell mentioned.\n\nFor each item output one line in this exact format:\nITEM_TYPE Name — effect/description — loc: location (write "loc: unknown" if not on page) — stat: requirement or value\n\nRules:\n- ITEM_TYPE must be: WEAPON, ARMOR, RING/ACC, or SPELL\n- Extract ALL items even if location is not listed — write "loc: unknown" in that case\n- For location: use the most specific text from the page (zone name, boss drop, merchant name, etc.)\n- Include stat requirements, damage values, weight, or any numeric data after "stat:"\n- Skip consumables, key items, lore items\n- Output ONLY the item lines, nothing else\n\nWiki page content:\n${plainText}`;
+        const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:4000});
+        allLines.push(...parseFactLines(rawFacts));
       }catch(e){
         errors++;
-        setUpdateMsg(`⚠ Page ${i+1}/${urls.length} — ${(e.message||"error").slice(0,80)}, skipping`);
+        setUpdateMsg(`⚠ Page ${pageNum} — ${(e.message||"error").slice(0,80)}, skipping`);
         await new Promise(r=>setTimeout(r,1500));
       }
     }
@@ -1463,13 +1494,82 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     if(allLines.length>0){
       updateKnowledgeCache(cacheKey,gameName,allLines,null);
       setWikiUrls("");
-      const skipped=errors>0?` (${errors} page${errors!==1?"s":""} skipped)`:"";
-      setUpdateMsg(`✓ Cached ${allLines.length} item${allLines.length!==1?"s":""} from ${urls.length-errors} page${urls.length-errors!==1?"s":""}${skipped}`);
-      setTimeout(()=>setUpdateMsg(""),8000);
+      const autoNote=autoCount>0?` + ${autoCount} auto-discovered`:"";
+      const skipped=errors>0?` (${errors} skipped)`:"";
+      setUpdateMsg(`✓ Cached ${allLines.length} items from ${explicitUrls.length} page${explicitUrls.length!==1?"s":""}${autoNote}${skipped}`);
+      setTimeout(()=>setUpdateMsg(""),9000);
     }else{
-      setUpdateMsg(`✗ No items extracted from any page`);setTimeout(()=>setUpdateMsg(""),7000);
+      setUpdateMsg("✗ No items extracted from any page");setTimeout(()=>setUpdateMsg(""),7000);
     }
     setWikiImporting(false);
+  };
+
+  // ── AI Learn ───────────────────────────────────────────────────────────────
+  // Uses Perplexity + Claude (or whichever is available) to search the web and
+  // gather comprehensive item data for the current game without needing a URL.
+  // Splits categories between providers when both are available for breadth.
+  const handleLearn=async()=>{
+    const gameName=G.name;
+    const cacheKey=safeGame;
+    const hasPplx=!!(apiKeys.perplexity||"").trim();
+    const hasClaude=!!(apiKeys.claude||"").trim();
+    if(!hasPplx&&!hasClaude){setUpdateMsg("✗ Add an API key in Settings first.");setTimeout(()=>setUpdateMsg(""),4000);return;}
+    setLearning(true);
+    const allLines=[];
+    // Split categories: weapons+armor via Perplexity (best for current data),
+    // rings+spells via Claude — swap if only one is available
+    const pA=hasPplx?"perplexity":"claude";
+    const pB=hasClaude?"claude":"perplexity";
+    const categories=[
+      {name:"weapons",type:"WEAPON",prov:pA,
+       q:`Search for a complete list of every weapon in ${gameName}. For EACH weapon include: exact in-game name, damage values or AR, scaling stats (e.g. A STR / B DEX), location or how to obtain (zone name, boss drop, merchant name), and any stat requirements.`},
+      {name:"armor & sets",type:"ARMOR",prov:pA,
+       q:`Search for a complete list of every armor set and piece in ${gameName}. For EACH armor item include: exact name, location or how to obtain, weight, and any notable defense values.`},
+      {name:"rings & accessories",type:"RING/ACC",prov:pB,
+       q:`Search for a complete list of every ring and accessory in ${gameName}. For EACH ring/accessory include: exact name, precise effect with numbers (e.g. +15% damage, +60 buildup), and exact location or how to obtain.`},
+      {name:"spells & incantations",type:"SPELL",prov:pB,
+       q:`Search for a complete list of every spell, incantation, sorcery, or pyromancy in ${gameName}. For EACH spell include: exact name, precise effect with numbers, damage per cast, stat requirements, and where to learn it (NPC name, location).`},
+    ];
+    const parseLines=(raw)=>{
+      if(!raw)return[];
+      const lines=(raw).split("\n").map(l=>l.trim()).filter(l=>l.length>8&&/^(WEAPON|ARMOR|RING\/ACC|SPELL)\s/i.test(l));
+      const flex=(raw).split("\n").map(l=>l.trim()).filter(l=>l.length>12&&l.includes("—")&&!lines.includes(l)&&/^(weapon|armor|ring|acc|spell)/i.test(l)).map(l=>{
+        const m=l.match(/^(weapon|armor|ring\/?acc?|spell)/i);if(!m)return null;
+        const t=m[1].toLowerCase().startsWith("ring")||m[1].toLowerCase().startsWith("acc")?"RING/ACC":m[1].toUpperCase();
+        return t+" "+l.replace(/^(weapon|armor|ring\/?acc?|spell)\s*/i,"");
+      }).filter(Boolean);
+      return[...lines,...flex];
+    };
+    for(let i=0;i<categories.length;i++){
+      const cat=categories[i];
+      const icon=PROVIDERS[cat.prov]?.icon||"🔍";
+      setUpdateMsg(`${icon} Learning ${cat.name} (${i+1}/${categories.length})...`);
+      try{
+        const prompt=`${cat.q}
+
+For each item output one line in this exact format:
+${cat.type} Name — description/effect with numbers — loc: exact location or how to obtain — stat: requirements and key values
+
+Rules:
+- List EVERY ${cat.name} in ${gameName} — be comprehensive, don't skip rare or optional items
+- Use specific in-game names only — no generic placeholders
+- loc: must be specific: zone name, boss name, NPC/merchant name, or chest description
+- stat: include damage, weight, scaling grades, or buildup numbers
+- Output ONLY the item lines in the exact format above — no intro, no markdown, no commentary`;
+        const raw=await apiCall(prompt,true,{prov:cat.prov,rawText:true,maxTokens:4000});
+        const parsed=parseLines(raw);
+        allLines.push(...parsed);
+      }catch(e){/* non-fatal — skip category */}
+    }
+    if(allLines.length>0){
+      updateKnowledgeCache(cacheKey,gameName,allLines,null);
+      setUpdateMsg(`✓ Learned ${allLines.length} items for ${gameName}`);
+      setTimeout(()=>setUpdateMsg(""),9000);
+    }else{
+      setUpdateMsg("✗ No items found — check API keys or try a more specific game name.");
+      setTimeout(()=>setUpdateMsg(""),6000);
+    }
+    setLearning(false);
   };
 
   const tabs=[
@@ -1774,11 +1874,22 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
             />
             <button
               onClick={handleWikiImport}
-              disabled={wikiImporting||!wikiUrls.split("\n").some(u=>u.trim().startsWith("http"))}
-              title="Fetch all wiki pages and cache item data for this game"
-              style={{width:"100%",marginTop:4,background:wikiImporting?"transparent":a+"22",border:`1px solid ${wikiImporting?"#ffffff14":a+"55"}`,borderRadius:4,padding:"5px",cursor:wikiImporting?"not-allowed":"pointer",color:wikiImporting?C.dim:a,fontSize:".62rem",fontWeight:700}}
-            >{wikiImporting?"importing…":"↓ Import All"}</button>
-            <div style={{fontSize:".54rem",color:"#ffffff28",marginTop:3,lineHeight:1.4}}>Fextralife or any game wiki — one URL per line</div>
+              disabled={wikiImporting||learning||!wikiUrls.split("\n").some(u=>u.trim().startsWith("http"))}
+              title="Fetch wiki pages + follow item-category links automatically"
+              style={{width:"100%",marginTop:4,background:wikiImporting?"transparent":a+"22",border:`1px solid ${wikiImporting?"#ffffff14":a+"55"}`,borderRadius:4,padding:"5px",cursor:(wikiImporting||learning)?"not-allowed":"pointer",color:(wikiImporting||learning)?C.dim:a,fontSize:".62rem",fontWeight:700}}
+            >{wikiImporting?"crawling pages…":"↓ Import + Follow Links"}</button>
+            <button
+              onClick={handleLearn}
+              disabled={learning||wikiImporting}
+              title={`AI searches the web for every weapon, armor, ring, and spell in ${G.name} — no URL needed`}
+              style={{width:"100%",marginTop:4,background:learning?"transparent":`#7b52ab22`,border:`1px solid ${learning?"#ffffff14":"#9b6fc866"}`,borderRadius:4,padding:"5px",cursor:(learning||wikiImporting)?"not-allowed":"pointer",color:(learning||wikiImporting)?C.dim:"#c794e8",fontSize:".62rem",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}
+            >
+              {learning
+                ?<>⏳ learning…</>
+                :<><span style={{fontSize:".72rem"}}>🧠</span> Learn {G.name} (AI Search)</>
+              }
+            </button>
+            <div style={{fontSize:".54rem",color:"#ffffff28",marginTop:3,lineHeight:1.4}}>Import: Fextralife or any wiki, one URL per line — auto-follows item pages. Learn: no URL needed, AI searches everything.</div>
           </div>
         </div>
 
