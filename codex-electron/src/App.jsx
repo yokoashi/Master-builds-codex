@@ -1117,23 +1117,40 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
   const handleUpdateGame=async()=>{
     const cacheKey=safeGame;const gameName=G.name;
     setUpdating(true);setUpdateMsg("Checking latest patch notes...");
-    try{
-      const lastDate=knowledgeCache[cacheKey]?.lastUpdated?new Date(knowledgeCache[cacheKey].lastUpdated).toDateString():"never";
-      const prompt=`You are a ${gameName} patch and meta expert. Search the web for the LATEST patch notes, balance changes, and meta updates for ${gameName} that affect builds.\n\nCurrent cached info was last updated: ${lastDate}.\n\nFind: current patch version, recent weapon nerfs/buffs, stat scaling changes, item location changes, new items.\n\nOutput ONLY a single JSON object, no preamble:\n{\n"patchVersion":"current patch version string",\n"summary":"2-3 sentence summary of meta-relevant changes",\n"changes":[{"item":"Item or weapon name","change":"what changed"}],\n"newFacts":["FACT 1: specific verifiable detail","FACT 2: another detail"]\n}\n\nLimit changes to 8, newFacts to 10. Be concise.`;
-      const result=await apiCall(prompt,true);
-      if(!result||typeof result!=="object")throw new Error("Invalid update response");
-      const patchNote=result.patchVersion?`${result.patchVersion}: ${result.summary||""}`:result.summary||"Updated from web";
-      const changeFacts=(result.changes||[]).map(c=>`PATCH UPDATE: ${c.item} — ${c.change}`);
-      const extraFacts=Array.isArray(result.newFacts)?result.newFacts:[];
-      updateKnowledgeCache(cacheKey,gameName,[...changeFacts,...extraFacts],patchNote);
-      const n=changeFacts.length;const v=result.patchVersion?` (${result.patchVersion})`:"";
-      setUpdateMsg(`✓ Updated${v} — ${n} change${n!==1?"s":""} cached`);setTimeout(()=>setUpdateMsg(""),5000);
-    }catch(e){
-      let msg=e.message||"Unknown error";
-      if(msg.includes("exceeded_limit")||msg.includes("out_of_credits"))msg="Usage limit hit — try again after the reset window.";
-      else if(msg.length>180)msg=msg.slice(0,180)+"...";
-      setUpdateMsg("✗ "+msg);setTimeout(()=>setUpdateMsg(""),7000);
-    }finally{setUpdating(false);}
+    // Build a priority list of providers that have a key, preferring search-capable ones.
+    // Claude → Perplexity → Gemini (search-capable first, others as last resort).
+    const providerPriority=["claude","perplexity","gemini"]
+      .filter(p=>PROVIDERS[p]&&(apiKeys[p]||"").trim());
+    if(providerPriority.length===0){setUpdateMsg("✗ No API key configured. Open Settings.");setTimeout(()=>setUpdateMsg(""),5000);setUpdating(false);return;}
+    const isRateLimitError=(msg)=>/exceeded_limit|out_of_credits|rate.?limit|insufficient_quota|credit|tokens per minute|requests per minute|overloaded|unavailable|529|529/i.test(msg);
+    let lastError="Unknown error";
+    for(const prov of providerPriority){
+      try{
+        const pName=PROVIDERS[prov].label;
+        setUpdateMsg(`${PROVIDERS[prov].icon} ${pName} — checking patch notes...`);
+        const lastDate=knowledgeCache[cacheKey]?.lastUpdated?new Date(knowledgeCache[cacheKey].lastUpdated).toDateString():"never";
+        const prompt=`You are a ${gameName} patch and meta expert. Search the web for the LATEST patch notes, balance changes, and meta updates for ${gameName} that affect builds.\n\nCurrent cached info was last updated: ${lastDate}.\n\nFind: current patch version, recent weapon nerfs/buffs, stat scaling changes, item location changes, new items.\n\nOutput ONLY a single JSON object, no preamble:\n{\n"patchVersion":"current patch version string",\n"summary":"2-3 sentence summary of meta-relevant changes",\n"changes":[{"item":"Item or weapon name","change":"what changed"}],\n"newFacts":["FACT 1: specific verifiable detail","FACT 2: another detail"]\n}\n\nLimit changes to 8, newFacts to 10. Be concise.`;
+        const result=await apiCall(prompt,true,{prov});
+        if(!result||typeof result!=="object")throw new Error("Invalid update response");
+        const patchNote=result.patchVersion?`${result.patchVersion}: ${result.summary||""}`:result.summary||"Updated from web";
+        const changeFacts=(result.changes||[]).map(c=>`PATCH UPDATE: ${c.item} — ${c.change}`);
+        const extraFacts=Array.isArray(result.newFacts)?result.newFacts:[];
+        updateKnowledgeCache(cacheKey,gameName,[...changeFacts,...extraFacts],patchNote);
+        const n=changeFacts.length;const v=result.patchVersion?` (${result.patchVersion})`:"";
+        const usedFallback=prov!==providerPriority[0];
+        setUpdateMsg(`✓ Updated via ${pName}${v} — ${n} change${n!==1?"s":""} cached`);setTimeout(()=>setUpdateMsg(""),usedFallback?7000:5000);
+        setUpdating(false);return; // success — stop trying
+      }catch(e){
+        lastError=e.message||"Unknown error";
+        if(!isRateLimitError(lastError))break; // non-rate-limit error — don't retry other providers
+        // rate limit / unavailable — try next provider
+      }
+    }
+    // All providers failed
+    let msg=isRateLimitError(lastError)?"All providers are rate-limited or unavailable. Try again later.":lastError;
+    if(msg.length>180)msg=msg.slice(0,180)+"...";
+    setUpdateMsg("✗ "+msg);setTimeout(()=>setUpdateMsg(""),7000);
+    setUpdating(false);
   };
 
   // ── Wiki import ────────────────────────────────────────────────────────────
