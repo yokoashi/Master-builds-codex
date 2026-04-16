@@ -556,8 +556,25 @@ export default function App(){
   const [storageLoaded,setStorageLoaded]=useState(false);
   const [knowledgeCache,setKnowledgeCache]=useState({});
   const [provider,setProvider]=useState("claude");
+  const [selectedProviders,setSelectedProviders]=useState(["claude"]); // ordered: [core, cont, variants]
   const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
   const [genInfo,setGenInfo]=useState(null); // {prov,label,step,total} — shown in floating indicator
+
+  // Toggle a provider in the modal multi-select (max 3, order = step assignment)
+  const toggleModalProv=(key)=>{
+    if(!(apiKeys[key]||"").trim())return;
+    setSelectedProviders(prev=>{
+      if(prev.includes(key)){
+        if(prev.length===1)return prev; // can't deselect the only one
+        const next=prev.filter(p=>p!==key);
+        setProvider(next[0]); // keep global in sync with primary
+        try{localStorage.setItem("codex_provider",next[0]);}catch(_){}
+        return next;
+      }else{
+        return [...prev,key].slice(0,3); // cap at 3 (one per step)
+      }
+    });
+  };
   const [showSettings,setShowSettings]=useState(false);
   const [settingsDraft,setSettingsDraft]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
   // legacy compat
@@ -595,7 +612,7 @@ export default function App(){
         localStorage.setItem("codex_apikeys",JSON.stringify({claude:legacyKey,perplexity:"",openai:"",gemini:"",groq:""}));
       }else{setShowSettings(true);}
       const savedProvider=localStorage.getItem("codex_provider");
-      if(savedProvider)setProvider(savedProvider);
+      if(savedProvider){setProvider(savedProvider);setSelectedProviders([savedProvider]);}
     }catch(e){setShowSettings(true);}
     setStorageLoaded(true);
   },[]);
@@ -803,7 +820,8 @@ export default function App(){
       if(!hasStats){setAddError("Set at least one endgame stat target in Semi-AI mode");return;}
     }
     if(addMode==="manual"&&!manualForm.label.trim()){setAddError("Manual mode needs at least a build name");return;}
-    if(!(apiKeys[provider]||"").trim()){setAddError(`No API key for ${PROVIDERS[provider]?.label||provider}. Open Settings to add your key.`);return;}
+    const coreProvKey=selectedProviders[0]||provider;
+    if(!(apiKeys[coreProvKey]||"").trim()){setAddError(`No API key for ${PROVIDERS[coreProvKey]?.label||coreProvKey}. Open Settings to add your key.`);return;}
     setAdding(true);setAddError("");
     const useCustomGame=addCustomGameName.trim().length>0;
     const customKey=useCustomGame?"game_"+Date.now():null;
@@ -839,13 +857,18 @@ export default function App(){
       const cacheSize=knowledgeCache[cacheKey]?.facts?.length||0;
       const useSearchStep1=addUrl.trim().length>0||cacheSize<20||useCustomGame;
 
-      // ── Smart provider routing (each AI does only what it's best at) ─────────
-      // Step 0 Research: search-capable provider other than main — keeps Claude tokens free
-      const researchProv=["perplexity","gemini"].find(p=>p!==provider&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable);
-      // Step 2 Continuation: fast/free provider — late phases are pattern continuation, not creative
-      const contProv=["groq","gemini","openai","perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provider;
-      // Step 3 Variants: prefer creative-diverse providers; intentionally different from contProv
-      const variantsProv=["openai","gemini","claude","groq","perplexity"].find(p=>(apiKeys[p]||"").trim())||provider;
+      // ── Provider routing from user selection ───────────────────────────────
+      // selectedProviders is ordered: [0]=Core build, [1]=Continuation, [2]=Variants
+      const [provCore=provider, provCont2, provVars2]=selectedProviders;
+      // Step 0 Research: prefer a search-capable provider from the selection;
+      // fall back to any search-capable provider not already used for Core.
+      const researchProv=
+        selectedProviders.find(p=>p!==provCore&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable)
+        ||["perplexity","gemini"].find(p=>!selectedProviders.includes(p)&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable);
+      // Step 2 Continuation: use explicit selection if set, otherwise auto-pick fast/free
+      const contProv=provCont2||(["groq","gemini","openai","perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore);
+      // Step 3 Variants: use explicit selection if set, otherwise auto-pick creative
+      const variantsProv=provVars2||(["openai","gemini","claude","groq","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore);
 
       // ── Step 0: Web research — short, targeted, non-fatal ───────────────────
       // Only runs if a search-capable provider is available AND different from main
@@ -869,8 +892,8 @@ Best weapons with locations? Key stats/soft caps? Recent patches? Top tips?`;
       }
 
       const step1Label=useSearchStep1?(useCustomGame?`researching ${gameName} + phases 1–3`:"researching + phases 1–3"):`phases 1–3 (${cacheSize} cached facts)`;
-      setAddStep(`${PROVIDERS[provider].icon} ${PROVIDERS[provider].label} — ${step1Label}...`);
-      setGenInfo({prov:provider,label:step1Label,step:1,total:3});
+      setAddStep(`${PROVIDERS[provCore].icon} ${PROVIDERS[provCore].label} — ${step1Label}...`);
+      setGenInfo({prov:provCore,label:step1Label,step:1,total:3});
       const customGameMetaSchema=useCustomGame?`"game_meta":{"icon":"single emoji representing this game","stat_keys":["STAT1","STAT2","STAT3","STAT4","STAT5","STAT6"],"stat_max":99,"notes":"1-2 sentence note on the game's stat system"},\n`:"";
       const p1=`You are an elite ${gameName} theorycrafter with deep knowledge of weapons, stats, item locations, and optimal progression routes. Generate the FIRST HALF of an OP build (metadata + 3 early phases).
 
@@ -905,7 +928,7 @@ RULES:
 - Use web search aggressively to verify item names and locations${urlRef}${knowledgeBlock}${researchContext}
 
 ${userConstraints}`;
-      const step1=await apiCall(p1,useSearchStep1,{maxTokens:6000});
+      const step1=await apiCall(p1,useSearchStep1,{prov:provCore,maxTokens:6000});
       if(!step1.label||!step1.ph||!Array.isArray(step1.ph))throw new Error("Invalid build metadata");
       let resolvedStatKeysStr=statKeysStr,resolvedStatObjStr=statObjStr,customGameMeta=null;
       if(useCustomGame){
@@ -1122,9 +1145,58 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
           <div style={{display:"flex",gap:6,marginBottom:14}}>
             {[{id:"ai",l:"✦ Full AI",d:"Just describe it"},{id:"semi",l:"◐ Semi-AI",d:"Set targets, AI fills"},{id:"manual",l:"✎ Manual",d:"Build it yourself"}].map(m=>{const isA=addMode===m.id;return(<button key={m.id} onClick={()=>{setAddMode(m.id);setAddError("");}} disabled={adding} style={{flex:1,background:isA?`${a}22`:"transparent",border:`1px solid ${isA?a:"#ffffff14"}`,borderRadius:6,padding:"10px 8px",cursor:adding?"not-allowed":"pointer",textAlign:"center",opacity:adding?0.5:1,transition:"all .2s"}}><div style={{fontFamily:"'Cinzel',serif",fontSize:".75rem",color:isA?C.bright:C.dim,fontWeight:700}}>{m.l}</div><div style={{fontSize:".58rem",color:isA?a:"#555",marginTop:2}}>{m.d}</div></button>);})}
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,padding:"8px 10px",background:"#ffffff05",border:"1px solid #ffffff0d",borderRadius:6}}>
-            <span style={{fontSize:".62rem",color:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700,letterSpacing:".06em",flexShrink:0}}>AI:</span>
-            {Object.entries(PROVIDERS).map(([key,p])=>{const isA=provider===key;const hasKey=(apiKeys[key]||"").trim();return(<button key={key} onClick={()=>{if(!adding){setProvider(key);try{localStorage.setItem("codex_provider",key);}catch(_){}}}} disabled={adding} title={hasKey?`Switch to ${p.label}`:`${p.label} — no key (add in Settings)`} style={{display:"flex",alignItems:"center",gap:3,background:isA?"#ffffff12":"transparent",border:`1px solid ${isA?C.gold+"66":"transparent"}`,borderRadius:5,padding:"4px 8px",cursor:adding?"not-allowed":"pointer",opacity:adding?0.5:1}}><span style={{fontSize:".85rem"}}>{p.icon}</span><span style={{fontFamily:"'Cinzel',serif",fontSize:".62rem",color:isA?C.bright:C.dim,fontWeight:700}}>{p.label}</span>{!hasKey&&<span style={{fontSize:".5rem",color:C.fire}}>!</span>}{isA&&<span style={{fontSize:".45rem",color:C.gold}}>●</span>}</button>);})}</div>
+          {/* MULTI-PROVIDER SELECTOR */}
+          <div style={{background:"#ffffff05",border:"1px solid #ffffff0d",borderRadius:8,padding:"10px 12px",marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:".6rem",color:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700,letterSpacing:".08em"}}>AI PROVIDERS</span>
+              <span style={{fontSize:".56rem",color:C.dim,fontStyle:"italic"}}>Click to add · order = which step each handles</span>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+              {Object.entries(PROVIDERS).map(([key,p])=>{
+                const idx=selectedProviders.indexOf(key);
+                const isSelected=idx!==-1;
+                const hasKey=!!(apiKeys[key]||"").trim();
+                const stepLabels=["① Core","② Cont.","③ Vars."];
+                const stepColors=[a,C.cyan,C.purple];
+                return(
+                  <button key={key} onClick={()=>!adding&&toggleModalProv(key)} disabled={adding||!hasKey}
+                    title={hasKey?(isSelected?`Remove ${p.label} from step ${idx+1}`:`Add ${p.label} — step ${selectedProviders.length+1}`):`${p.label} — add API key in Settings`}
+                    style={{display:"flex",alignItems:"center",gap:5,position:"relative",
+                      background:isSelected?`${stepColors[idx]||C.gold}18`:"#ffffff07",
+                      border:`1px solid ${isSelected?`${stepColors[idx]||C.gold}66`:"#ffffff12"}`,
+                      borderRadius:7,padding:"6px 10px",
+                      cursor:adding||!hasKey?"not-allowed":"pointer",
+                      opacity:hasKey?1:0.38,
+                      boxShadow:isSelected?`0 0 8px ${stepColors[idx]||C.gold}22`:"none"}}>
+                    {isSelected&&<div style={{
+                      position:"absolute",top:-6,left:-6,width:15,height:15,borderRadius:"50%",
+                      background:stepColors[idx]||C.gold,color:"#000",fontSize:".52rem",
+                      fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",
+                      fontFamily:"'Cinzel',serif",boxShadow:`0 0 4px ${stepColors[idx]||C.gold}`
+                    }}>{idx+1}</div>}
+                    <span style={{fontSize:".9rem"}}>{p.icon}</span>
+                    <div style={{textAlign:"left"}}>
+                      <div style={{fontFamily:"'Cinzel',serif",fontSize:".63rem",color:isSelected?C.bright:C.dim,fontWeight:700}}>{p.label}</div>
+                      {isSelected
+                        ?<div style={{fontSize:".5rem",color:stepColors[idx]||C.gold,fontWeight:700,marginTop:1}}>{stepLabels[idx]}</div>
+                        :<div style={{fontSize:".5rem",color:"#444",marginTop:1}}>+ add</div>}
+                    </div>
+                    {!hasKey&&<span style={{fontSize:".5rem",color:C.fire,marginLeft:2}}>!</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedProviders.length>1&&<div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>
+              {selectedProviders.map((key,i)=>{
+                const p=PROVIDERS[key];const stepColors=[a,C.cyan,C.purple];
+                const stepDesc=["Core Build (phases 1–3, metadata)","Continuation (phases 4–7, NG+)","Variants (similar builds, ref table)"];
+                return(<div key={key} style={{display:"flex",alignItems:"center",gap:4,fontSize:".58rem",color:C.dim}}>
+                  <span style={{color:stepColors[i],fontWeight:700}}>{p.icon} {p.label}</span>
+                  <span>→ {stepDesc[i]}</span>
+                </div>);
+              })}
+            </div>}
+          </div>
           <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Target Game</div>
           <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {Object.entries(allGames).map(([k,g])=>{const isA=addTargetGame===k&&!addCustomGameName.trim();return(<button key={k} onClick={()=>{setAddTargetGame(k);setAddCustomGameName("");}} disabled={adding} style={{flex:"1 1 140px",background:isA?C.cardHi:"transparent",border:`1px solid ${isA?a+"66":"#ffffff14"}`,borderRadius:5,padding:"8px",cursor:adding?"not-allowed":"pointer",textAlign:"center",opacity:adding?0.5:1}}><span style={{fontSize:"1.1rem",marginRight:5}}>{g.icon}</span><span style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:isA?C.bright:C.dim,fontWeight:700}}>{g.name}</span></button>);})}
@@ -1271,7 +1343,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
 
         {/* Action buttons */}
         <div style={{padding:"9px 10px",borderTop:"1px solid #1c1810",flexShrink:0}}>
-          <button onClick={()=>{setAddTargetGame(safeGame);setShowAdd(true);setAddError("");}} style={{width:"100%",background:`${a}12`,border:`1px dashed ${a}55`,borderRadius:6,padding:"8px",cursor:"pointer",color:a,fontFamily:"'Cinzel',serif",fontSize:".65rem",fontWeight:700,textAlign:"center",marginBottom:6,letterSpacing:".06em"}}>✦ Add Build</button>
+          <button onClick={()=>{setAddTargetGame(safeGame);setShowAdd(true);setAddError("");setSelectedProviders([provider]);}} style={{width:"100%",background:`${a}12`,border:`1px dashed ${a}55`,borderRadius:6,padding:"8px",cursor:"pointer",color:a,fontFamily:"'Cinzel',serif",fontSize:".65rem",fontWeight:700,textAlign:"center",marginBottom:6,letterSpacing:".06em"}}>✦ Add Build</button>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:4}}>
             <button onClick={handleUpdateGame} disabled={updating} title="Check for latest patch updates" style={{background:"transparent",border:"1px solid #ffffff0e",borderRadius:5,padding:"5px 3px",cursor:updating?"not-allowed":"pointer",color:C.dim,fontSize:".58rem",fontWeight:700,textAlign:"center",opacity:updating?0.6:1}}>{updating?"⟳":"↻"} Up</button>
             <button onClick={handleExport} title="Export/backup your codex" style={{background:"transparent",border:"1px solid #ffffff0e",borderRadius:5,padding:"5px 3px",cursor:"pointer",color:C.dim,fontSize:".58rem",fontWeight:700,textAlign:"center"}}>💾 Save</button>
