@@ -560,7 +560,7 @@ export default function App(){
   const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",gemini:""});
   const [genInfo,setGenInfo]=useState(null); // {prov,label,step,total} — shown in floating indicator
   const [confirmClearCache,setConfirmClearCache]=useState(false); // inline confirm to avoid window.confirm() Electron focus bug
-  const [wikiUrl,setWikiUrl]=useState(""); // wiki import URL input
+  const [wikiUrls,setWikiUrls]=useState(""); // wiki import URLs (one per line)
   const [wikiImporting,setWikiImporting]=useState(false); // wiki fetch in progress
 
   // Toggle a provider in the modal multi-select (max 3, order = step assignment)
@@ -1154,20 +1154,23 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
   };
 
   // ── Wiki import ────────────────────────────────────────────────────────────
-  // Fetches a wiki URL through the main process, strips HTML tags, then asks an AI
-  // to extract structured item facts (name, location, stats, effect) into the cache.
+  // Fetches one or more wiki URLs (one per line), strips HTML, asks an AI to
+  // extract item facts per page, then bulk-stores everything into the cache.
   const handleWikiImport=async()=>{
-    const url=wikiUrl.trim();
-    if(!url)return;
+    const urls=wikiUrls.split("\n").map(u=>u.trim()).filter(u=>u.startsWith("http"));
+    if(urls.length===0)return;
     const coreKey=selectedProviders[0]||provider;
     if(!(apiKeys[coreKey]||"").trim()){setUpdateMsg("✗ Add an API key in Settings first.");setTimeout(()=>setUpdateMsg(""),4000);return;}
     setWikiImporting(true);
-    setUpdateMsg("📥 Fetching wiki page...");
-    try{
-      const cacheKey=safeGame;
-      const gameName=G.name;
+    const cacheKey=safeGame;
+    const gameName=G.name;
+    const allLines=[];
+    let errors=0;
+    for(let i=0;i<urls.length;i++){
+      const url=urls[i];
+      setUpdateMsg(`📥 Page ${i+1}/${urls.length} — fetching...`);
+      try{
       let rawHtml="";
-      // Try Electron IPC first (production), fall back to fetch (dev)
       if(window.electronAPI?.fetchUrl){
         const r=await window.electronAPI.fetchUrl(url);
         if(r.error)throw new Error(r.error);
@@ -1204,32 +1207,35 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         .replace(/\s{2,}/g," ")
         .trim()
         .slice(0,40000); // 40k chars — enough to cover large item tables
-      if(plainText.length<50)throw new Error("Page content could not be extracted. The page may require JavaScript to render (try a different wiki URL).");
-      setUpdateMsg("📥 Extracting item data...");
+      if(plainText.length<50){errors++;setUpdateMsg(`⚠ Page ${i+1}/${urls.length} — could not extract content, skipping`);await new Promise(r=>setTimeout(r,1200));continue;}
+      setUpdateMsg(`📥 Page ${i+1}/${urls.length} — extracting items...`);
       const prompt=`You are extracting item data from a ${gameName} wiki page to build a reference database. Extract EVERY weapon, armor, ring/accessory, or spell mentioned.\n\nFor each item output one line in this exact format:\nITEM_TYPE Name — effect/description — loc: location (write "loc: unknown" if not on page) — stat: requirement or value\n\nRules:\n- ITEM_TYPE must be: WEAPON, ARMOR, RING/ACC, or SPELL\n- Extract ALL items even if location is not listed — write "loc: unknown" in that case\n- For location: use the most specific text from the page (zone name, boss drop, merchant name, etc.)\n- Include stat requirements, damage values, weight, or any numeric data after "stat:"\n- Skip consumables, key items, lore items\n- Output ONLY the item lines, nothing else\n\nWiki page content:\n${plainText}`;
       const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:4000});
-      // Accept any line that starts with a known type prefix
       const lines=(rawFacts||"").split("\n").map(l=>l.trim()).filter(l=>l.length>8&&/^(WEAPON|ARMOR|RING\/ACC|SPELL)\s/i.test(l));
-      // Also accept lines using "—" separator even if prefix is slightly off (AI sometimes writes "Weapon" instead of "WEAPON")
       const flexLines=(rawFacts||"").split("\n").map(l=>l.trim()).filter(l=>l.length>12&&l.includes("—")&&!lines.includes(l)&&/^(weapon|armor|ring|acc|spell)/i.test(l)).map(l=>{
         const m=l.match(/^(weapon|armor|ring\/?acc?|spell)/i);
         if(!m)return null;
         const type=m[1].toLowerCase().startsWith("ring")||m[1].toLowerCase().startsWith("acc")?"RING/ACC":m[1].toUpperCase();
         return type+" "+l.replace(/^(weapon|armor|ring\/?acc?|spell)\s*/i,"");
       }).filter(Boolean);
-      const allLines=[...lines,...flexLines];
-      if(allLines.length===0){
-        const preview=(rawFacts||"").slice(0,200);
-        throw new Error(`AI returned no item lines. Response preview: "${preview}"`);
+      allLines.push(...lines,...flexLines);
+      }catch(e){
+        errors++;
+        setUpdateMsg(`⚠ Page ${i+1}/${urls.length} — ${(e.message||"error").slice(0,80)}, skipping`);
+        await new Promise(r=>setTimeout(r,1500));
       }
+    }
+    // Done — cache everything collected
+    if(allLines.length>0){
       updateKnowledgeCache(cacheKey,gameName,allLines,null);
-      setWikiUrl("");
-      setUpdateMsg(`✓ Cached ${allLines.length} item${allLines.length!==1?"s":""} from wiki`);setTimeout(()=>setUpdateMsg(""),6000);
-    }catch(e){
-      let msg=e.message||"Unknown error";
-      if(msg.length>160)msg=msg.slice(0,160)+"...";
-      setUpdateMsg("✗ Wiki import: "+msg);setTimeout(()=>setUpdateMsg(""),7000);
-    }finally{setWikiImporting(false);}
+      setWikiUrls("");
+      const skipped=errors>0?` (${errors} page${errors!==1?"s":""} skipped)`:"";
+      setUpdateMsg(`✓ Cached ${allLines.length} item${allLines.length!==1?"s":""} from ${urls.length-errors} page${urls.length-errors!==1?"s":""}${skipped}`);
+      setTimeout(()=>setUpdateMsg(""),8000);
+    }else{
+      setUpdateMsg(`✗ No items extracted from any page`);setTimeout(()=>setUpdateMsg(""),7000);
+    }
+    setWikiImporting(false);
   };
 
   const tabs=[
@@ -1504,26 +1510,27 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
             </div>
           }
 
-          {/* Wiki import — paste any wiki URL to cache verified item locations */}
+          {/* Wiki import — paste one URL per line to cache verified item locations */}
           <div style={{marginTop:8,padding:"8px 0 0"}}>
-            <div style={{fontSize:".58rem",color:C.dim,letterSpacing:".07em",fontFamily:"'Cinzel',serif",fontWeight:700,marginBottom:5,textTransform:"uppercase"}}>📖 Wiki Import</div>
-            <div style={{display:"flex",gap:4}}>
-              <input
-                value={wikiUrl}
-                onChange={e=>setWikiUrl(e.target.value)}
-                onKeyDown={e=>{if(e.key==="Enter"&&!wikiImporting)handleWikiImport();}}
-                disabled={wikiImporting}
-                placeholder="Paste wiki URL…"
-                style={{flex:1,background:"#ffffff08",border:"1px solid #ffffff14",borderRadius:4,padding:"5px 7px",color:C.bright,fontSize:".62rem",outline:"none",minWidth:0}}
-              />
-              <button
-                onClick={handleWikiImport}
-                disabled={wikiImporting||!wikiUrl.trim()}
-                title="Fetch wiki page and cache item locations for this game"
-                style={{background:wikiImporting||!wikiUrl.trim()?"transparent":a+"33",border:`1px solid ${wikiImporting||!wikiUrl.trim()?"#ffffff14":a+"66"}`,borderRadius:4,padding:"5px 8px",cursor:wikiImporting||!wikiUrl.trim()?"not-allowed":"pointer",color:wikiImporting||!wikiUrl.trim()?C.dim:a,fontSize:".65rem",fontWeight:700,flexShrink:0}}
-              >{wikiImporting?"…":"↓"}</button>
+            <div style={{fontSize:".58rem",color:C.dim,letterSpacing:".07em",fontFamily:"'Cinzel',serif",fontWeight:700,marginBottom:5,textTransform:"uppercase",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span>📖 Wiki Import</span>
+              {wikiUrls.split("\n").filter(u=>u.trim().startsWith("http")).length>1&&<span style={{color:a,fontFamily:"'DM Sans',sans-serif",fontSize:".58rem",fontWeight:400,letterSpacing:0}}>{wikiUrls.split("\n").filter(u=>u.trim().startsWith("http")).length} urls</span>}
             </div>
-            <div style={{fontSize:".54rem",color:"#ffffff28",marginTop:3,lineHeight:1.4}}>Fextralife, wiki.fextralife.com, or any game wiki</div>
+            <textarea
+              value={wikiUrls}
+              onChange={e=>setWikiUrls(e.target.value)}
+              disabled={wikiImporting}
+              placeholder={"Paste wiki URLs, one per line:\nhttps://fextralife.com/...\nhttps://fextralife.com/..."}
+              rows={3}
+              style={{width:"100%",background:"#ffffff08",border:"1px solid #ffffff14",borderRadius:4,padding:"5px 7px",color:C.bright,fontSize:".62rem",outline:"none",resize:"vertical",lineHeight:1.5,boxSizing:"border-box",fontFamily:"'DM Sans',system-ui,sans-serif"}}
+            />
+            <button
+              onClick={handleWikiImport}
+              disabled={wikiImporting||!wikiUrls.split("\n").some(u=>u.trim().startsWith("http"))}
+              title="Fetch all wiki pages and cache item data for this game"
+              style={{width:"100%",marginTop:4,background:wikiImporting?"transparent":a+"22",border:`1px solid ${wikiImporting?"#ffffff14":a+"55"}`,borderRadius:4,padding:"5px",cursor:wikiImporting?"not-allowed":"pointer",color:wikiImporting?C.dim:a,fontSize:".62rem",fontWeight:700}}
+            >{wikiImporting?"importing…":"↓ Import All"}</button>
+            <div style={{fontSize:".54rem",color:"#ffffff28",marginTop:3,lineHeight:1.4}}>Fextralife or any game wiki — one URL per line</div>
           </div>
         </div>
 
