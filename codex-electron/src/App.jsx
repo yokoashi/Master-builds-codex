@@ -776,7 +776,7 @@ export default function App(){
       // OpenAI-compatible: Perplexity, OpenAI, Gemini, Groq
       const systemMsg=opts.rawText
         ?"You are a game research assistant. Search for and provide accurate, concise, up-to-date information. Be specific with item names, locations, and stats."
-        :"You are an expert soulslike theorycrafter. Output ONLY raw JSON — no markdown, no explanation, no preamble. Start with { and end with }.";
+        :"You are an expert soulslike build theorycrafter and game database. Your ENTIRE response must be a single valid JSON object — output ONLY the JSON with no markdown code fences, no text before or after, no citation markers, no footnotes. Start immediately with { and end with }. Every item field (d, loc, tip, ef) MUST contain specific non-placeholder text. Vague values like 'Exploration', 'Acquired', 'Mid-game', 'Various locations', or 'N/A' are NEVER acceptable for loc or d fields.";
       const urlMap={perplexity:"https://api.perplexity.ai/chat/completions",openai:"https://api.openai.com/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions"};
       body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1000:(opts.maxTokens||6000),messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
       let data;
@@ -910,15 +910,19 @@ Each loadout: {"id":"unique_id","label":"Variant Name","weaponWt":"~N","endReq":
 
 Each phase: {"name":"Phase Name","range":"Lv X-Y","stats":{${statObjStr}},"sn":"1-2 sentence stat priority note","weapons":[{"n":"Weapon","ap":"~N","st":"status","eq":true,"d":"desc","loc":"specific location","up":"upgrade material","tip":"tip"}],"armor":[{"n":"Armor","wt":"~N","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"acc":[{"n":"Ring","ef":"effect","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"spells":[],"dmg":{"ps":"~N","sp":"status procs","bs":"boss speed","n":"notes"}}
 
-ITEM FIELD REQUIREMENTS — every single item (weapon, armor, ring, spell) must have ALL fields filled with real, specific data:
+ITEM FIELD REQUIREMENTS — every single item (weapon, armor, ring, spell) must have ALL fields filled with real, specific, non-placeholder data:
 - "eq": true for recommended/core items. Only use false for explicitly labeled alternatives.
-- "d": 1-2 sentences explaining WHY this item is good for THIS build specifically.
-- "loc": SPECIFIC location — zone name + landmark/NPC/boss name. NEVER write "Exploration", "Acquired", "Mid-game exploration", or "N/A" for loc. Every item has a real location.
-- "up": exact upgrade material name for weapons (e.g. "Regular Deralium Nuggets"). "N/A" only for rings/amulets/armor with no upgrades.
-- "tip": actionable gameplay tip for using the item (not just a description).
-EXAMPLE complete ring entry: {"n":"Bloodbane Ring","ef":"Bleed when you inflict Poison","eq":true,"d":"The build's engine — makes Poison proc Bleed simultaneously, doubling status application without extra hits.","loc":"Forsaken Fen — ruined building on the eastern swamp shore, before the Vestige of Blind Agatha.","up":"N/A","tip":"Never unequip under any circumstances. Socket a backup onto a shield if you need ring flexibility."}
+- "d": 1-2 sentences explaining WHY this item is good for THIS specific build (not a generic description).
+- "loc": EXACT location — zone name + specific landmark, NPC name, chest location, or boss drop. NEVER write "Exploration", "Acquired", "Mid-game exploration", "Various locations", "Dropped by enemies", or "N/A". If the item is already held from a prior phase, write "Obtained in Phase X — [original zone]." If you are unsure of the exact location, use your search capability to find it.
+- "up": exact upgrade material name for weapons (e.g. "Regular Deralium Nuggets — purchase from Gerlinde at Sunless Skein"). "N/A" only for rings/amulets/armor.
+- "tip": actionable gameplay tip that tells the player HOW to use this item effectively (not just a description of what it does).
 
-Generate exactly 3 phases: Phase 1 (Early Game, Lv 1-20, starter gear), Phase 2 (Core Weapon, Lv 15-25, acquires signature weapon), Phase 3 (Key Accessories, Lv 20-30, build-defining rings)
+STARTING GEAR RULE: Phase 1 MAY reference the starting weapon/armor if it is genuinely the best option early. Phases 2+ must feature items ACQUIRED in the world. NEVER list generic starting items that are irrelevant to the build's core synergy. If the starting gear is a placeholder ("use whatever you find"), exclude it — list what the player should be working TOWARD instead.
+
+COMPLETE REFERENCE EXAMPLE (every phase must match this depth and specificity):
+{"name":"Key Accessories","range":"Lv 20-30","stats":{"VIT":22,"END":22,"STR":26,"AGI":10,"RAD":12,"INF":12},"sn":"Push STR toward 30. RAD/INF to 12 for future spells.","weapons":[{"n":"Bloody Glory (+3 to +5)","ap":"~550-700","st":"300 Bleed","eq":true,"d":"Significant damage jump at +5 — Bleed accumulation per hit scales with upgrade level, reducing procs from 4-5 swings down to 2-3.","loc":"Obtained in Phase 2 — Pilgrim's Perch, Path of Devotion, corpse near Vestige.","up":"Regular Deralium Nuggets — purchase from Gerlinde after she relocates to Sunless Skein.","tip":"Two-hand for 10% extra damage. Dual-wield comes in Phase 5 once STR reaches 38."}],"armor":[{"n":"Fitzroy's Set","wt":"71.7","eq":true,"d":"Highest poise-to-weight ratio in early game — lets you trade hits with large enemies without staggering.","loc":"Obtained in Phase 2 — Fitzroy's Gorge, climb the tower past the Ruiner, chest at the top.","up":"N/A","tip":"At END 22 you can medium-roll in this set. Keep equip load below 70%."}],"acc":[{"n":"Bloodbane Ring","ef":"Bleed when you inflict Poison","eq":true,"d":"The build's engine — Poison proc triggers Bleed simultaneously, meaning Poison Weapon doubles your status output without extra hits.","loc":"Forsaken Fen — ruined building on the eastern swamp shore, before the Vestige of Blind Agatha.","up":"N/A","tip":"Never unequip. This ring makes Poison Weapon relevant for a Bleed build — without it, you would not need Poison at all."},{"n":"Pendant of Burden","ef":"+Damage per active status effect","eq":true,"d":"Amplifies ALL damage by a % per active status — with Bleed and Poison both active this gives massive burst amplification.","loc":"Forsaken Fen — Umbral realm side, past the bridge near the Vestige of Blind Agatha.","up":"N/A","tip":"Pre-cast both Poison Weapon and Lacerating Weapon before any boss fight so both statuses are always active."}],"spells":[],"dmg":{"ps":"~550-700 + Pendant bonus","sp":"Bleed + Poison bursting","bs":"Fast","n":"Bloodbane + Pendant = massive effective damage spike. Bosses start dying in 30-45 seconds."}}
+
+Generate exactly 3 phases: Phase 1 (Early Game, Lv 1-20, only include starting gear if truly relevant), Phase 2 (Core Weapon, Lv 15-25, acquires the build's signature weapon from a specific world location), Phase 3 (Key Accessories, Lv 20-30, build-defining rings/amulets with exact locations)
 
 RULES:
 - Target game: ${gameName}
@@ -928,7 +932,7 @@ RULES:
 - Use web search aggressively to verify item names and locations${urlRef}${knowledgeBlock}${researchContext}
 
 ${userConstraints}`;
-      const step1=await apiCall(p1,useSearchStep1,{prov:provCore,maxTokens:6000});
+      const step1=await apiCall(p1,useSearchStep1,{prov:provCore,maxTokens:8000});
       if(!step1.label||!step1.ph||!Array.isArray(step1.ph))throw new Error("Invalid build metadata");
       let resolvedStatKeysStr=statKeysStr,resolvedStatObjStr=statObjStr,customGameMeta=null;
       if(useCustomGame){
@@ -939,24 +943,36 @@ ${userConstraints}`;
 
       setAddStep(`${PROVIDERS[contProv].icon} ${PROVIDERS[contProv].label} — phases 4–7 + NG+ for "${step1.label}"...`);
       setGenInfo({prov:contProv,label:`phases 4–7 + NG+`,step:2,total:3});
-      const p2=`You previously generated the early phases of a "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the LATE progression phases 4-7.
+      const phase1to3Summary=(step1.ph||[]).map((ph,i)=>`Phase ${i+1} "${ph.name}" (${ph.range}): weapons=${(ph.weapons||[]).map(w=>w.n).join(", ")||"none"}; armor=${(ph.armor||[]).map(a=>a.n).join(", ")||"none"}; acc=${(ph.acc||[]).map(a=>a.n).join(", ")||"none"}; spells=${(ph.spells||[]).map(s=>s.n).join(", ")||"none"}`).join("\n");
+      const p2=`You are continuing a "${step1.label}" (${step1.sub}) build guide for ${gameName}. Phases 1-3 have already been written. Generate the LATE progression phases 4-7.
 
-CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. No preamble, no commentary. Start with { and end with }.
+ITEMS ALREADY OBTAINED IN PHASES 1-3 (do NOT re-introduce these as new acquisitions; reference them as "already obtained"):
+${phase1to3Summary}
+
+CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single valid JSON object. No preamble, no commentary, no markdown fences, no citations. Start immediately with { and end with }.
 
 SCHEMA: {"ph":[<phase4>,<phase5>,<phase6>,<phase7_ngplus>]}
 
-Phases 4-6: {"name":"Phase Name","range":"Lv X-Y","stats":{${resolvedStatObjStr}},"sn":"stat note","weapons":[{"n":"...","ap":"~N","st":"...","eq":true,"d":"...","loc":"...","up":"...","tip":"..."}],"armor":[{"n":"...","wt":"~N","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"acc":[{"n":"...","ef":"...","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"spells":[{"n":"Spell","ef":"effect","eq":true,"d":"desc","loc":"where learned","up":"scaling","tip":"tip"}],"dmg":{"ps":"~N","sp":"...","bs":"...","n":"..."}}
+Phases 4-6 schema: {"name":"Phase Name","range":"Lv X-Y","stats":{${resolvedStatObjStr}},"sn":"stat note","weapons":[{"n":"...","ap":"~N","st":"...","eq":true,"d":"...","loc":"...","up":"...","tip":"..."}],"armor":[{"n":"...","wt":"~N","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"acc":[{"n":"...","ef":"...","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"spells":[{"n":"Spell","ef":"effect","eq":true,"d":"desc","loc":"where/how learned","up":"scaling stat","tip":"tip"}],"dmg":{"ps":"~N","sp":"...","bs":"...","n":"..."}}
 
-ITEM FIELD REQUIREMENTS: ALL item fields must be fully filled. "eq" true = recommended, false = alternative only. "d" = why this item matters for the build. "loc" = specific zone + NPC/boss/landmark (NEVER "Acquired", "Exploration", or "N/A"). "up" = exact material name for weapons, "N/A" for rings. "tip" = actionable gameplay advice. "ef" for accessories must describe the mechanic precisely.
+ITEM FIELD REQUIREMENTS — every field must contain specific, non-placeholder data:
+- "d": WHY this item matters for THIS build (not a generic description).
+- "loc": EXACT location — zone, NPC/merchant name, boss drop, chest location. If item was obtained in Phases 1-3, write "Obtained in Phase X — [zone]". NEVER write "Acquired", "Exploration", "Mid-game", "Various", or standalone "N/A" for loc.
+- "up": exact upgrade material + where to buy/find it for weapons. "N/A" only for non-upgradeable items.
+- "tip": actionable HOW-TO advice for using the item in combat.
+- "ef" (accessories): precise mechanic description (e.g. "Bleed when you inflict Poison", NOT "improves status").
+
+COMPLETE REFERENCE EXAMPLE (match this depth for EVERY item in EVERY phase):
+{"name":"Unlock Spells","range":"Lv 25-40","stats":{"VIT":25,"END":24,"STR":32,"AGI":10,"RAD":18,"INF":12},"sn":"RAD to 15+ for Lacerating Weapon. Push STR past 30.","weapons":[{"n":"Bloody Glory (+5 to +7)","ap":"~700-850","st":"360 Bleed w/ Lacerating Weapon","eq":true,"d":"Lacerating Weapon adds +60 Bleed on top of the base 300, pushing proc threshold down to 1-2 swings on bosses.","loc":"Obtained in Phase 2 — Pilgrim's Perch, Path of Devotion.","up":"Large Deralium Shards — farm Holy Bulwark enemies at Vestige of Brother Jeremiah, or purchase from Gerlinde.","tip":"Cast Lacerating Weapon before every boss pull without exception — the Bleed boost is that significant."}],"armor":[{"n":"Fitzroy's Set or Sovereign Protector","wt":"71.7 / Heavy","eq":true,"d":"Sovereign Protector gives the best poise if you are two-handing, letting you trade comfortably with mid-tier bosses.","loc":"Fitzroy's Set: Obtained Phase 2. Sovereign Protector: Sunless Skein — chest in the mines area past the first Mendacious Visage.","up":"N/A","tip":"Switch to Sovereign if two-handing. Keep Fitzroy's for the dual-wield setup in Phase 5."}],"acc":[{"n":"Bloodbane Ring","ef":"Bleed when you inflict Poison","eq":true,"d":"Core engine — unchanged from Phase 3. Now amplified by Lacerating Weapon's extra Bleed buildup.","loc":"Obtained in Phase 3 — Forsaken Fen, eastern swamp shore.","up":"N/A","tip":"The spell combo (Lacerating + Poison Weapon) feeds this ring every fight. Never swap it out."},{"n":"Pendant of Burden","ef":"+Damage per active status effect","eq":true,"d":"With three statuses active (Bleed, Poison, and Lacerating's buff), the damage amplification becomes substantial.","loc":"Obtained in Phase 3 — Forsaken Fen Umbral side.","up":"N/A","tip":"Pre-buff both spells before entering any boss arena — the Pendant bonus is only active when statuses are running."},{"n":"Melchior's Ring","ef":"Boosts physical damage output","eq":true,"d":"Bleed makes enemies vulnerable to physical damage — Melchior's Ring doubles down on this by boosting physical output directly.","loc":"Calrath Sewers — lootable from a corpse in the flooded lower section, near the Vestige of Hooded Antuli.","up":"N/A","tip":"Swap for Lucent Sword Ring on bosses that resist physical damage."}],"spells":[{"n":"Lacerating Weapon","ef":"+60 Bleed accumulation + minor damage","eq":true,"d":"Elevates Bleed buildup from 300 to 360 per hit — at this stage procs occur every 1-2 combos on bosses.","loc":"Radiance spell — purchase from Molhu at the Vestige of Blind Agatha for ~4,500 vigor. Requires 15 RAD.","up":"Scales with RAD stat.","tip":"Cast FIRST before Poison Weapon. The combined pre-buff takes 4 seconds and transforms your damage output."},{"n":"Poison Weapon","ef":"Applies Poison on hit, triggering Bloodbane Ring Bleed","eq":true,"d":"Each swing now applies Poison + 360 Bleed — the Bloodbane Ring makes Poison proc a free Bleed proc simultaneously.","loc":"Umbral spell — purchase from Molhu at the Vestige of Blind Agatha for ~3,200 vigor. Requires 12 INF/RAD.","up":"Scales with spell power.","tip":"Always cast second, after Lacerating Weapon. Use Poison Salts as an alternative if out of spell slots."}],"dmg":{"ps":"~700-850 + Pendant amp","sp":"Bleed in 1-2 swings","bs":"Very fast","n":"This phase is where the build becomes truly overpowered. Pre-buffed, most standard enemies die in 3-4 hits."}}
 
 Phase 7 (NG+) SPECIAL structure: {"name":"NG+","range":"NG+1 to NG+7","stats":{${resolvedStatObjStr}},"sn":"NG+ overview","ngCycles":[{"label":"NG+1","stats":{${resolvedStatObjStr}},"notes":"NG+1 priorities"},{"label":"NG+3","stats":{${resolvedStatObjStr}},"notes":"NG+3 priorities"},{"label":"NG+5","stats":{${resolvedStatObjStr}},"notes":"NG+5 priorities"},{"label":"NG+7","stats":{${resolvedStatObjStr}},"notes":"NG+7 max"}],"weapons":[...],"armor":[...],"acc":[...],"spells":[...],"dmg":{"ps":"~N NG+1, ~N NG+7","sp":"...","bs":"...","n":"..."}}
 
-Generate: Phase 4 (Unlock Spells, Lv 25-40), Phase 5 (Mid-to-Late, Lv 35-55), Phase 6 (Endgame, Lv 55+), Phase 7 (NG+, with ngCycles)
+Generate: Phase 4 (Unlock Spells, Lv 25-40), Phase 5 (Mid-to-Late / Dual-Wield, Lv 35-55), Phase 6 (Endgame, Lv 55+), Phase 7 (NG+, with ngCycles)
 
 RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. Each NG+ cycle adds ~5-10 levels per stat. Use exact stat keys: ${resolvedStatKeysStr}.${urlRef}${knowledgeBlock}${researchContext}
 
 Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
-      const step2=await apiCall(p2,false,{prov:contProv,maxTokens:5000});
+      const step2=await apiCall(p2,false,{prov:contProv,maxTokens:7000});
 
       const vp=PROVIDERS[variantsProv];
       setAddStep(`${vp.icon} ${vp.label} — variants & comparison...`);
