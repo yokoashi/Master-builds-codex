@@ -1446,36 +1446,50 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     const visited=new Set();
     let autoCount=0;
     // Helper: convert raw HTML to readable plain text while preserving stat data.
-    // Extracts img alt text, title/data-* attributes, and table structure before
-    // stripping tags — otherwise armor defense grids and stat icons are lost.
+    // Extracts img alt text, title/data-* attributes, table structure, and section
+    // headings before stripping — otherwise armor defense grids are unreadable.
     const htmlToText=(rawHtml)=>{
       let w=rawHtml
         .replace(/<script[\s\S]*?<\/script>/gi,"")
         .replace(/<style[\s\S]*?<\/style>/gi,"");
       // ── 1. Lift stat data from attributes BEFORE stripping ─────────────────
-      // img alt text — stat icons on Fextralife use alt="Physical" with a nearby number,
-      // or alt="94" directly. Wrap in brackets so the AI sees them inline.
-      w=w.replace(/<img[^>]+alt=["']([^"']{2,100})["'][^>]*\/?>/gi,(_,alt)=>` [${alt.trim()}] `);
+      // img alt text — Fextralife stat icons use alt="Physical", alt="Smite", etc.
+      w=w.replace(/<img[^>]+alt=["']([^"']{2,100})["'][^>]*\/?>/gi,(_,alt)=>{
+        const t=alt.trim();
+        // Skip generic decorative alts (arrows, logos, etc.)
+        if(/^(arrow|icon|logo|banner|bg|background|decoration|edit|pencil|search|menu|close|next|prev|left|right|up|down)$/i.test(t))return" ";
+        return` [${t}] `;
+      });
       w=w.replace(/<img[^>]+title=["']([^"']{2,100})["'][^>]*\/?>/gi,(_,t)=>` [${t.trim()}] `);
       w=w.replace(/<img[^>]*\/?>/gi," ");
-      // title= on any element (tooltip text often holds the full stat name)
+      // title= on any element (tooltip text often holds the full stat name/value)
       w=w.replace(/\stitle=["']([^"']{3,100})["']/gi,(_,t)=>` [${t.trim()}]`);
-      // data-value / data-stat / data-amount etc. — some wikis store the raw number here
+      // data-value / data-stat / data-amount etc.
       w=w.replace(/\sdata-(?:value|stat|amount|bonus|defense|weight|damage|scaling)=["']([^"']{1,60})["']/gi,(_,v)=>` ${v}`);
-      // ── 2. Preserve table structure with readable separators ───────────────
-      // Armor stat tables look like: | Physical | Holy | Fire | … with numbers below.
-      // Without this the numbers collapse into an unreadable run of spaces.
+      // ── 2. Headings → ## markers ───────────────────────────────────────────
+      // CRITICAL: piece cards (Abbess Mitre, Abbess Garb, …) are introduced by
+      // headings. Preserving them lets the AI know which stat table belongs to
+      // which piece — without this, 4 pieces' numbers all look identical.
+      w=w.replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi,(_,inner)=>{
+        const text=inner.replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
+        return text?`\n\n## ${text} ##\n\n`:" ";
+      });
+      // ── 3. Preserve table structure with readable separators ───────────────
       w=w.replace(/<\/?t(?:head|body|foot)[^>]*>/gi,"");
       w=w.replace(/<tr[^>]*>/gi,"\n│ ");
       w=w.replace(/<\/tr>/gi," │");
       w=w.replace(/<t[hd][^>]*>/gi,"");
       w=w.replace(/<\/t[hd]>/gi," · ");
       w=w.replace(/<br\s*\/?>/gi,"\n");
-      // ── 3. Nav / chrome removal (after attribute extraction) ───────────────
+      // ── 4. Section-breaking divs ───────────────────────────────────────────
+      // Fextralife renders piece cards as <div class="…"> blocks.
+      // Add a blank line before each new div so pieces don't bleed together.
+      w=w.replace(/<div[^>]+class=["'][^"']*(?:wiki_table|item[_-]?card|armor[_-]?card|piece[_-]?card|stat[_-]?block|infobox)[^"']*["'][^>]*>/gi,"\n\n");
+      // ── 5. Nav / chrome removal ────────────────────────────────────────────
       w=w.replace(/<nav[\s\S]*?<\/nav>/gi," ");
       w=w.replace(/<header[\s\S]*?<\/header>/gi," ");
       w=w.replace(/<footer[\s\S]*?<\/footer>/gi," ");
-      // ── 4. Isolate main wiki content ───────────────────────────────────────
+      // ── 6. Isolate main wiki content ───────────────────────────────────────
       const patterns=[
         /id=["']wiki-?content["'][^>]*>([\s\S]{500,})/i,
         /class=["'][^"']*wiki[-_]?content[^"']*["'][^>]*>([\s\S]{500,})/i,
@@ -1484,7 +1498,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         /id=["']mw-content-text["'][^>]*>([\s\S]{500,})/i,
       ];
       for(const p of patterns){const m=w.match(p);if(m){w=m[1];break;}}
-      // ── 5. Strip remaining tags, decode entities, normalise whitespace ──────
+      // ── 7. Strip remaining tags, decode entities, normalise whitespace ──────
       return w
         .replace(/<[^>]+>/g," ")
         .replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")
@@ -1493,7 +1507,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         .replace(/\n[ \t]+/g,"\n")
         .replace(/\n{3,}/g,"\n\n")
         .trim()
-        .slice(0,52000); // raised cap — table data adds volume
+        .slice(0,56000);
     };
     // Helper: parse AI fact lines
     const parseFactLines=(raw)=>{
@@ -1548,35 +1562,48 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         const plainText=htmlToText(rawHtml);
         if(plainText.length<50){errors++;setUpdateMsg(`⚠ Page ${pageNum} — no content, skipping`);await new Promise(r=>setTimeout(r,900));continue;}
         setUpdateMsg(`📥 Page ${pageNum}/${urlQueue.length}${isAuto?" (auto)":""} — extracting items...`);
-        const prompt=`You are extracting item data from a ${gameName} wiki page to build a reference database.
+        const prompt=`You are extracting item data from a ${gameName} wiki page. Output one ARMOR or WEAPON or RING/ACC or SPELL line per item — every piece on the page gets its own line.
 
-The content uses these conventions:
-- Table rows are formatted as: │ col1 · col2 · col3 · │  (pipe+space = new row, · = cell separator)
-- Image alt text and tooltips appear in [brackets] inline — e.g. [Physical], [94], [Fire Defense: 62]
-- Stat tables for armor typically show a header row (stat names) followed by value rows (numbers)
+HOW TO READ THIS CONTENT:
+• Section headings appear as  ## Item Name ##  — everything after a heading belongs to that item until the next heading
+• Table rows are formatted as:  │ col1 · col2 · col3 · │
+• Image alt text appears in [brackets] — [Physical], [Smite], [Heavy Head] etc.
+• Stat icons and their values appear next to each other — "[Physical] 91" means Physical Defense = 91
 
-Read table rows carefully: the header row labels the columns, the data rows contain the numbers.
-For armor, a table like:
-│ Physical · Holy · Fire · Magic · │
-│ 94 · 62 · 78 · 45 · │
-means Physical Defense=94, Holy=62, Fire=78, Magic=45.
+ARMOR STAT TABLES — READ THIS CAREFULLY:
+Armor pages (especially Fextralife) show stats in a 4-column pattern:
+│ [stat name] · [value] · [stat name] · [value] · │
+Example:
+│ Physical · 91 · Smite · 57 · │
+│ Holy · 74 · Bleed · 55 · │
+│ Fire · 32 · Burn · 22 · │
+│ Wither · 52 · Ignite · 21 · │
+│ · · Frostbite · 37 · │
+│ · · Poison · 39 · │
+This means: Physical=91, Smite=57, Holy=74, Bleed=55, Fire=32, Burn=22, Wither=52, Ignite=21, Frostbite=37, Poison=39
 
-Extract EVERY weapon, armor piece, ring/accessory, or spell mentioned.
-For each item output one line:
-ITEM_TYPE Name — description; [defense: Phys N / Holy N / Fire N / Wgt N if armor]; [AP: ~N base, scaling: X at max, status: N type if weapon] — loc: location (write "loc: unknown" if not listed) — stat: stat requirements, weight, upgrade material
+For every armor piece (helm, chest, gauntlets, leggings) output ONE line:
+ARMOR [Piece Name] — [slot type, e.g. Heavy Head]; weight: N; Physical: N, Holy: N, Fire: N, Wither: N (or whatever damage mitigation stats exist); Smite: N, Bleed: N, Burn: N, Ignite: N, Frostbite: N, Poison: N (or whatever resistance stats exist) — loc: [how to obtain] — stat: N/A
 
-Rules:
-- ITEM_TYPE must be: WEAPON, ARMOR, RING/ACC, or SPELL
-- For ARMOR: always include every defense value visible in any table on the page and the weight
-- For WEAPON: always include damage/AP, scaling grades, status buildup, and weight
-- For RING/ACC: always include the precise numeric effect
-- loc: use zone name, boss drop, NPC/merchant name — never "Various" or "N/A"
-- Skip consumables, key items, lore items
-- Output ONLY the item lines, nothing else
+For WEAPON output one line:
+WEAPON [Name] — [type]; AP: ~N (+0) → ~N (+max); scaling: [grades at max]; status: [N type or none]; weight: N — loc: [location] — stat: [requirements; upgrade material]
+
+For RING/ACC output one line:
+RING/ACC [Name] — [precise numeric effect] — loc: [location] — stat: N/A
+
+For SPELL output one line:
+SPELL [Name] — [school]; damage: ~N or N buildup/cast; effect: [precise]; FP: N — loc: [NPC + zone] — stat: [requirement]
+
+RULES:
+- Output a SEPARATE line for EVERY individual armor piece — not just the set total
+- Include EVERY number visible on the page — do not omit any stat
+- Section headings (## Name ##) tell you which piece the following stats belong to
+- loc: use zone name, boss, NPC — never "Various", "Exploration", or "N/A" unless truly unknown
+- Output ONLY the item lines — no headers, no commentary, no markdown
 
 Wiki page content:
 ${plainText}`;
-        const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:5000});
+        const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:6000});
         allLines.push(...parseFactLines(rawFacts));
       }catch(e){
         errors++;
