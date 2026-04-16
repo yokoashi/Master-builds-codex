@@ -99,6 +99,27 @@ ipcMain.handle('ai-request', async (_event, { provider, body, apiKey }) => {
   }
 });
 
+// ── Wiki URL fetcher ───────────────────────────────────────────────────────
+// Fetches a URL from the main process (bypasses renderer CSP + CORS).
+// Returns {html: string} or {error: string}.
+ipcMain.handle('fetch-url', async (_event, { url }) => {
+  if (!url || typeof url !== 'string') return { error: 'No URL provided' };
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) return { error: `HTTP ${response.status}: ${response.statusText}` };
+    const text = await response.text();
+    return { html: text.slice(0, 120000) }; // cap at 120k chars to stay under token limits
+  } catch (err) {
+    return { error: err.message || 'Network error' };
+  }
+});
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(createWindow);
 

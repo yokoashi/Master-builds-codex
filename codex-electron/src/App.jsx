@@ -559,6 +559,9 @@ export default function App(){
   const [selectedProviders,setSelectedProviders]=useState(["claude"]); // ordered: [core, cont, variants]
   const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
   const [genInfo,setGenInfo]=useState(null); // {prov,label,step,total} — shown in floating indicator
+  const [confirmClearCache,setConfirmClearCache]=useState(false); // inline confirm to avoid window.confirm() Electron focus bug
+  const [wikiUrl,setWikiUrl]=useState(""); // wiki import URL input
+  const [wikiImporting,setWikiImporting]=useState(false); // wiki fetch in progress
 
   // Toggle a provider in the modal multi-select (max 3, order = step assignment)
   const toggleModalProv=(key)=>{
@@ -1135,6 +1138,55 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     }finally{setUpdating(false);}
   };
 
+  // ── Wiki import ────────────────────────────────────────────────────────────
+  // Fetches a wiki URL through the main process, strips HTML tags, then asks an AI
+  // to extract structured item facts (name, location, stats, effect) into the cache.
+  const handleWikiImport=async()=>{
+    const url=wikiUrl.trim();
+    if(!url)return;
+    const coreKey=selectedProviders[0]||provider;
+    if(!(apiKeys[coreKey]||"").trim()){setUpdateMsg("✗ Add an API key in Settings first.");setTimeout(()=>setUpdateMsg(""),4000);return;}
+    setWikiImporting(true);
+    setUpdateMsg("📥 Fetching wiki page...");
+    try{
+      const cacheKey=safeGame;
+      const gameName=G.name;
+      let rawHtml="";
+      // Try Electron IPC first (production), fall back to fetch (dev)
+      if(window.electronAPI?.fetchUrl){
+        const r=await window.electronAPI.fetchUrl(url);
+        if(r.error)throw new Error(r.error);
+        rawHtml=r.html||"";
+      }else{
+        const r=await fetch(url);
+        if(!r.ok)throw new Error(`HTTP ${r.status}`);
+        rawHtml=await r.text();
+      }
+      // Strip HTML tags and collapse whitespace to reduce token cost
+      const plainText=rawHtml
+        .replace(/<script[\s\S]*?<\/script>/gi,"")
+        .replace(/<style[\s\S]*?<\/style>/gi,"")
+        .replace(/<[^>]+>/g," ")
+        .replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&nbsp;/g," ").replace(/&#\d+;/g," ")
+        .replace(/\s{2,}/g," ")
+        .trim()
+        .slice(0,18000); // keep under token budget
+      setUpdateMsg("📥 Extracting item data...");
+      const prompt=`You are extracting structured item data from a ${gameName} wiki page. The page content is below. Extract EVERY item, weapon, armor, ring, spell, or accessory that has a location, stats, or effect described.\n\nFor each item output a fact in this exact format (one per line, no JSON):\nITEM_TYPE Name — description/effect — loc: exact in-game location — stat: relevant stat requirement or value\n\nRules:\n- ITEM_TYPE must be one of: WEAPON, ARMOR, RING/ACC, SPELL\n- loc must be a SPECIFIC location (zone + landmark). Skip if location is not mentioned.\n- Include only items where you can write a specific location\n- Do not include lore items, key items, consumables\n- If an item's location is not in the page, skip it\n\nWiki page content:\n${plainText}`;
+      const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:2000});
+      // Parse the plain-text line format into cache-compatible facts
+      const lines=(rawFacts||"").split("\n").map(l=>l.trim()).filter(l=>l.length>10&&/^(WEAPON|ARMOR|RING\/ACC|SPELL)/i.test(l));
+      if(lines.length===0)throw new Error("No items extracted from this page. Try a more specific wiki page (e.g. a weapons list or item category page).");
+      updateKnowledgeCache(cacheKey,gameName,lines,null);
+      setWikiUrl("");
+      setUpdateMsg(`✓ Cached ${lines.length} item${lines.length!==1?"s":""} from wiki`);setTimeout(()=>setUpdateMsg(""),6000);
+    }catch(e){
+      let msg=e.message||"Unknown error";
+      if(msg.length>160)msg=msg.slice(0,160)+"...";
+      setUpdateMsg("✗ Wiki import: "+msg);setTimeout(()=>setUpdateMsg(""),7000);
+    }finally{setWikiImporting(false);}
+  };
+
   const tabs=[
     {id:"main",l:"Your Build",s:B.label,icon:"🎯"},
     {id:"mats",l:"Materials",s:"Upgrades & Weight",icon:"⬆"},
@@ -1406,6 +1458,28 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
               {(safeBuildKey&&B.label!=="No builds")&&<button onClick={handleDeleteBuild} style={{flex:1,background:"transparent",border:"1px solid #e74c3c28",borderRadius:5,padding:"5px 3px",cursor:"pointer",color:"#e74c3c66",fontSize:".57rem",fontWeight:700,textAlign:"center"}}>✕ Del</button>}
             </div>
           }
+
+          {/* Wiki import — paste any wiki URL to cache verified item locations */}
+          <div style={{marginTop:8,padding:"8px 0 0"}}>
+            <div style={{fontSize:".58rem",color:C.dim,letterSpacing:".07em",fontFamily:"'Cinzel',serif",fontWeight:700,marginBottom:5,textTransform:"uppercase"}}>📖 Wiki Import</div>
+            <div style={{display:"flex",gap:4}}>
+              <input
+                value={wikiUrl}
+                onChange={e=>setWikiUrl(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter"&&!wikiImporting)handleWikiImport();}}
+                disabled={wikiImporting}
+                placeholder="Paste wiki URL…"
+                style={{flex:1,background:"#ffffff08",border:"1px solid #ffffff14",borderRadius:4,padding:"5px 7px",color:C.bright,fontSize:".62rem",outline:"none",minWidth:0}}
+              />
+              <button
+                onClick={handleWikiImport}
+                disabled={wikiImporting||!wikiUrl.trim()}
+                title="Fetch wiki page and cache item locations for this game"
+                style={{background:wikiImporting||!wikiUrl.trim()?"transparent":a+"33",border:`1px solid ${wikiImporting||!wikiUrl.trim()?"#ffffff14":a+"66"}`,borderRadius:4,padding:"5px 8px",cursor:wikiImporting||!wikiUrl.trim()?"not-allowed":"pointer",color:wikiImporting||!wikiUrl.trim()?C.dim:a,fontSize:".65rem",fontWeight:700,flexShrink:0}}
+              >{wikiImporting?"…":"↓"}</button>
+            </div>
+            <div style={{fontSize:".54rem",color:"#ffffff28",marginTop:3,lineHeight:1.4}}>Fextralife, wiki.fextralife.com, or any game wiki</div>
+          </div>
         </div>
 
         {/* Settings */}
@@ -1428,7 +1502,12 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0)&&
           <div style={{padding:"4px 18px",background:"#0f0c09",borderBottom:"1px solid #1c1810",fontSize:".62rem",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:12}}>
             <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{knowledgeCache[safeGame]?.facts?.length>0&&<span>🧠 <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text}}>{G.name}</span>{knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,65)}{knowledgeCache[safeGame].patchNote.length>65?"…":""}</span>}</span>}</div>
-            {knowledgeCache[safeGame]?.facts?.length>0&&<button onClick={()=>{if(window.confirm(`Clear all ${knowledgeCache[safeGame].facts.length} cached facts for ${G.name}? This cannot be undone.`)){setKnowledgeCache(prev=>{const n={...prev};delete n[safeGame];return n;});}}} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px",flexShrink:0}} title="Clear memory bank for this game">Clear cache</button>}
+            {knowledgeCache[safeGame]?.facts?.length>0&&!confirmClearCache&&<button onClick={()=>setConfirmClearCache(true)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px",flexShrink:0}} title="Clear memory bank for this game">Clear cache</button>}
+            {confirmClearCache&&<span style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
+              <span style={{fontSize:".6rem",color:"#ff8a7a"}}>Clear {knowledgeCache[safeGame]?.facts?.length} facts?</span>
+              <button onClick={()=>{setKnowledgeCache(prev=>{const n={...prev};delete n[safeGame];return n;});setConfirmClearCache(false);}} style={{background:"#e74c3c",border:"none",borderRadius:3,color:"#fff",cursor:"pointer",fontSize:".6rem",padding:"1px 7px"}}>Yes</button>
+              <button onClick={()=>setConfirmClearCache(false)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px"}}>No</button>
+            </span>}
             {updateMsg&&<div style={{color:updateMsg.startsWith("✓")?"#7ddb8a":updateMsg.startsWith("✗")?"#ff8a7a":C.dim,fontStyle:"italic",fontWeight:600,flexShrink:0}}>{updateMsg}</div>}
           </div>
         }
