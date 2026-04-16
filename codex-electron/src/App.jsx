@@ -975,37 +975,32 @@ export default function App(){
       if(s===-1)return null;
       text=text.slice(s);
       try{return JSON.parse(text);}catch(_){}
-      // Balanced-brace walk — stops at first complete top-level close.
-      // Also records the last position where depth returned to 1 (end of an array item),
-      // so we can recover partial data if the JSON was truncated.
-      let depth=0,inStr=false,esc=false,end=-1,lastD1=-1;
+      // Balanced-brace walk with bracket stack — stops at first complete top-level close.
+      // Uses a stack to record which brackets are still open, and tracks the last position
+      // where a complete element closed at depth ≤ 2 (e.g. a phase in {"ph":[...]}).
+      // This correctly handles {"ph":[...]} where phases close at depth 2, not depth 1.
+      let stack=[],inStr=false,esc=false,end=-1,lastSafe=null;
       for(let i=0;i<text.length;i++){
         const ch=text[i];
         if(esc){esc=false;continue;}
         if(inStr){if(ch==="\\"){esc=true;}else if(ch==='"'){inStr=false;}continue;}
         if(ch==='"'){inStr=true;continue;}
-        if(ch==="{"||ch==="[")depth++;
-        else if(ch==="}"||ch==="]"){depth--;if(depth===0){end=i;break;}if(depth===1)lastD1=i;}
+        if(ch==="{"||ch==="["){stack.push(ch);continue;}
+        if(ch==="}"||ch==="]"){
+          if(stack.length===0)continue;
+          stack.pop();
+          if(stack.length===0){end=i;break;}
+          // Record recovery point whenever a complete element closes near the top level
+          if(stack.length<=2)lastSafe={pos:i,stack:[...stack]};
+        }
       }
       if(end!==-1){try{return JSON.parse(text.slice(0,end+1));}catch(_){}}
-      // JSON appears truncated (token limit hit) — recover the last fully-closed item
-      if(lastD1>0){
-        let partial=text.slice(0,lastD1+1).trimEnd();
+      // JSON appears truncated (token limit hit) — recover up to last fully-closed element
+      if(lastSafe&&lastSafe.pos>0){
+        let partial=text.slice(0,lastSafe.pos+1).trimEnd();
         if(partial.endsWith(","))partial=partial.slice(0,-1);
-        // Count remaining open depth to know what to close
-        let dP=0,iSP=false,eSP=false;
-        for(let i=0;i<partial.length;i++){
-          const ch=partial[i];
-          if(eSP){eSP=false;continue;}
-          if(iSP){if(ch==="\\"){eSP=true;}else if(ch==='"'){iSP=false;}continue;}
-          if(ch==='"'){iSP=true;continue;}
-          if(ch==="{"||ch==="[")dP++;
-          else if(ch==="}"||ch==="]")dP--;
-        }
-        // Close all open structures (outermost last)
-        const suffix=text[0]==="["?"]}":"}";
-        while(dP>1){partial+="}";dP--;}
-        if(dP===1)partial+=suffix;
+        // Close remaining open brackets from innermost to outermost
+        for(const opener of lastSafe.stack.slice().reverse())partial+=opener==="{"?"}":"]";
         try{return JSON.parse(partial);}catch(_){}
       }
       return null;
