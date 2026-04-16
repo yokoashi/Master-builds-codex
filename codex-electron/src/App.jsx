@@ -555,6 +555,7 @@ export default function App(){
   const [knowledgeCache,setKnowledgeCache]=useState({});
   const [provider,setProvider]=useState("claude");
   const [apiKeys,setApiKeys]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
+  const [genInfo,setGenInfo]=useState(null); // {prov,label,step,total} — shown in floating indicator
   const [showSettings,setShowSettings]=useState(false);
   const [settingsDraft,setSettingsDraft]=useState({claude:"",perplexity:"",openai:"",gemini:"",groq:""});
   // legacy compat
@@ -722,7 +723,7 @@ export default function App(){
   const buildKnowledgeBlock=(gameKey)=>{
     const k=knowledgeCache[gameKey];
     if(!k||!k.facts||k.facts.length===0)return "";
-    const factList=k.facts.slice(-80).join("\n");
+    const factList=k.facts.slice(-30).join("\n"); // cap at 30 most-recent facts to keep tokens low
     const ageHours=k.lastUpdated?Math.round((Date.now()-k.lastUpdated)/3600000):null;
     return `\n\nKNOWN FACTS FROM PREVIOUS BUILDS IN THIS CODEX (verified from earlier research${ageHours!=null?`, ${ageHours}h old`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}Use these as authoritative references. Only web search for things NOT in this list.\n`;
   };
@@ -743,7 +744,7 @@ export default function App(){
     let body,rawText;
 
     if(tProv==="claude"){
-      body={model:PROVIDERS.claude.model,max_tokens:8000,messages:[{role:"user",content:prompt}]};
+      body={model:PROVIDERS.claude.model,max_tokens:opts.maxTokens||6000,messages:[{role:"user",content:prompt}]};
       if(useSearch)body.tools=[{type:"web_search_20250305",name:"web_search"}];
       let data;
       if(window.electronAPI){data=await window.electronAPI.callAI("claude",body,curKey);}
@@ -758,7 +759,7 @@ export default function App(){
         ?"You are a game research assistant. Search for and provide accurate, concise, up-to-date information. Be specific with item names, locations, and stats."
         :"You are an expert soulslike theorycrafter. Output ONLY raw JSON — no markdown, no explanation, no preamble. Start with { and end with }.";
       const urlMap={perplexity:"https://api.perplexity.ai/chat/completions",openai:"https://api.openai.com/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions"};
-      body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1500:8000,messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
+      body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1000:(opts.maxTokens||6000),messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
       let data;
       if(window.electronAPI){data=await window.electronAPI.callAI(tProv,body,curKey);}
       else{const r=await fetch(urlMap[tProv]||urlMap.openai,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});data=await r.json();}
@@ -772,14 +773,20 @@ export default function App(){
 
     const tryParse=(raw)=>{
       if(!raw)return null;
-      let text=raw.replace(/```json|```/g,"").trim();
-      const s=text.indexOf("{");if(s===-1)return null;text=text.slice(s);
+      // Prefer content BETWEEN code fences — this excludes Perplexity's trailing citations
+      const fenceMatch=raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      let text=fenceMatch?fenceMatch[1].trim():raw.replace(/```json|```/g,"").trim();
+      // Find start of outermost JSON object OR array
+      const sObj=text.indexOf("{"),sArr=text.indexOf("[");
+      const s=(sObj===-1)?sArr:(sArr===-1?sObj:Math.min(sObj,sArr));
+      if(s===-1)return null;
+      text=text.slice(s);
       try{return JSON.parse(text);}catch(_){}
-      const eF=text.lastIndexOf("}");
-      if(eF!==-1){try{return JSON.parse(text.slice(0,eF+1));}catch(_){}}
-      let depth=0,inStr=false,esc=false,lastV=-1;
-      for(let i=0;i<text.length;i++){const ch=text[i];if(esc){esc=false;continue;}if(ch==="\\"){esc=true;continue;}if(ch==='"'){inStr=!inStr;continue;}if(inStr)continue;if(ch==="{"||ch==="[")depth++;else if(ch==="}"||ch==="]"){depth--;if(depth===0)lastV=i;}}
-      if(lastV!==-1){try{return JSON.parse(text.slice(0,lastV+1));}catch(_){}}
+      // Walk chars and STOP at the FIRST balanced close — avoids being misled by
+      // citation URLs containing { } after the JSON block (Perplexity appends these)
+      let depth=0,inStr=false,esc=false,end=-1;
+      for(let i=0;i<text.length;i++){const ch=text[i];if(esc){esc=false;continue;}if(ch==="\\"){esc=true;continue;}if(ch==='"'){inStr=!inStr;continue;}if(inStr)continue;if(ch==="{"||ch==="[")depth++;else if(ch==="}"||ch==="]"){depth--;if(depth===0){end=i;break;}}}
+      if(end!==-1){try{return JSON.parse(text.slice(0,end+1));}catch(_){}}
       return null;
     };
     const parsed=tryParse(rawText);
@@ -830,35 +837,38 @@ export default function App(){
       const cacheSize=knowledgeCache[cacheKey]?.facts?.length||0;
       const useSearchStep1=addUrl.trim().length>0||cacheSize<20||useCustomGame;
 
-      // ── Smart provider routing ──────────────────────────────────────────────
-      // Research step: prefer search-capable providers other than the main one
+      // ── Smart provider routing (each AI does only what it's best at) ─────────
+      // Step 0 Research: search-capable provider other than main — keeps Claude tokens free
       const researchProv=["perplexity","gemini"].find(p=>p!==provider&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable);
-      // Variants step: prefer OpenAI (best creative diversity), then others, fallback to main
-      const variantsProv=["openai","claude","gemini","groq","perplexity"].find(p=>(apiKeys[p]||"").trim())||provider;
+      // Step 2 Continuation: fast/free provider — late phases are pattern continuation, not creative
+      const contProv=["groq","gemini","openai","perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provider;
+      // Step 3 Variants: prefer creative-diverse providers; intentionally different from contProv
+      const variantsProv=["openai","gemini","claude","groq","perplexity"].find(p=>(apiKeys[p]||"").trim())||provider;
 
-      // ── Step 0: Web research (runs in parallel with UX update) ──────────────
+      // ── Step 0: Web research — short, targeted, non-fatal ───────────────────
+      // Only runs if a search-capable provider is available AND different from main
+      // Keeps the main provider's input tokens free for the heavy generation steps
       let researchContext="";
       if(researchProv){
         const rp=PROVIDERS[researchProv];
-        setAddStep(`${rp.icon} ${rp.label} searching current ${gameName} meta...`);
+        setAddStep(`${rp.icon} ${rp.label} — researching current ${gameName} meta...`);
+        setGenInfo({prov:researchProv,label:"researching current meta",step:0,total:3});
         try{
-          const buildDesc=addMode==="ai"?addText:addMode==="semi"?(semiForm.playstyle||semiForm.label||"OP build"):manualForm.label||"OP build";
-          const rPrompt=`Search for accurate, up-to-date ${gameName} information for a "${buildDesc}" build archetype. Summarize:
-1. Current meta viability and tier ranking for this archetype
-2. Best weapons for this style with exact acquisition locations and upgrade materials
-3. Recommended stat priorities and soft/hard caps
-4. Any recent patches or balance changes affecting this build type
-5. Key community tips, common mistakes, and progression advice
-
-Be concise (under 400 words). Prioritize specificity — exact item names, zone names, boss names.`;
+          const buildDesc=addMode==="ai"?addText.slice(0,120):addMode==="semi"?(semiForm.playstyle||semiForm.label||"OP build").slice(0,120):manualForm.label.slice(0,120)||"OP build";
+          // Keep research prompt short — we only need a targeted summary, not an essay
+          const rPrompt=`${gameName} "${buildDesc}" build — search and briefly answer (under 200 words total):
+Best weapons with locations? Key stats/soft caps? Recent patches? Top tips?`;
           const rawResearch=await apiCall(rPrompt,true,{prov:researchProv,rawText:true});
           if(rawResearch&&rawResearch.length>50){
-            researchContext=`\n\n=== LIVE WEB RESEARCH (${rp.label}) ===\n${rawResearch.slice(0,1800)}\n=== END RESEARCH ===\nUse the above to verify and improve item names, locations, and stat recommendations.`;
+            // Cap at 900 chars to limit token injection into Steps 1-2
+            researchContext=`\n\n[${rp.label} research: ${rawResearch.slice(0,900)}]`;
           }
-        }catch(e){/* research failure is non-fatal */}
+        }catch(e){/* non-fatal — continue without research */}
       }
 
-      setAddStep(useSearchStep1?(useCustomGame?`${PROVIDERS[provider].icon} Researching ${gameName} & generating early progression...`:`${PROVIDERS[provider].icon} Researching & generating early progression...`):`${PROVIDERS[provider].icon} Using cached knowledge (${cacheSize} facts) — generating early progression...`);
+      const step1Label=useSearchStep1?(useCustomGame?`researching ${gameName} + phases 1–3`:"researching + phases 1–3"):`phases 1–3 (${cacheSize} cached facts)`;
+      setAddStep(`${PROVIDERS[provider].icon} ${PROVIDERS[provider].label} — ${step1Label}...`);
+      setGenInfo({prov:provider,label:step1Label,step:1,total:3});
       const customGameMetaSchema=useCustomGame?`"game_meta":{"icon":"single emoji representing this game","stat_keys":["STAT1","STAT2","STAT3","STAT4","STAT5","STAT6"],"stat_max":99,"notes":"1-2 sentence note on the game's stat system"},\n`:"";
       const p1=`You are an elite ${gameName} theorycrafter with deep knowledge of weapons, stats, item locations, and optimal progression routes. Generate the FIRST HALF of an OP build (metadata + 3 early phases).
 
@@ -885,7 +895,7 @@ RULES:
 - Use web search aggressively to verify item names and locations${urlRef}${knowledgeBlock}${researchContext}
 
 ${userConstraints}`;
-      const step1=await apiCall(p1,useSearchStep1);
+      const step1=await apiCall(p1,useSearchStep1,{maxTokens:6000});
       if(!step1.label||!step1.ph||!Array.isArray(step1.ph))throw new Error("Invalid build metadata");
       let resolvedStatKeysStr=statKeysStr,resolvedStatObjStr=statObjStr,customGameMeta=null;
       if(useCustomGame){
@@ -894,7 +904,8 @@ ${userConstraints}`;
         if(keys.length>0){sampleStats=keys;resolvedStatKeysStr=keys.join(", ");resolvedStatObjStr=keys.map(s=>`"${s}":N`).join(",");statMax=customGameMeta.stat_max||99;}
       }
 
-      setAddStep(`${PROVIDERS[provider].icon} Generating late-game & NG+ for "${step1.label}"...`);
+      setAddStep(`${PROVIDERS[contProv].icon} ${PROVIDERS[contProv].label} — phases 4–7 + NG+ for "${step1.label}"...`);
+      setGenInfo({prov:contProv,label:`phases 4–7 + NG+`,step:2,total:3});
       const p2=`You previously generated the early phases of a "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the LATE progression phases 4-7.
 
 CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. No preamble, no commentary. Start with { and end with }.
@@ -910,10 +921,11 @@ Generate: Phase 4 (Unlock Spells, Lv 25-40), Phase 5 (Mid-to-Late, Lv 35-55), Ph
 RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. Each NG+ cycle adds ~5-10 levels per stat. Use exact stat keys: ${resolvedStatKeysStr}.${urlRef}${knowledgeBlock}${researchContext}
 
 Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
-      const step2=await apiCall(p2,false);
+      const step2=await apiCall(p2,false,{prov:contProv,maxTokens:5000});
 
       const vp=PROVIDERS[variantsProv];
-      setAddStep(`${vp.icon} ${vp.label} generating variants & comparison${variantsProv!==provider?" (creative diversity)":""}...`);
+      setAddStep(`${vp.icon} ${vp.label} — variants & comparison...`);
+      setGenInfo({prov:variantsProv,label:"similar builds + comparison table",step:3,total:3});
       const p3=`You previously generated a full "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the VARIANTS SECTION.
 
 CRITICAL OUTPUT FORMAT: Single JSON object only. Start with { end with }. No preamble.
@@ -930,7 +942,7 @@ RULES: 2 sim = same archetype but different weapons/approach. 2 oth = completely
 
 Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       let step3;
-      try{step3=await apiCall(p3,false,{prov:variantsProv});}catch(e){step3={sim:[],oth:[],ref:[{n:step1.label,i:step1.icon,w:"—",ap:"—",st:"—",ar:"—",s:step1.sub,a:step1.accent}]};}
+      try{step3=await apiCall(p3,false,{prov:variantsProv,maxTokens:4000});}catch(e){step3={sim:[],oth:[],ref:[{n:step1.label,i:step1.icon,w:"—",ap:"—",st:"—",ar:"—",s:step1.sub,a:step1.accent}]};}
 
       setAddStep("Finalizing build...");
       const {game_meta,...step1Clean}=step1;
@@ -950,7 +962,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       const finalCacheKey=useCustomGame?customKey:addTargetGame;
       const finalCacheName=useCustomGame?gameName:games[addTargetGame]?.name||gameName;
       if(newFacts.length>0)updateKnowledgeCache(finalCacheKey,finalCacheName,newFacts,null);
-      setShowAdd(false);setAddText("");setAddUrl("");setAddCustomGameName("");setAddStep("");resetForms();
+      setShowAdd(false);setAddText("");setAddUrl("");setAddCustomGameName("");setAddStep("");setGenInfo(null);resetForms();
     }catch(e){
       let msg=e.message||"Unknown error";
       if(msg.toLowerCase().includes("stream idle timeout")||msg.toLowerCase().includes("partial response")){
@@ -961,7 +973,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         msg=`${pName} rate limit hit.${alt.length>0?` Switch to ${alt.join(" or ")} in Settings to continue.`:" Add a Groq (free) or Gemini (free) key in Settings for a fast fallback."}`;
       }else if(msg.length>200){msg=msg.slice(0,200)+"...";}
       else{msg=msg+" Try a different provider in Settings if this keeps happening.";}
-      setAddError(msg);setAddStep("");
+      setAddError(msg);setAddStep("");setGenInfo(null);
     }finally{setAdding(false);}
   };
 
@@ -1183,7 +1195,18 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
               <button onClick={handleAddBuild} disabled={adding||isBlocked} style={{flex:2,background:adding||isBlocked?"#ffffff11":a,border:`1px solid ${a}`,borderRadius:6,padding:"10px",cursor:adding||isBlocked?"not-allowed":"pointer",color:adding||isBlocked?C.dim:"#fff",fontFamily:"'Cinzel',serif",fontSize:".76rem",fontWeight:700}}>{btnLabel}</button>
             </div>);
           })()}
-          {adding&&<div style={{marginTop:12,fontSize:".7rem",color:C.dim,fontStyle:"italic",textAlign:"center",lineHeight:1.4}}>Running 3 API calls — usually 30–90 seconds.</div>}
+          {adding&&genInfo&&<div style={{marginTop:12,padding:"8px 12px",background:"#ffffff07",border:"1px solid #ffffff12",borderRadius:6}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,fontSize:".7rem"}}>
+              <span>{PROVIDERS[genInfo.prov]?.icon}</span>
+              <span style={{color:C.text,fontWeight:600}}>{PROVIDERS[genInfo.prov]?.label}</span>
+              <span style={{color:C.dim,marginLeft:2}}>{genInfo.label}</span>
+            </div>
+            <div style={{display:"flex",gap:3}}>
+              {[0,1,2,3].map(i=><div key={i} style={{flex:1,height:2,borderRadius:1,background:i<=genInfo.step?a:"#ffffff1a"}}/>)}
+            </div>
+            <div style={{marginTop:4,fontSize:".62rem",color:C.dim,textAlign:"right"}}>step {genInfo.step+1} / 4</div>
+          </div>}
+          {adding&&!genInfo&&<div style={{marginTop:12,fontSize:".7rem",color:C.dim,fontStyle:"italic",textAlign:"center",lineHeight:1.4}}>Running 3 API calls — usually 30–90 seconds.</div>}
         </div>
       </div>}
 
