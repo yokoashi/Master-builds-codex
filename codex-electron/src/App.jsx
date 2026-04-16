@@ -575,6 +575,8 @@ export default function App(){
   const [learning,setLearning]=useState(false); // AI Learn crawl in progress
   const [permCache,setPermCache]=useState({}); // permanent item database — manually curated, never auto-cleared
   const [showPermViewer,setShowPermViewer]=useState(false); // toggle perm cache viewer panel
+  const [editingTempFact,setEditingTempFact]=useState(null); // {orig:string,text:string} — inline edit in working cache
+  const [editingPermFact,setEditingPermFact]=useState(null); // {orig:string,text:string} — inline edit in perm cache
 
   // Toggle a provider in the modal multi-select (max 3, order = step assignment)
   const toggleModalProv=(key)=>{
@@ -2027,7 +2029,7 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
                 :<><span style={{fontSize:".72rem"}}>🧠</span> Learn {G.name} (AI Search)</>
               }
             </button>
-            <div style={{fontSize:".54rem",color:"#ffffff28",marginTop:3,lineHeight:1.4}}>Import: Fextralife or any wiki, one URL per line — auto-follows item pages. Learn: no URL needed, AI searches everything.</div>
+            <div style={{fontSize:".54rem",color:"#ffffff28",marginTop:3,lineHeight:1.4}}>Import: paste a Fextralife/wiki URL — fetches real page data, most accurate. Learn: AI web search, faster but verify stats (click ✎ to correct any wrong values).</div>
           </div>
         </div>
 
@@ -2073,10 +2075,15 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
           </div>
         }
 
-        {/* Permanent cache viewer — full curated database, per-item delete only */}
+        {/* Permanent cache viewer — full curated database, per-item delete + edit */}
         {showPermViewer&&permCache[safeGame]?.facts?.length>0&&(()=>{
           const facts=permCache[safeGame].facts;
-          const delPerm=(f)=>setPermCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.filter(x=>x!==f)}}));
+          const delPerm=(f)=>{setPermCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.filter(x=>x!==f)}}));if(editingPermFact?.orig===f)setEditingPermFact(null);};
+          const savePermEdit=()=>{
+            if(!editingPermFact||!editingPermFact.text.trim())return;
+            setPermCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.map(x=>x===editingPermFact.orig?editingPermFact.text.trim():x)}}));
+            setEditingPermFact(null);
+          };
           const tagColor=(f)=>{
             if(f.startsWith("WEAPON"))return a;
             if(f.startsWith("ARMOR"))return "#7eb8d4";
@@ -2104,18 +2111,38 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
           return(
             <div style={{background:"#09070a",borderBottom:"2px solid #2a1f0a",flexShrink:0,maxHeight:400,overflowY:"auto"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 18px",borderBottom:"1px solid #2a1f0a",position:"sticky",top:0,background:"#09070a",zIndex:1}}>
-                <span style={{fontSize:".65rem",color:"#f0c070",fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>🔒 PERMANENT DATABASE — {G.name} <span style={{color:C.dim,fontWeight:400}}>({facts.length} items · click ✕ to remove individual entries)</span></span>
-                <button onClick={()=>setShowPermViewer(false)} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:".8rem",padding:"0 4px",lineHeight:1}}>✕</button>
+                <span style={{fontSize:".65rem",color:"#f0c070",fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>🔒 PERMANENT DATABASE — {G.name} <span style={{color:C.dim,fontWeight:400}}>({facts.length} items · ✎ edit · ✕ remove)</span></span>
+                <button onClick={()=>{setShowPermViewer(false);setEditingPermFact(null);}} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:".8rem",padding:"0 4px",lineHeight:1}}>✕</button>
               </div>
               {groupOrder.map(([key,label,col])=>grouped[key].length===0?null:(
                 <div key={key}>
-                  <div style={{padding:"5px 18px 3px",fontSize:".58rem",color:col,fontFamily:"'Cinzel',serif",letterSpacing:".08em",fontWeight:700,background:"#0c0a0e",borderBottom:"1px solid #1a1520",position:"sticky",top:35,zIndex:1}}>{label} ({grouped[key].length})</div>
+                  <div style={{padding:"5px 18px 3px",fontSize:".58rem",color:col,fontFamily:"'Cinzel',serif",letterSpacing:".08em",fontWeight:700,background:"#0c0a0e",borderBottom:"1px solid #1a1520",position:"sticky",top:37,zIndex:1}}>{label} ({grouped[key].length})</div>
                   {grouped[key].map((f,i)=>{
-                    const body=f.replace(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)\s+/i,"").replace(/^"([^"]+)"\s*—?\s*/,"$1 — ");
+                    const isEditing=editingPermFact?.orig===f;
+                    const body=f.replace(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|BUILD|Build)\s+/i,"").replace(/^"([^"]+)"\s*—?\s*/,"$1 — ");
                     return(
-                      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 18px",borderBottom:"1px solid #100d14",fontSize:".65rem",lineHeight:1.55}}>
-                        <span style={{color:C.text,flex:1,wordBreak:"break-word"}}>{body}</span>
-                        <button onClick={()=>delPerm(f)} title="Remove from permanent cache" style={{background:"none",border:"none",color:"#4a3a32",cursor:"pointer",fontSize:".75rem",flexShrink:0,padding:"0 2px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#4a3a32"}>✕</button>
+                      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 18px",borderBottom:"1px solid #100d14",fontSize:".65rem",lineHeight:1.55,background:isEditing?"#100e15":"transparent"}}>
+                        {isEditing?(
+                          <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
+                            <textarea
+                              value={editingPermFact.text}
+                              onChange={e=>setEditingPermFact(p=>({...p,text:e.target.value}))}
+                              rows={3}
+                              autoFocus
+                              style={{width:"100%",background:"#ffffff0a",border:"1px solid #f0c07055",borderRadius:3,color:C.bright,fontSize:".64rem",padding:"3px 5px",resize:"vertical",lineHeight:1.5,outline:"none",boxSizing:"border-box",fontFamily:"'DM Sans',system-ui,sans-serif"}}
+                            />
+                            <div style={{display:"flex",gap:4}}>
+                              <button onClick={savePermEdit} style={{background:"#f0c07022",border:"1px solid #f0c07066",borderRadius:3,color:"#f0c070",cursor:"pointer",fontSize:".6rem",padding:"2px 8px",fontWeight:700}}>✓ Save</button>
+                              <button onClick={()=>setEditingPermFact(null)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"2px 8px"}}>Cancel</button>
+                            </div>
+                          </div>
+                        ):(
+                          <span style={{color:C.text,flex:1,wordBreak:"break-word"}}>{body}</span>
+                        )}
+                        {!isEditing&&<>
+                          <button onClick={()=>setEditingPermFact({orig:f,text:f})} title="Edit this entry" style={{background:"none",border:"none",color:"#4a4030",cursor:"pointer",fontSize:".72rem",flexShrink:0,padding:"0 3px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#f0d090"} onMouseLeave={e=>e.target.style.color="#4a4030"}>✎</button>
+                          <button onClick={()=>delPerm(f)} title="Remove from permanent cache" style={{background:"none",border:"none",color:"#4a3a32",cursor:"pointer",fontSize:".75rem",flexShrink:0,padding:"0 2px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#4a3a32"}>✕</button>
+                        </>}
                       </div>
                     );
                   })}
@@ -2128,9 +2155,14 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
         {/* Cache fact viewer — toggled by clicking the facts count */}
         {showCacheViewer&&knowledgeCache[safeGame]?.facts?.length>0&&(()=>{
           const facts=knowledgeCache[safeGame].facts;
-          const deleteFact=(f)=>setKnowledgeCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.filter(x=>x!==f)}}));
+          const deleteFact=(f)=>{setKnowledgeCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.filter(x=>x!==f)}}));if(editingTempFact?.orig===f)setEditingTempFact(null);};
           const keepFact=(f)=>{addToPermCache(safeGame,G.name,f);deleteFact(f);};
           const alreadyKept=(f)=>(permCache[safeGame]?.facts||[]).some(p=>p.slice(0,60).toLowerCase()===f.slice(0,60).toLowerCase());
+          const saveTempEdit=()=>{
+            if(!editingTempFact||!editingTempFact.text.trim())return;
+            setKnowledgeCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.map(x=>x===editingTempFact.orig?editingTempFact.text.trim():x)}}));
+            setEditingTempFact(null);
+          };
           const tagColor=(f)=>{
             if(f.startsWith("WEAPON"))return a;
             if(f.startsWith("ARMOR"))return "#7eb8d4";
@@ -2145,22 +2177,42 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
             return m?m[1].toUpperCase():"INFO";
           };
           return(
-            <div style={{background:"#080705",borderBottom:"2px solid #1c1810",flexShrink:0,maxHeight:320,overflowY:"auto"}}>
+            <div style={{background:"#080705",borderBottom:"2px solid #1c1810",flexShrink:0,maxHeight:340,overflowY:"auto"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 18px",borderBottom:"1px solid #1c1810",position:"sticky",top:0,background:"#080705",zIndex:1}}>
-                <span style={{fontSize:".65rem",color:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>WORKING CACHE — {G.name} ({facts.length} facts) <span style={{color:"#f0c07066",fontWeight:400,fontSize:".58rem"}}>· 🔒 to keep permanently</span></span>
-                <button onClick={()=>setShowCacheViewer(false)} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:".8rem",padding:"0 4px",lineHeight:1}}>✕</button>
+                <span style={{fontSize:".65rem",color:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>WORKING CACHE — {G.name} ({facts.length} facts) <span style={{color:"#f0c07066",fontWeight:400,fontSize:".58rem"}}>· ✎ edit · 🔒 keep</span></span>
+                <button onClick={()=>{setShowCacheViewer(false);setEditingTempFact(null);}} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:".8rem",padding:"0 4px",lineHeight:1}}>✕</button>
               </div>
               {facts.map((f,i)=>{
                 const tag=tagLabel(f);
                 const col=tagColor(f);
-                const body=f.replace(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)\s+/i,"").replace(/^"([^"]+)"\s*—?\s*/,"$1 — ");
+                const isEditing=editingTempFact?.orig===f;
+                const body=f.replace(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|BUILD|Build)\s+/i,"").replace(/^"([^"]+)"\s*—?\s*/,"$1 — ");
                 const kept=alreadyKept(f);
                 return(
-                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 18px",borderBottom:"1px solid #0d0b09",fontSize:".65rem",lineHeight:1.55}}>
-                    <span style={{color:col,fontWeight:700,fontSize:".58rem",flexShrink:0,marginTop:2,minWidth:52,letterSpacing:".04em"}}>{tag}</span>
-                    <span style={{color:C.text,flex:1,wordBreak:"break-word"}}>{body}</span>
-                    <button onClick={()=>!kept&&keepFact(f)} title={kept?"Already in permanent cache":"Move to permanent cache"} style={{background:"none",border:"none",color:kept?"#f0c07077":"#5a4a32",cursor:kept?"default":"pointer",fontSize:".72rem",flexShrink:0,padding:"0 3px",lineHeight:1,marginTop:1}} onMouseEnter={e=>{if(!kept)e.target.style.color="#f0c070";}} onMouseLeave={e=>{if(!kept)e.target.style.color="#5a4a32";}}>🔒</button>
-                    <button onClick={()=>deleteFact(f)} title="Delete this fact" style={{background:"none",border:"none",color:"#4a3a32",cursor:"pointer",fontSize:".75rem",flexShrink:0,padding:"0 2px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#4a3a32"}>✕</button>
+                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 18px",borderBottom:"1px solid #0d0b09",fontSize:".65rem",lineHeight:1.55,background:isEditing?"#13100d":"transparent"}}>
+                    <span style={{color:col,fontWeight:700,fontSize:".58rem",flexShrink:0,marginTop:isEditing?6:2,minWidth:52,letterSpacing:".04em"}}>{tag}</span>
+                    {isEditing?(
+                      <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
+                        <textarea
+                          value={editingTempFact.text}
+                          onChange={e=>setEditingTempFact(p=>({...p,text:e.target.value}))}
+                          rows={3}
+                          autoFocus
+                          style={{width:"100%",background:"#ffffff0a",border:"1px solid #f0c07055",borderRadius:3,color:C.bright,fontSize:".64rem",padding:"3px 5px",resize:"vertical",lineHeight:1.5,outline:"none",boxSizing:"border-box",fontFamily:"'DM Sans',system-ui,sans-serif"}}
+                        />
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={saveTempEdit} style={{background:"#f0c07022",border:"1px solid #f0c07066",borderRadius:3,color:"#f0c070",cursor:"pointer",fontSize:".6rem",padding:"2px 8px",fontWeight:700}}>✓ Save</button>
+                          <button onClick={()=>setEditingTempFact(null)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"2px 8px"}}>Cancel</button>
+                        </div>
+                      </div>
+                    ):(
+                      <span style={{color:C.text,flex:1,wordBreak:"break-word"}}>{body}</span>
+                    )}
+                    {!isEditing&&<>
+                      <button onClick={()=>setEditingTempFact({orig:f,text:f})} title="Edit this fact" style={{background:"none",border:"none",color:"#4a4030",cursor:"pointer",fontSize:".72rem",flexShrink:0,padding:"0 3px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#f0d090"} onMouseLeave={e=>e.target.style.color="#4a4030"}>✎</button>
+                      <button onClick={()=>!kept&&keepFact(f)} title={kept?"Already in permanent cache":"Move to permanent cache"} style={{background:"none",border:"none",color:kept?"#f0c07077":"#5a4a32",cursor:kept?"default":"pointer",fontSize:".72rem",flexShrink:0,padding:"0 3px",lineHeight:1,marginTop:1}} onMouseEnter={e=>{if(!kept)e.target.style.color="#f0c070";}} onMouseLeave={e=>{if(!kept)e.target.style.color="#5a4a32";}}>🔒</button>
+                      <button onClick={()=>deleteFact(f)} title="Delete this fact" style={{background:"none",border:"none",color:"#4a3a32",cursor:"pointer",fontSize:".75rem",flexShrink:0,padding:"0 2px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#4a3a32"}>✕</button>
+                    </>}
                   </div>
                 );
               })}
