@@ -1538,9 +1538,9 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
   };
 
   // ── AI Learn ───────────────────────────────────────────────────────────────
-  // Uses Perplexity + Claude (or whichever is available) to search the web and
-  // gather comprehensive item data for the current game without needing a URL.
-  // Splits categories between providers when both are available for breadth.
+  // 11 targeted searches covering the full item/spell/progression database.
+  // Alternates between Perplexity (live web) and Claude (deep knowledge) when
+  // both are available. Falls back to whichever single provider is configured.
   const handleLearn=async()=>{
     const gameName=G.name;
     const cacheKey=safeGame;
@@ -1549,50 +1549,155 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     if(!hasPplx&&!hasClaude){setUpdateMsg("✗ Add an API key in Settings first.");setTimeout(()=>setUpdateMsg(""),4000);return;}
     setLearning(true);
     const allLines=[];
-    // Split categories: weapons+armor via Perplexity (best for current data),
-    // rings+spells via Claude — swap if only one is available
     const pA=hasPplx?"perplexity":"claude";
     const pB=hasClaude?"claude":"perplexity";
+
+    // Shared output format templates
+    const WPN_FMT=`WEAPON Name — [weapon type]; AP: ~N (+0) → ~N (+10 or max upgrade); scaling: [e.g. B STR / C RAD at max upgrade]; status: [N Bleed (+0) → N Bleed (+10) — or "none"]; weight: ~N — loc: [boss drop / chest / merchant + zone] — stat: [stat requirements; upgrade material name]`;
+    const ARM_FMT=`ARMOR Name — [armor type]; defense: ~N physical / ~N elemental; weight: ~N; set: [set name] — loc: [zone + NPC / chest / boss] — stat: N/A`;
+    const RING_FMT=`RING/ACC Name — [precise effect WITH NUMBERS, e.g. "+15% Bleed damage", "+60 Bleed buildup/hit", "+20% spell damage", "reduces Stamina cost by 15%"] — loc: [zone + NPC / chest / boss] — stat: N/A`;
+    const SPELL_FMT=`SPELL Name — [spell school, e.g. Radiance/Inferno/Umbral]; damage: ~N per cast (or N buildup/cast); effect: [precise mechanic]; FP/cast: N — loc: [NPC name + zone where learned] — stat: [N STAT required; scales with STAT]`;
+    const RULES=`\nRules:\n- EXHAUSTIVE — include every single item in ${gameName}, including rare, optional, DLC, and NG+-exclusive ones. Do not skip any.\n- Exact in-game names only — no paraphrasing\n- loc: must be specific (zone + landmark / NPC name / boss name — never "Exploration", "Various", or "N/A")\n- ALL numeric values required: damage, buildup, weight, scaling grades, requirements — no omissions\n- Output ONLY item lines in the exact format shown — no headers, no markdown, no commentary`;
+
     const categories=[
-      {name:"weapons",type:"WEAPON",prov:pA,
-       q:`Search for a complete list of every weapon in ${gameName}. For EACH weapon include: exact in-game name, damage values or AR, scaling stats (e.g. A STR / B DEX), location or how to obtain (zone name, boss drop, merchant name), and any stat requirements.`},
-      {name:"armor & sets",type:"ARMOR",prov:pA,
-       q:`Search for a complete list of every armor set and piece in ${gameName}. For EACH armor item include: exact name, location or how to obtain, weight, and any notable defense values.`},
-      {name:"rings & accessories",type:"RING/ACC",prov:pB,
-       q:`Search for a complete list of every ring and accessory in ${gameName}. For EACH ring/accessory include: exact name, precise effect with numbers (e.g. +15% damage, +60 buildup), and exact location or how to obtain.`},
-      {name:"spells & incantations",type:"SPELL",prov:pB,
-       q:`Search for a complete list of every spell, incantation, sorcery, or pyromancy in ${gameName}. For EACH spell include: exact name, precise effect with numbers, damage per cast, stat requirements, and where to learn it (NPC name, location).`},
+      {name:"physical & quality weapons",prov:pA,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY physical weapon: greatswords, swords, daggers, axes, hammers, maces, clubs, fists, and any strength/dex/quality weapon.
+
+For each weapon output one line:
+${WPN_FMT}
+
+CRITICAL REQUIREMENTS:
+- AP field MUST have both base (+0) AND max upgrade value (e.g. "AP: ~180 (+0) → ~680 (+10)")
+- Scaling MUST show grades at max upgrade (e.g. "B STR / C RAD at +10")
+- Status field MUST show buildup at +0 AND max upgrade if weapon has status, or write "none"
+- Weight and stat requirements are mandatory${RULES}`},
+
+      {name:"polearms, halberds, spears & ranged weapons",prov:pB,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY polearm, halberd, spear, lance, whip, bow, crossbow, greatbow, and ballista.
+
+For each weapon output one line:
+${WPN_FMT}
+
+CRITICAL REQUIREMENTS:
+- AP at +0 AND max upgrade — mandatory
+- Scaling grades at max upgrade — mandatory
+- Status buildup at +0 and max if applicable, otherwise "none"
+- For bows: include base arrow damage multiplier or AR values${RULES}`},
+
+      {name:"catalysts, staves, seals & casting weapons",prov:pA,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY spellcasting weapon: catalysts, staves, glintstone staves, sacred seals, finger seals, frenzied seals, talismans used to cast, wands, foci, and any weapon that casts spells.
+
+For each casting weapon output one line:
+WEAPON Name — [catalyst/staff/seal type]; spell buff: ~N (+0) → ~N (max upgrade); scaling: [e.g. S INT (+0) → S INT (+10)]; sorcery scaling: ~N (if different from spell buff); weight: ~N — loc: [zone + NPC / chest / boss] — stat: [stat requirements; scales with STAT; upgrade material]
+
+CRITICAL: Spell buff / sorcery scaling / incantation scaling MUST include BOTH base (+0) and max upgrade values. Scaling grade at each level if it changes. Include EVERY casting tool even situational ones.${RULES}`},
+
+      {name:"shields & offhand weapons",prov:pB,tokens:5000,prompt:
+`Search ${gameName} wiki. List EVERY shield: small shields, medium shields, greatshields, torches, lanterns, and any offhand item with blocking stats.
+
+For each shield output one line:
+WEAPON Name — [shield type]; stability: N (base) → N (max upgrade); guard boost: N; block: N% physical / N% elemental; weight: ~N; status: [any status buildup or special effect, or "none"] — loc: [zone + NPC / chest / boss] — stat: [stat requirements; upgrade material]
+
+CRITICAL: Stability at BOTH base and max upgrade is essential. Guard boost and physical block % are mandatory. Include every shield even situational ones.${RULES}`},
+
+      {name:"status & elemental weapons — bleed, poison, frost, fire, lightning, etc.",prov:pA,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY weapon that naturally inflicts ANY status effect: Bleed, Hemorrhage, Poison, Frostbite, Scarlet Rot, Madness, Death Blight, Fire, Lightning, Holy, Magic, or any other status/elemental buildup.
+
+For each weapon output one line:
+${WPN_FMT}
+
+CRITICAL — the status field is THE most important data here:
+- MUST show exact buildup number at +0 AND max upgrade: e.g. "300 Bleed (+0) → 420 Bleed (+10)"
+- If buildup improves with upgrade, show the full progression
+- Include ALL weapons with ANY status, even minor buildup values
+- AP range and scaling grades are also mandatory${RULES}`},
+
+      {name:"light & medium armor",prov:pB,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY light armor piece and medium armor piece and set.
+
+For each armor piece output one line:
+${ARM_FMT}
+
+CRITICAL: Include EVERY individual piece (helmet, chest, gauntlets, leggings) for EVERY set. Include total set weight and combined defense values. Include both physical and elemental/magical defense.${RULES}`},
+
+      {name:"heavy, boss & special armor",prov:pA,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY heavy armor piece, boss armor set, unique armor, DLC armor, and any special or rare armor.
+
+For each armor piece output one line:
+${ARM_FMT}
+
+CRITICAL: Every piece of every heavy/boss/special set. Physical defense, elemental defense, poise/stability values (if the game has them), weight. Include armor from DLC, secret areas, NG+ drops.${RULES}`},
+
+      {name:"rings & accessories",prov:pB,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY ring, talisman, amulet, charm, accessory, and equippable trinket.
+
+For each item output one line:
+${RING_FMT}
+
+CRITICAL: Effects MUST be specific numbers — never vague descriptions like "boosts damage" or "improves stamina". Write "+15% Bleed damage", "+60 Bleed buildup per hit", "+20 Stamina", etc. Include ALL rings including NG+ variants (e.g. +1, +2, +3 versions), rare, and DLC rings.${RULES}`},
+
+      {name:"offensive spells — all damage spells",prov:pA,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY offensive spell, sorcery, incantation, pyromancy, dark magic, miracle: any spell that deals damage or inflicts a status effect.
+
+For each spell output one line:
+${SPELL_FMT}
+
+CRITICAL: Damage values MUST be real numbers ("~320 Holy damage/cast", "80 Bleed buildup/swing", "~200 Fire AoE/cast") — not "scales with stats" alone. Include FP cost, cast count, requirements, and scaling stat. Include EVERY offensive spell.${RULES}`},
+
+      {name:"support, buff & utility spells",prov:pB,tokens:6000,prompt:
+`Search ${gameName} wiki. List EVERY buff, healing, support, and utility spell: weapon buffs, stat boosts, shields, healing spells, movement spells, summons, AOE buffs.
+
+For each spell output one line:
+${SPELL_FMT}
+
+CRITICAL: Effect magnitudes MUST be numbers — "+60 Bleed buildup added to weapon", "+15% physical damage for 60 seconds", "heals ~300 HP", "+10 poise for 45 seconds". Include duration. Include every support spell.${RULES}`},
+
+      {name:"endgame content, final bosses & NG+ progression",prov:pA,tokens:6000,prompt:
+`Search ${gameName} wiki for: (1) endgame areas and final bosses with their drops, (2) NG+ changes per cycle, (3) NG+-exclusive weapons/items, (4) recommended stats per NG+ tier.
+
+For endgame weapons/armor output in standard WEAPON or ARMOR format:
+${WPN_FMT}
+
+For bosses, endgame milestones, and NG+ cycles output one line each:
+BUILD [Name] — [what happens / what drops / what unlocks]; recommended level: ~N; key stats: [e.g. VIT 40 / STR 50] — loc: [area name or "NG+N start"] — stat: [stat soft caps to hit by this point]
+
+CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 through NG+7 (or max) with HP/damage scaling increases. Include any NG+-exclusive items.${RULES}`},
     ];
+
+    // Parser — normalizes non-standard type prefixes, captures BUILD entries for progression
     const parseLines=(raw)=>{
       if(!raw)return[];
-      const lines=(raw).split("\n").map(l=>l.trim()).filter(l=>l.length>8&&/^(WEAPON|ARMOR|RING\/ACC|SPELL)\s/i.test(l));
-      const flex=(raw).split("\n").map(l=>l.trim()).filter(l=>l.length>12&&l.includes("—")&&!lines.includes(l)&&/^(weapon|armor|ring|acc|spell)/i.test(l)).map(l=>{
-        const m=l.match(/^(weapon|armor|ring\/?acc?|spell)/i);if(!m)return null;
-        const t=m[1].toLowerCase().startsWith("ring")||m[1].toLowerCase().startsWith("acc")?"RING/ACC":m[1].toUpperCase();
-        return t+" "+l.replace(/^(weapon|armor|ring\/?acc?|spell)\s*/i,"");
+      const REMAP={shield:"WEAPON",catalyst:"WEAPON",staff:"WEAPON",seal:"WEAPON",bow:"WEAPON",crossbow:"WEAPON",offhand:"WEAPON",polearm:"WEAPON",halberd:"WEAPON",spear:"WEAPON",acc:"RING/ACC",talisman:"RING/ACC",amulet:"RING/ACC"};
+      return(raw).split("\n").map(l=>l.trim()).filter(l=>l.length>10&&l.includes("—")).map(l=>{
+        if(/^(WEAPON|ARMOR|RING\/ACC|SPELL|BUILD)\s/i.test(l))return l;
+        const m=l.match(/^([A-Za-z\/\+]+\d*)\s+/);
+        if(m){
+          const key=m[1].toLowerCase().replace(/[\/\+\d]/g,"");
+          const mapped=REMAP[key];
+          if(mapped)return mapped+" "+l.slice(m[0].length);
+          if(/^(ng|endgame|progression|boss|build)/i.test(m[1]))return"BUILD "+l.replace(/^[^\s]+\s*/,"");
+        }
+        // Loose match: any line with TYPE prefix and em-dash
+        const loose=l.match(/^(weapon|armor|ring|acc|spell|shield|catalyst|staff|seal|bow|talisman)/i);
+        if(loose){
+          const t=loose[1].toLowerCase();
+          if(t.startsWith("ring")||t.startsWith("acc")||t.startsWith("talisman"))return"RING/ACC "+l.replace(/^[^\s]+\s*/i,"");
+          if(["shield","catalyst","staff","seal","bow","crossbow"].some(x=>t.startsWith(x)))return"WEAPON "+l.replace(/^[^\s]+\s*/i,"");
+          return loose[1].toUpperCase()+" "+l.replace(/^[^\s]+\s*/i,"");
+        }
+        return null;
       }).filter(Boolean);
-      return[...lines,...flex];
     };
+
     for(let i=0;i<categories.length;i++){
       const cat=categories[i];
       const icon=PROVIDERS[cat.prov]?.icon||"🔍";
       setUpdateMsg(`${icon} Learning ${cat.name} (${i+1}/${categories.length})...`);
       try{
-        const prompt=`${cat.q}
-
-For each item output one line in this exact format:
-${cat.type} Name — description/effect with numbers — loc: exact location or how to obtain — stat: requirements and key values
-
-Rules:
-- List EVERY ${cat.name} in ${gameName} — be comprehensive, don't skip rare or optional items
-- Use specific in-game names only — no generic placeholders
-- loc: must be specific: zone name, boss name, NPC/merchant name, or chest description
-- stat: include damage, weight, scaling grades, or buildup numbers
-- Output ONLY the item lines in the exact format above — no intro, no markdown, no commentary`;
-        const raw=await apiCall(prompt,true,{prov:cat.prov,rawText:true,maxTokens:4000});
+        const raw=await apiCall(cat.prompt,true,{prov:cat.prov,rawText:true,maxTokens:cat.tokens});
         const parsed=parseLines(raw);
         allLines.push(...parsed);
-      }catch(e){/* non-fatal — skip category */}
+      }catch(e){/* non-fatal — skip this category and continue */}
     }
     if(allLines.length>0){
       updateKnowledgeCache(cacheKey,gameName,allLines,null);
@@ -1978,22 +2083,24 @@ Rules:
             if(f.startsWith("RING"))return "#82d482";
             if(f.startsWith("SPELL"))return "#c794e8";
             if(f.startsWith("PATCH"))return "#f0c070";
+            if(f.startsWith("BUILD"))return "#f0a060";
             return C.dim;
           };
           const tagLabel=(f)=>{
-            const m=f.match(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)/i);
+            const m=f.match(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|BUILD|Build)/i);
             return m?m[1].toUpperCase():"INFO";
           };
           // Group by type for easier browsing
-          const grouped={WEAPON:[],ARMOR:[],RING:[],SPELL:[],OTHER:[]};
+          const grouped={WEAPON:[],ARMOR:[],RING:[],SPELL:[],BUILD:[],OTHER:[]};
           facts.forEach(f=>{
             if(f.startsWith("WEAPON"))grouped.WEAPON.push(f);
             else if(f.startsWith("ARMOR"))grouped.ARMOR.push(f);
             else if(f.startsWith("RING"))grouped.RING.push(f);
             else if(f.startsWith("SPELL"))grouped.SPELL.push(f);
+            else if(f.startsWith("BUILD"))grouped.BUILD.push(f);
             else grouped.OTHER.push(f);
           });
-          const groupOrder=[["WEAPON","Weapons",a],["ARMOR","Armor","#7eb8d4"],["RING","Rings & Accessories","#82d482"],["SPELL","Spells","#c794e8"],["OTHER","Other","#888"]];
+          const groupOrder=[["WEAPON","Weapons",a],["ARMOR","Armor","#7eb8d4"],["RING","Rings & Accessories","#82d482"],["SPELL","Spells","#c794e8"],["BUILD","Progression & NG+","#f0a060"],["OTHER","Other","#888"]];
           return(
             <div style={{background:"#09070a",borderBottom:"2px solid #2a1f0a",flexShrink:0,maxHeight:400,overflowY:"auto"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 18px",borderBottom:"1px solid #2a1f0a",position:"sticky",top:0,background:"#09070a",zIndex:1}}>
@@ -2030,10 +2137,11 @@ Rules:
             if(f.startsWith("RING"))return "#82d482";
             if(f.startsWith("SPELL"))return "#c794e8";
             if(f.startsWith("PATCH"))return "#f0c070";
+            if(f.startsWith("BUILD"))return "#f0a060";
             return C.dim;
           };
           const tagLabel=(f)=>{
-            const m=f.match(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)/i);
+            const m=f.match(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|BUILD|Build)/i);
             return m?m[1].toUpperCase():"INFO";
           };
           return(
