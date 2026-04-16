@@ -464,6 +464,14 @@ const ABC=({b,statMax,softCaps})=>{
   const [sk,setSk]=useState(false);
   const [ki,setKi]=useState(false);
   const p=b.ph[pi]; const pv=pi>0?b.ph[pi-1]:null;
+  // Support both condensed AI format (n/r/s/w/ar/dm) and full static format (name/range/stats/weapons[])
+  const pName=p.n||p.name||"—";
+  const pRange=p.r||p.range||"—";
+  const pStats=p.s||p.stats||{};
+  const pWeapon=p.w||(p.weapons&&p.weapons.filter(w=>w.eq!==false)[0]?.n)||"—";
+  const pArmor=p.ar||(p.armor&&p.armor[0]?.n)||"—";
+  const pDmg=p.dm||(p.dmg?.ps)||"—";
+  const pvStats=pv?(pv.s||pv.stats||{}):null;
   return (
     <div style={{border:`1px solid ${b.a}33`,borderLeft:`3px solid ${b.a}`,borderRadius:7,marginBottom:14,overflow:"hidden",background:C.card}}>
       <div style={{padding:"14px 16px",borderBottom:`1px solid ${b.a}22`}}>
@@ -474,15 +482,15 @@ const ABC=({b,statMax,softCaps})=>{
         <div style={{fontSize:".8rem",color:C.text,lineHeight:1.55,marginTop:9,fontStyle:"italic"}}>{b.why}</div>
       </div>
       <div style={{padding:"12px 16px"}}>
-        <div style={{display:"flex",gap:4,marginBottom:13}}>{b.ph.map((ph,i)=>(<button key={i} onClick={()=>setPi(i)} style={{flex:1,background:i===pi?`${b.a}22`:"transparent",border:`1px solid ${i===pi?b.a:"#ffffff14"}`,borderRadius:5,padding:"6px 4px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:".72rem",color:i===pi?C.bright:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{ph.n}</div><div style={{fontSize:".6rem",color:C.dim}}>{ph.r}</div></button>))}</div>
-        <div style={{marginBottom:11}}>{Object.entries(p.s).map(([k,v])=><StatBar key={k} l={k} v={v} max={statMax} a={b.a} p={pv?pv.s[k]:null} softCap={softCaps?softCaps[k]:null}/>)}</div>
+        <div style={{display:"flex",gap:4,marginBottom:13}}>{b.ph.map((ph,i)=>{const phName=ph.n||ph.name||"—";const phRange=ph.r||ph.range||"—";return(<button key={i} onClick={()=>setPi(i)} style={{flex:1,background:i===pi?`${b.a}22`:"transparent",border:`1px solid ${i===pi?b.a:"#ffffff14"}`,borderRadius:5,padding:"6px 4px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:".72rem",color:i===pi?C.bright:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{phName}</div><div style={{fontSize:".6rem",color:C.dim}}>{phRange}</div></button>);})}</div>
+        <div style={{marginBottom:11}}>{Object.entries(pStats).map(([k,v])=><StatBar key={k} l={k} v={v} max={statMax} a={b.a} p={pvStats?pvStats[k]:null} softCap={softCaps?softCaps[k]:null}/>)}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:11,fontSize:".78rem"}}>
-          <div style={{background:"#ffffff06",borderRadius:5,padding:"8px 10px",borderLeft:`2px solid ${b.a}`}}><div style={{color:b.a,fontWeight:700,fontSize:".66rem",marginBottom:3}}>WEAPON</div><div style={{color:C.bright}}>{p.w}</div></div>
-          <div style={{background:"#ffffff06",borderRadius:5,padding:"8px 10px",borderLeft:`2px solid ${b.a}`}}><div style={{color:b.a,fontWeight:700,fontSize:".66rem",marginBottom:3}}>ARMOR</div><div style={{color:C.text}}>{p.ar}</div></div>
+          <div style={{background:"#ffffff06",borderRadius:5,padding:"8px 10px",borderLeft:`2px solid ${b.a}`}}><div style={{color:b.a,fontWeight:700,fontSize:".66rem",marginBottom:3}}>WEAPON</div><div style={{color:C.bright}}>{pWeapon}</div></div>
+          <div style={{background:"#ffffff06",borderRadius:5,padding:"8px 10px",borderLeft:`2px solid ${b.a}`}}><div style={{color:b.a,fontWeight:700,fontSize:".66rem",marginBottom:3}}>ARMOR</div><div style={{color:C.text}}>{pArmor}</div></div>
         </div>
-        <div style={{background:"#ffffff06",border:`1px solid ${b.a}22`,borderLeft:`3px solid ${b.a}`,borderRadius:5,padding:"8px 10px",fontSize:".78rem",marginBottom:11}}><span style={{color:b.a,fontWeight:700,fontSize:".68rem"}}>DAMAGE: </span><span style={{color:C.text}}>{p.dm}</span></div>
-        {[{l:"KEY ITEMS & LOCATIONS",o:ki,s:setKi,c:b.key.map((k,i)=><div key={i} style={{padding:"6px 10px",borderBottom:"1px solid #ffffff08",lineHeight:1.5,fontSize:".8rem"}}><span style={{color:b.a,fontWeight:700}}>{k.i}: </span><span style={{color:C.text}}>{k.d}</span></div>)},
-          {l:"PROGRESSION STEPS",o:sk,s:setSk,c:b.steps.map((s,i)=><div key={i} style={{display:"flex",gap:7,padding:"4px 10px",fontSize:".8rem",color:C.text,lineHeight:1.5}}><span style={{color:b.a,fontWeight:700,fontSize:".7rem",flexShrink:0}}>{i+1}.</span><span>{s}</span></div>)}
+        <div style={{background:"#ffffff06",border:`1px solid ${b.a}22`,borderLeft:`3px solid ${b.a}`,borderRadius:5,padding:"8px 10px",fontSize:".78rem",marginBottom:11}}><span style={{color:b.a,fontWeight:700,fontSize:".68rem"}}>DAMAGE: </span><span style={{color:C.text}}>{pDmg}</span></div>
+        {[{l:"KEY ITEMS & LOCATIONS",o:ki,s:setKi,c:(b.key||[]).map((k,i)=><div key={i} style={{padding:"6px 10px",borderBottom:"1px solid #ffffff08",lineHeight:1.5,fontSize:".8rem"}}><span style={{color:b.a,fontWeight:700}}>{k.i}: </span><span style={{color:C.text}}>{k.d}</span></div>)},
+          {l:"PROGRESSION STEPS",o:sk,s:setSk,c:(b.steps||[]).map((s,i)=><div key={i} style={{display:"flex",gap:7,padding:"4px 10px",fontSize:".8rem",color:C.text,lineHeight:1.5}}><span style={{color:b.a,fontWeight:700,fontSize:".7rem",flexShrink:0}}>{i+1}.</span><span>{s}</span></div>)}
         ].map((sec,i)=><div key={i} style={{marginBottom:6}}><button onClick={()=>sec.s(!sec.o)} style={{width:"100%",background:"#ffffff06",border:`1px solid ${b.a}33`,borderRadius:5,padding:"8px 12px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:b.a,letterSpacing:".08em",fontWeight:700}}>{sec.l}</span><span style={{color:b.a,fontSize:".62rem",transform:sec.o?"rotate(90deg)":"rotate(0)",transition:"transform .2s"}}>▶</span></button>{sec.o&&<div style={{padding:"7px 0 4px"}}>{sec.c}</div>}</div>)}
       </div>
     </div>
@@ -810,7 +818,7 @@ export default function App(){
       // OpenAI-compatible: Perplexity, OpenAI, Gemini, Groq
       const systemMsg=opts.rawText
         ?"You are a game research assistant. Search for and provide accurate, concise, up-to-date information. Be specific with item names, locations, and stats."
-        :"You are an expert soulslike build theorycrafter and game database. Your ENTIRE response must be a single valid JSON object — output ONLY the JSON with no markdown code fences, no text before or after, no citation markers, no footnotes. Start immediately with { and end with }. Every item field (d, loc, tip, ef) MUST contain specific non-placeholder text. Vague values like 'Exploration', 'Acquired', 'Mid-game', 'Various locations', or 'N/A' are NEVER acceptable for loc or d fields.";
+        :"You are an expert soulslike build theorycrafter and game database. Your ENTIRE response must be a single valid JSON object — output ONLY the JSON with no markdown code fences, no text before or after, no citation markers, no footnotes. Start immediately with { and end with }.\n\nCRITICAL RULES:\n1. Every item 'n' field MUST be a REAL, SPECIFIC item name that exists in the game — NEVER write '2nd weapon +10', 'another ring', 'upgrade material', 'based on loadout', 'best armor', 'your armor', 'any weapon', 'additional ring', 'second weapon', or ANY other generic placeholder. If a second weapon is needed, name the actual weapon (e.g. 'Bloody Glory', 'Abiding Defender', 'Pieta's Sword').\n2. Every 'loc' field MUST contain a specific zone + landmark, NPC name, boss drop, or chest location. NEVER write 'Exploration', 'Acquired', 'Mid-game', 'Various locations', 'N/A', or 'Based on loadout'.\n3. Use web search to verify item names, locations, and stat requirements before writing them.";
       const urlMap={perplexity:"https://api.perplexity.ai/chat/completions"};
       body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1000:(opts.maxTokens||6000),messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
       // Perplexity: disable inline citations (they corrupt JSON) and boost search context
@@ -993,6 +1001,7 @@ Each loadout: {"id":"unique_id","label":"Variant Name","weaponWt":"~N","endReq":
 Each phase: {"name":"Phase Name","range":"Lv X-Y","stats":{${statObjStr}},"sn":"1-2 sentence stat priority note","weapons":[{"n":"Weapon","ap":"~N","st":"status","eq":true,"d":"desc","loc":"specific location","up":"upgrade material","tip":"tip"}],"armor":[{"n":"Armor","wt":"~N","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"acc":[{"n":"Ring","ef":"effect","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"spells":[],"dmg":{"ps":"~N","sp":"status procs","bs":"boss speed","n":"notes"}}
 
 ITEM FIELD REQUIREMENTS — every single item (weapon, armor, ring, spell) must have ALL fields filled with real, specific, non-placeholder data:
+- "n": A REAL item name that exists in the game. NEVER write "2nd weapon +10", "another weapon", "second ring", "best armor", "based on loadout", or any generic phrase. If you need a second weapon, name it specifically (e.g. "Abiding Defender", "Bloody Glory"). Use web search if you are unsure of the exact item name.
 - "eq": true for recommended/core items. Only use false for explicitly labeled alternatives.
 - "d": 1-2 sentences explaining WHY this item is good for THIS specific build (not a generic description).
 - "loc": EXACT location — zone name + specific landmark, NPC name, chest location, or boss drop. NEVER write "Exploration", "Acquired", "Mid-game exploration", "Various locations", "Dropped by enemies", or "N/A". If the item is already held from a prior phase, write "Obtained in Phase X — [original zone]." If you are unsure of the exact location, use your search capability to find it.
@@ -1038,6 +1047,7 @@ SCHEMA: {"ph":[<phase4>,<phase5>,<phase6>,<phase7_ngplus>]}
 Phases 4-6 schema: {"name":"Phase Name","range":"Lv X-Y","stats":{${resolvedStatObjStr}},"sn":"stat note","weapons":[{"n":"...","ap":"~N","st":"...","eq":true,"d":"...","loc":"...","up":"...","tip":"..."}],"armor":[{"n":"...","wt":"~N","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"acc":[{"n":"...","ef":"...","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"spells":[{"n":"Spell","ef":"effect","eq":true,"d":"desc","loc":"where/how learned","up":"scaling stat","tip":"tip"}],"dmg":{"ps":"~N","sp":"...","bs":"...","n":"..."}}
 
 ITEM FIELD REQUIREMENTS — every field must contain specific, non-placeholder data:
+- "n": A REAL item name from the game. NEVER write "2nd weapon +10", "second ring", "another weapon", "best armor for this build", "upgrade your armor", "based on loadout", or any other generic placeholder. Every item needs a real, searchable name. Use web search to confirm names if needed.
 - "d": WHY this item matters for THIS build (not a generic description).
 - "loc": EXACT location — zone, NPC/merchant name, boss drop, chest location. If item was obtained in Phases 1-3, write "Obtained in Phase X — [zone]". NEVER write "Acquired", "Exploration", "Mid-game", "Various", or standalone "N/A" for loc.
 - "up": exact upgrade material + where to buy/find it for weapons. "N/A" only for non-upgradeable items.
