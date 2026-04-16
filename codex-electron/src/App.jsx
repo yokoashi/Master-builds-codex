@@ -1119,7 +1119,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     setUpdating(true);setUpdateMsg("Checking latest patch notes...");
     // Build a priority list of providers that have a key, preferring search-capable ones.
     // Claude → Perplexity → Gemini (search-capable first, others as last resort).
-    const providerPriority=["claude","perplexity","gemini"]
+    const providerPriority=["gemini","perplexity","claude"]
       .filter(p=>PROVIDERS[p]&&(apiKeys[p]||"").trim());
     if(providerPriority.length===0){setUpdateMsg("✗ No API key configured. Open Settings.");setTimeout(()=>setUpdateMsg(""),5000);setUpdating(false);return;}
     const isRateLimitError=(msg)=>/exceeded_limit|out_of_credits|rate.?limit|insufficient_quota|credit|tokens per minute|requests per minute|overloaded|unavailable|529|529/i.test(msg);
