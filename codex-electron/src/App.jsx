@@ -744,7 +744,7 @@ export default function App(){
     if(!k||!k.facts||k.facts.length===0)return "";
     const factList=k.facts.slice(-30).join("\n"); // cap at 30 most-recent facts to keep tokens low
     const ageHours=k.lastUpdated?Math.round((Date.now()-k.lastUpdated)/3600000):null;
-    return `\n\nKNOWN FACTS FROM PREVIOUS BUILDS IN THIS CODEX (verified from earlier research${ageHours!=null?`, ${ageHours}h old`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}Use these as authoritative references. Only web search for things NOT in this list.\n`;
+    return `\n\nKNOWN FACTS FROM PREVIOUS BUILDS IN THIS CODEX (verified from earlier research${ageHours!=null?`, ${ageHours}h old`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}Use these as supplementary references. Always web search to verify exact item locations, costs, and stat requirements — cached facts may be incomplete.\n`;
   };
 
   const PROVIDERS={
@@ -779,6 +779,13 @@ export default function App(){
         :"You are an expert soulslike build theorycrafter and game database. Your ENTIRE response must be a single valid JSON object — output ONLY the JSON with no markdown code fences, no text before or after, no citation markers, no footnotes. Start immediately with { and end with }. Every item field (d, loc, tip, ef) MUST contain specific non-placeholder text. Vague values like 'Exploration', 'Acquired', 'Mid-game', 'Various locations', or 'N/A' are NEVER acceptable for loc or d fields.";
       const urlMap={perplexity:"https://api.perplexity.ai/chat/completions",openai:"https://api.openai.com/v1/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",groq:"https://api.groq.com/openai/v1/chat/completions"};
       body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1000:(opts.maxTokens||6000),messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
+      // Perplexity-specific: disable return_citations (they appear inline and corrupt JSON),
+      // and enable web_search_options so sonar-pro actively searches gaming wikis for item locations
+      if(tProv==="perplexity"&&!opts.rawText){
+        body.return_citations=false;
+        body.search_recency_filter="month";
+        body.web_search_options={search_context_size:"high"};
+      }
       let data;
       if(window.electronAPI){data=await window.electronAPI.callAI(tProv,body,curKey);}
       else{const r=await fetch(urlMap[tProv]||urlMap.openai,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});data=await r.json();}
@@ -929,7 +936,7 @@ RULES:
 - Use EXACTLY these stat keys: ${statKeysStr}
 - Stat max: ${statMax}
 - BE SPECIFIC with locations (name zones, bonfires/vestiges/graces, landmarks)
-- Use web search aggressively to verify item names and locations${urlRef}${knowledgeBlock}${researchContext}
+- For EACH item you include in Phase 2 and Phase 3, web search "${gameName} [item name] location" to verify the exact zone and landmark before writing the "loc" field. Do NOT rely on training data alone for locations.${urlRef}${knowledgeBlock}${researchContext}
 
 ${userConstraints}`;
       const step1=await apiCall(p1,useSearchStep1,{prov:provCore,maxTokens:8000});
@@ -969,7 +976,7 @@ Phase 7 (NG+) SPECIAL structure: {"name":"NG+","range":"NG+1 to NG+7","stats":{$
 
 Generate: Phase 4 (Unlock Spells, Lv 25-40), Phase 5 (Mid-to-Late / Dual-Wield, Lv 35-55), Phase 6 (Endgame, Lv 55+), Phase 7 (NG+, with ngCycles)
 
-RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. Each NG+ cycle adds ~5-10 levels per stat. Use exact stat keys: ${resolvedStatKeysStr}.${urlRef}${knowledgeBlock}${researchContext}
+RULES: Stats approach/hit soft caps in endgame, hard caps (${statMax}) in NG+7. Each NG+ cycle adds ~5-10 levels per stat. Use exact stat keys: ${resolvedStatKeysStr}. For any NEW items introduced in phases 4-6 that were not in phases 1-3, web search "${gameName} [item name] location" to verify the exact zone and landmark before writing the "loc" field.${urlRef}${knowledgeBlock}${researchContext}
 
 Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       const step2=await apiCall(p2,false,{prov:contProv,maxTokens:7000});
