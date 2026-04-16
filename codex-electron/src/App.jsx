@@ -706,23 +706,45 @@ export default function App(){
 
   const extractFactsFromBuild=(build)=>{
     const facts=[];
+
+    // Returns true if a loc string is too vague to be worth caching
+    const isVagueLoc=(loc)=>{
+      if(!loc||typeof loc!=="string")return true;
+      const l=loc.trim().toLowerCase();
+      if(l.length<8)return true;
+      return /^(starting|acquired\.?|n\/a|exploration|mid-?game|various|unknown|tbd|inventory|default|placeholder|obtained in phase|drops? from enemies|found (throughout|everywhere)|given (to|by)|beginning|early game|any |common drop|use |player starts?)/.test(l);
+    };
+
+    // Returns true if an item name is too generic to cache
+    const isVagueName=(n)=>{
+      if(!n||typeof n!=="string")return true;
+      const l=n.trim().toLowerCase();
+      if(l.length<3)return true;
+      return ["n/a","none","various","any","item","weapon","armor","ring","accessory","starting gear","placeholder","use whatever you find","save a ring slot"].some(s=>l===s||l.startsWith(s));
+    };
+
     if(build.label)facts.push(`Build "${build.label}" (${build.sub||"—"}): class=${build.cls||"?"}, caps=${build.caps||"?"}, req=${build.weaponReq||"?"}`);
     (build.ph||[]).forEach(ph=>{
       (ph.weapons||[]).forEach(w=>{
+        if(w.eq===false||isVagueName(w.n))return; // skip non-recommended or generic
         const parts=[];
-        if(w.loc&&w.loc!=="Acquired."&&w.loc!=="N/A")parts.push(`loc: ${w.loc}`);
-        if(w.up&&w.up!=="N/A"&&w.up!=="Acquired.")parts.push(`upgrade: ${w.up}`);
-        if(w.ap)parts.push(`AP: ${w.ap}`);if(w.st)parts.push(`status: ${w.st}`);
+        if(!isVagueLoc(w.loc))parts.push(`loc: ${w.loc}`);
+        if(w.up&&w.up!=="N/A"&&!isVagueLoc(w.up))parts.push(`upgrade: ${w.up}`);
+        if(w.ap)parts.push(`AP: ${w.ap}`);
+        if(w.st)parts.push(`status: ${w.st}`);
         if(parts.length>0)facts.push(`WEAPON ${w.n} — ${parts.join(" | ")}`);
       });
       (ph.armor||[]).forEach(ar=>{
-        if(ar.loc&&ar.loc!=="Acquired."&&ar.loc!=="N/A")facts.push(`ARMOR ${ar.n} — loc: ${ar.loc}${ar.wt?` | wt: ${ar.wt}`:""}`);
+        if(ar.eq===false||isVagueName(ar.n)||isVagueLoc(ar.loc))return;
+        facts.push(`ARMOR ${ar.n} — loc: ${ar.loc}${ar.wt?` | wt: ${ar.wt}`:""}`);
       });
       (ph.acc||[]).forEach(ac=>{
-        if(ac.loc&&ac.loc!=="Acquired."&&ac.loc!=="N/A")facts.push(`RING/ACC ${ac.n} — ${ac.ef||""} — loc: ${ac.loc}`);
+        if(ac.eq===false||isVagueName(ac.n)||isVagueLoc(ac.loc))return;
+        facts.push(`RING/ACC ${ac.n} — ${ac.ef||""} — loc: ${ac.loc}`);
       });
       (ph.spells||[]).forEach(s=>{
-        if(s.loc&&s.loc!=="Acquired."&&s.loc!=="N/A")facts.push(`SPELL ${s.n} — ${s.ef||""} — loc: ${s.loc}`);
+        if(s.eq===false||isVagueName(s.n)||isVagueLoc(s.loc))return;
+        facts.push(`SPELL ${s.n} — ${s.ef||""} — loc: ${s.loc}`);
       });
     });
     return facts;
@@ -731,11 +753,17 @@ export default function App(){
   const updateKnowledgeCache=(gameKey,gameName,newFacts,patchNote)=>{
     setKnowledgeCache(prev=>{
       const existing=prev[gameKey]||{name:gameName,lastUpdated:null,facts:[],patchNote:null};
-      const seen=new Set(existing.facts.map(f=>f.slice(0,40)));
-      const merged=[...existing.facts];
-      for(const f of newFacts){const key=f.slice(0,40);if(!seen.has(key)){merged.push(f);seen.add(key);}}
-      const capped=merged.slice(-200);
-      return {...prev,[gameKey]:{name:gameName,lastUpdated:Date.now(),facts:capped,patchNote:patchNote||existing.patchNote}};
+      // Deduplicate by normalized item name so the same item from different builds doesn't create many entries.
+      // Key format: "WEAPON bloody glory", "RING/ACC bloodbane ring", "Build my build name", etc.
+      const itemKey=(f)=>{
+        const m=f.match(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)\s+"?([^"—(]+)/i);
+        return m?`${m[1].toLowerCase()} ${m[2].trim().toLowerCase().slice(0,40)}`:`${f.slice(0,60).toLowerCase()}`;
+      };
+      // When a newer fact for the same item arrives, replace the old one so locations get updated
+      const factMap=new Map(existing.facts.map(f=>[itemKey(f),f]));
+      for(const f of newFacts)factMap.set(itemKey(f),f);
+      const merged=[...factMap.values()].slice(-100); // cap at 100 unique items
+      return {...prev,[gameKey]:{name:gameName,lastUpdated:Date.now(),facts:merged,patchNote:patchNote||existing.patchNote}};
     });
   };
 
@@ -1399,7 +1427,8 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         {/* Status bar */}
         {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0)&&
           <div style={{padding:"4px 18px",background:"#0f0c09",borderBottom:"1px solid #1c1810",fontSize:".62rem",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:12}}>
-            <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{knowledgeCache[safeGame]?.facts?.length>0&&<span>🧠 <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text}}>{G.name}</span>{knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,65)}{knowledgeCache[safeGame].patchNote.length>65?"…":""}</span>}</span>}</div>
+            <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{knowledgeCache[safeGame]?.facts?.length>0&&<span>🧠 <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text}}>{G.name}</span>{knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,65)}{knowledgeCache[safeGame].patchNote.length>65?"…":""}</span>}</span>}</div>
+            {knowledgeCache[safeGame]?.facts?.length>0&&<button onClick={()=>{if(window.confirm(`Clear all ${knowledgeCache[safeGame].facts.length} cached facts for ${G.name}? This cannot be undone.`)){setKnowledgeCache(prev=>{const n={...prev};delete n[safeGame];return n;});}}} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px",flexShrink:0}} title="Clear memory bank for this game">Clear cache</button>}
             {updateMsg&&<div style={{color:updateMsg.startsWith("✓")?"#7ddb8a":updateMsg.startsWith("✗")?"#ff8a7a":C.dim,fontStyle:"italic",fontWeight:600,flexShrink:0}}>{updateMsg}</div>}
           </div>
         }
