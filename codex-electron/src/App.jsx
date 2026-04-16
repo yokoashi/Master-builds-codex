@@ -573,6 +573,8 @@ export default function App(){
   const [wikiUrls,setWikiUrls]=useState(""); // wiki import URLs (one per line)
   const [wikiImporting,setWikiImporting]=useState(false); // wiki fetch in progress
   const [learning,setLearning]=useState(false); // AI Learn crawl in progress
+  const [permCache,setPermCache]=useState({}); // permanent item database — manually curated, never auto-cleared
+  const [showPermViewer,setShowPermViewer]=useState(false); // toggle perm cache viewer panel
 
   // Toggle a provider in the modal multi-select (max 3, order = step assignment)
   const toggleModalProv=(key)=>{
@@ -612,6 +614,10 @@ export default function App(){
       if(rawK){const k=JSON.parse(rawK);if(k&&typeof k==="object")setKnowledgeCache(k);}
     }catch(e){}
     try{
+      const rawP=localStorage.getItem("codex_perm");
+      if(rawP){const p=JSON.parse(rawP);if(p&&typeof p==="object")setPermCache(p);}
+    }catch(e){}
+    try{
       const savedKeys=localStorage.getItem("codex_apikeys");
       const legacyKey=localStorage.getItem("codex_apikey");
       if(savedKeys){
@@ -648,6 +654,12 @@ export default function App(){
     if(!storageLoaded)return;
     try{localStorage.setItem("codex_knowledge",JSON.stringify(knowledgeCache));}catch(e){}
   },[storageLoaded,knowledgeCache]);
+
+  // Save permanent cache
+  useEffect(()=>{
+    if(!storageLoaded)return;
+    try{localStorage.setItem("codex_perm",JSON.stringify(permCache));}catch(e){}
+  },[storageLoaded,permCache]);
 
   // Persist multi-AI toggle
   useEffect(()=>{try{localStorage.setItem("codex_multiAI",multiAI);}catch(_){}
@@ -900,12 +912,33 @@ export default function App(){
     });
   };
 
+  // Adds facts to the permanent cache (deduped by first 60 chars of each fact string)
+  const addToPermCache=(gameKey,gameName,facts)=>{
+    const incoming=Array.isArray(facts)?facts:[facts];
+    setPermCache(prev=>{
+      const existing=prev[gameKey]||{name:gameName,facts:[]};
+      const existingKeys=new Set(existing.facts.map(f=>f.slice(0,60).toLowerCase()));
+      const toAdd=incoming.filter(f=>f&&f.trim()&&!existingKeys.has(f.slice(0,60).toLowerCase()));
+      if(toAdd.length===0)return prev;
+      return{...prev,[gameKey]:{name:gameName,facts:[...existing.facts,...toAdd]}};
+    });
+  };
+
   const buildKnowledgeBlock=(gameKey)=>{
+    const perm=permCache[gameKey];
     const k=knowledgeCache[gameKey];
-    if(!k||!k.facts||k.facts.length===0)return "";
-    const factList=k.facts.slice(-30).join("\n"); // cap at 30 most-recent facts to keep tokens low
-    const ageHours=k.lastUpdated?Math.round((Date.now()-k.lastUpdated)/3600000):null;
-    return `\n\nITEMS SEEN IN PAST BUILDS FOR THIS GAME (reference only${ageHours!=null?`, ${ageHours}h ago`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}IMPORTANT: These are items from PREVIOUS builds — do NOT copy them into the current build unless they genuinely suit this specific build concept. Each build must be designed independently. Use web search to discover the best weapons, armor, and rings for THIS build's archetype — do not default to whatever was used before.\n`;
+    let block="";
+    // Perm cache comes first — highest confidence, no caveats
+    if(perm&&perm.facts&&perm.facts.length>0){
+      block+=`\n\nVERIFIED ITEM DATABASE FOR ${(perm.name||"THIS GAME").toUpperCase()} (confirmed accurate — use freely):\n${perm.facts.slice(-50).join("\n")}\n`;
+    }
+    // Temp cache second — reference only
+    if(k&&k.facts&&k.facts.length>0){
+      const factList=k.facts.slice(-30).join("\n");
+      const ageHours=k.lastUpdated?Math.round((Date.now()-k.lastUpdated)/3600000):null;
+      block+=`\n\nITEMS SEEN IN PAST BUILDS FOR THIS GAME (reference only${ageHours!=null?`, ${ageHours}h ago`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}IMPORTANT: These are items from PREVIOUS builds — do NOT copy them into the current build unless they genuinely suit this specific build concept. Each build must be designed independently. Use web search to discover the best weapons, armor, and rings for THIS build's archetype — do not default to whatever was used before.\n`;
+    }
+    return block;
   };
 
   const PROVIDERS={
@@ -1910,19 +1943,24 @@ Rules:
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
 
         {/* Status bar */}
-        {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0)&&
+        {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0||permCache[safeGame]?.facts?.length>0)&&
           <div style={{padding:"4px 18px",background:"#0f0c09",borderBottom:"1px solid #1c1810",fontSize:".62rem",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:12}}>
-            <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>
-              {knowledgeCache[safeGame]?.facts?.length>0&&<span>
-                🧠 <button onClick={()=>{setShowCacheViewer(v=>!v);setConfirmClearCache(false);}} style={{background:"none",border:"none",cursor:"pointer",padding:0,color:"inherit",font:"inherit",display:"inline"}}>
-                  <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text,textDecoration:"underline dotted",textUnderlineOffset:2}}>{G.name}</span>
+            <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,display:"flex",alignItems:"center",gap:10}}>
+              {permCache[safeGame]?.facts?.length>0&&<span style={{flexShrink:0}}>
+                🔒 <button onClick={()=>{setShowPermViewer(v=>!v);setShowCacheViewer(false);}} style={{background:"none",border:"none",cursor:"pointer",padding:0,color:"inherit",font:"inherit",display:"inline"}}>
+                  <span style={{color:"#f0c070"}}>{permCache[safeGame].facts.length}</span> permanent <span style={{color:C.text,textDecoration:"underline dotted",textUnderlineOffset:2}}>{G.name}</span>
                 </button>
-                {knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,65)}{knowledgeCache[safeGame].patchNote.length>65?"…":""}</span>}
+              </span>}
+              {knowledgeCache[safeGame]?.facts?.length>0&&<span style={{flexShrink:0}}>
+                🧠 <button onClick={()=>{setShowCacheViewer(v=>!v);setConfirmClearCache(false);setShowPermViewer(false);}} style={{background:"none",border:"none",cursor:"pointer",padding:0,color:"inherit",font:"inherit",display:"inline"}}>
+                  <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> working
+                </button>
+                {knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,50)}{knowledgeCache[safeGame].patchNote.length>50?"…":""}</span>}
               </span>}
             </div>
-            {knowledgeCache[safeGame]?.facts?.length>0&&!confirmClearCache&&<button onClick={()=>setConfirmClearCache(true)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px",flexShrink:0}} title="Clear memory bank for this game">Clear all</button>}
+            {knowledgeCache[safeGame]?.facts?.length>0&&!confirmClearCache&&<button onClick={()=>setConfirmClearCache(true)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px",flexShrink:0}} title="Clear working cache for this game">Clear working</button>}
             {confirmClearCache&&<span style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
-              <span style={{fontSize:".6rem",color:"#ff8a7a"}}>Clear all {knowledgeCache[safeGame]?.facts?.length} facts?</span>
+              <span style={{fontSize:".6rem",color:"#ff8a7a"}}>Clear {knowledgeCache[safeGame]?.facts?.length} working facts?</span>
               <button onClick={()=>{setKnowledgeCache(prev=>{const n={...prev};delete n[safeGame];return n;});setConfirmClearCache(false);setShowCacheViewer(false);}} style={{background:"#e74c3c",border:"none",borderRadius:3,color:"#fff",cursor:"pointer",fontSize:".6rem",padding:"1px 7px"}}>Yes</button>
               <button onClick={()=>setConfirmClearCache(false)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px"}}>No</button>
             </span>}
@@ -1930,10 +1968,62 @@ Rules:
           </div>
         }
 
+        {/* Permanent cache viewer — full curated database, per-item delete only */}
+        {showPermViewer&&permCache[safeGame]?.facts?.length>0&&(()=>{
+          const facts=permCache[safeGame].facts;
+          const delPerm=(f)=>setPermCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.filter(x=>x!==f)}}));
+          const tagColor=(f)=>{
+            if(f.startsWith("WEAPON"))return a;
+            if(f.startsWith("ARMOR"))return "#7eb8d4";
+            if(f.startsWith("RING"))return "#82d482";
+            if(f.startsWith("SPELL"))return "#c794e8";
+            if(f.startsWith("PATCH"))return "#f0c070";
+            return C.dim;
+          };
+          const tagLabel=(f)=>{
+            const m=f.match(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)/i);
+            return m?m[1].toUpperCase():"INFO";
+          };
+          // Group by type for easier browsing
+          const grouped={WEAPON:[],ARMOR:[],RING:[],SPELL:[],OTHER:[]};
+          facts.forEach(f=>{
+            if(f.startsWith("WEAPON"))grouped.WEAPON.push(f);
+            else if(f.startsWith("ARMOR"))grouped.ARMOR.push(f);
+            else if(f.startsWith("RING"))grouped.RING.push(f);
+            else if(f.startsWith("SPELL"))grouped.SPELL.push(f);
+            else grouped.OTHER.push(f);
+          });
+          const groupOrder=[["WEAPON","Weapons",a],["ARMOR","Armor","#7eb8d4"],["RING","Rings & Accessories","#82d482"],["SPELL","Spells","#c794e8"],["OTHER","Other","#888"]];
+          return(
+            <div style={{background:"#09070a",borderBottom:"2px solid #2a1f0a",flexShrink:0,maxHeight:400,overflowY:"auto"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 18px",borderBottom:"1px solid #2a1f0a",position:"sticky",top:0,background:"#09070a",zIndex:1}}>
+                <span style={{fontSize:".65rem",color:"#f0c070",fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>🔒 PERMANENT DATABASE — {G.name} <span style={{color:C.dim,fontWeight:400}}>({facts.length} items · click ✕ to remove individual entries)</span></span>
+                <button onClick={()=>setShowPermViewer(false)} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:".8rem",padding:"0 4px",lineHeight:1}}>✕</button>
+              </div>
+              {groupOrder.map(([key,label,col])=>grouped[key].length===0?null:(
+                <div key={key}>
+                  <div style={{padding:"5px 18px 3px",fontSize:".58rem",color:col,fontFamily:"'Cinzel',serif",letterSpacing:".08em",fontWeight:700,background:"#0c0a0e",borderBottom:"1px solid #1a1520",position:"sticky",top:35,zIndex:1}}>{label} ({grouped[key].length})</div>
+                  {grouped[key].map((f,i)=>{
+                    const body=f.replace(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)\s+/i,"").replace(/^"([^"]+)"\s*—?\s*/,"$1 — ");
+                    return(
+                      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 18px",borderBottom:"1px solid #100d14",fontSize:".65rem",lineHeight:1.55}}>
+                        <span style={{color:C.text,flex:1,wordBreak:"break-word"}}>{body}</span>
+                        <button onClick={()=>delPerm(f)} title="Remove from permanent cache" style={{background:"none",border:"none",color:"#4a3a32",cursor:"pointer",fontSize:".75rem",flexShrink:0,padding:"0 2px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#4a3a32"}>✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* Cache fact viewer — toggled by clicking the facts count */}
         {showCacheViewer&&knowledgeCache[safeGame]?.facts?.length>0&&(()=>{
           const facts=knowledgeCache[safeGame].facts;
           const deleteFact=(f)=>setKnowledgeCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.filter(x=>x!==f)}}));
+          const keepFact=(f)=>{addToPermCache(safeGame,G.name,f);deleteFact(f);};
+          const alreadyKept=(f)=>(permCache[safeGame]?.facts||[]).some(p=>p.slice(0,60).toLowerCase()===f.slice(0,60).toLowerCase());
           const tagColor=(f)=>{
             if(f.startsWith("WEAPON"))return a;
             if(f.startsWith("ARMOR"))return "#7eb8d4";
@@ -1949,18 +2039,19 @@ Rules:
           return(
             <div style={{background:"#080705",borderBottom:"2px solid #1c1810",flexShrink:0,maxHeight:320,overflowY:"auto"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 18px",borderBottom:"1px solid #1c1810",position:"sticky",top:0,background:"#080705",zIndex:1}}>
-                <span style={{fontSize:".65rem",color:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>MEMORY BANK — {G.name} ({facts.length} facts)</span>
+                <span style={{fontSize:".65rem",color:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>WORKING CACHE — {G.name} ({facts.length} facts) <span style={{color:"#f0c07066",fontWeight:400,fontSize:".58rem"}}>· 🔒 to keep permanently</span></span>
                 <button onClick={()=>setShowCacheViewer(false)} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:".8rem",padding:"0 4px",lineHeight:1}}>✕</button>
               </div>
               {facts.map((f,i)=>{
                 const tag=tagLabel(f);
                 const col=tagColor(f);
-                // Strip the tag prefix for cleaner display
                 const body=f.replace(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)\s+/i,"").replace(/^"([^"]+)"\s*—?\s*/,"$1 — ");
+                const kept=alreadyKept(f);
                 return(
                   <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 18px",borderBottom:"1px solid #0d0b09",fontSize:".65rem",lineHeight:1.55}}>
                     <span style={{color:col,fontWeight:700,fontSize:".58rem",flexShrink:0,marginTop:2,minWidth:52,letterSpacing:".04em"}}>{tag}</span>
                     <span style={{color:C.text,flex:1,wordBreak:"break-word"}}>{body}</span>
+                    <button onClick={()=>!kept&&keepFact(f)} title={kept?"Already in permanent cache":"Move to permanent cache"} style={{background:"none",border:"none",color:kept?"#f0c07077":"#5a4a32",cursor:kept?"default":"pointer",fontSize:".72rem",flexShrink:0,padding:"0 3px",lineHeight:1,marginTop:1}} onMouseEnter={e=>{if(!kept)e.target.style.color="#f0c070";}} onMouseLeave={e=>{if(!kept)e.target.style.color="#5a4a32";}}>🔒</button>
                     <button onClick={()=>deleteFact(f)} title="Delete this fact" style={{background:"none",border:"none",color:"#4a3a32",cursor:"pointer",fontSize:".75rem",flexShrink:0,padding:"0 2px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#4a3a32"}>✕</button>
                   </div>
                 );
