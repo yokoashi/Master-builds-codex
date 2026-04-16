@@ -615,7 +615,13 @@ export default function App(){
         localStorage.setItem("codex_apikeys",JSON.stringify({claude:legacyKey,perplexity:"",gemini:""}));
       }else{setShowSettings(true);}
       const savedProvider=localStorage.getItem("codex_provider");
-      if(savedProvider){setProvider(savedProvider);setSelectedProviders([savedProvider]);}
+      // Only restore if the provider still exists (guards against groq/openai being in old saves)
+      if(savedProvider&&["claude","perplexity","gemini"].includes(savedProvider)){
+        setProvider(savedProvider);setSelectedProviders([savedProvider]);
+      }else if(savedProvider){
+        // Stale provider removed — fall back to first available key or claude
+        localStorage.removeItem("codex_provider");
+      }
     }catch(e){setShowSettings(true);}
     setStorageLoaded(true);
   },[]);
@@ -808,19 +814,33 @@ export default function App(){
         :"You are an expert soulslike build theorycrafter and game database. Your ENTIRE response must be a single valid JSON object — output ONLY the JSON with no markdown code fences, no text before or after, no citation markers, no footnotes. Start immediately with { and end with }. Every item field (d, loc, tip, ef) MUST contain specific non-placeholder text. Vague values like 'Exploration', 'Acquired', 'Mid-game', 'Various locations', or 'N/A' are NEVER acceptable for loc or d fields.";
       const urlMap={perplexity:"https://api.perplexity.ai/chat/completions",gemini:"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"};
       body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1000:(opts.maxTokens||6000),messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
-      // Perplexity-specific: disable return_citations (they appear inline and corrupt JSON),
-      // and enable web_search_options so sonar-pro actively searches gaming wikis for item locations
+      // Perplexity: disable inline citations (they corrupt JSON) and boost search context
       if(tProv==="perplexity"&&!opts.rawText){
         body.return_citations=false;
         body.search_recency_filter="month";
         body.web_search_options={search_context_size:"high"};
+      }
+      // Gemini: disable safety filters that trip on gaming content (weapons, damage, "bleed", etc.)
+      if(tProv==="gemini"){
+        body.safety_settings=[
+          {category:"HARM_CATEGORY_HARASSMENT",threshold:"BLOCK_NONE"},
+          {category:"HARM_CATEGORY_HATE_SPEECH",threshold:"BLOCK_NONE"},
+          {category:"HARM_CATEGORY_SEXUALLY_EXPLICIT",threshold:"BLOCK_NONE"},
+          {category:"HARM_CATEGORY_DANGEROUS_CONTENT",threshold:"BLOCK_NONE"},
+        ];
       }
       let data;
       if(window.electronAPI){data=await window.electronAPI.callAI(tProv,body,curKey);}
       else{const r=await fetch(urlMap[tProv],{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${curKey}`},body:JSON.stringify(body)});data=await r.json();}
       if(data.error)throw new Error(data.error.message||(data.error?.code?"API error: "+data.error.code:"API error"));
       const choice=data.choices?.[0]?.message?.content;
-      if(!choice)throw new Error("No content in response");
+      if(!choice){
+        const finish=data.choices?.[0]?.finish_reason||data.choices?.[0]?.finish_message||"";
+        if(/safety|content_filter/i.test(finish))throw new Error(`${PROVIDERS[tProv].label} blocked this request (safety filter). Switch to a different provider.`);
+        if(/length/i.test(finish))throw new Error(`${PROVIDERS[tProv].label} hit its output token limit mid-response. Try Claude for longer builds.`);
+        const preview=JSON.stringify(data).slice(0,200);
+        throw new Error(`${PROVIDERS[tProv].label} returned no content. Raw: ${preview}`);
+      }
       rawText=choice;
     }
 
