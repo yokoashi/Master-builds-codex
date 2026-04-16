@@ -397,31 +397,33 @@ ds1:{name:"Dark Souls",icon:"⚔️",builds:{uchi:ds1Uchi},statMax:99,endgameBud
 /* ══ COMPONENTS ══ */
 
 const SL=({children,a})=>(
-  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:22,marginBottom:12}}>
-    <div style={{width:3,height:16,background:a,borderRadius:2}}/>
-    <h3 style={{fontFamily:"'Cinzel',serif",fontSize:".76rem",letterSpacing:".15em",textTransform:"uppercase",color:C.bright,margin:0,fontWeight:700}}>{children}</h3>
-    <div style={{flex:1,height:1,background:`${a}33`}}/>
+  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:26,marginBottom:12}}>
+    <div style={{width:3,height:18,background:`linear-gradient(180deg,${a},${a}66)`,borderRadius:2,boxShadow:`0 0 7px ${a}88`,flexShrink:0}}/>
+    <h3 style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",letterSpacing:".18em",textTransform:"uppercase",color:C.bright,margin:0,fontWeight:700,whiteSpace:"nowrap"}}>{children}</h3>
+    <div style={{flex:1,height:1,background:`linear-gradient(90deg,${a}44,transparent)`}}/>
   </div>
 );
 
 const ItemCard=({item,a})=>{
   const [o,setO]=useState(false);
+  const isEquipped=item.eq!==false;
   return (
-    <div style={{border:`1px solid ${o?a+"66":"#ffffff14"}`,borderRadius:6,marginBottom:6,background:o?C.cardHi:C.card,transition:"all .2s",overflow:"hidden"}}>
-      <button onClick={()=>setO(!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"10px 13px",background:"none",border:"none",cursor:"pointer",textAlign:"left",flexWrap:"wrap"}}>
-        <span style={{width:8,height:8,borderRadius:"50%",background:item.eq!==false?a:"#444",flexShrink:0}}/>
-        <span style={{flex:"1 1 110px",fontSize:".86rem",color:item.eq!==false?C.bright:C.dim,fontWeight:item.eq!==false?600:400,minWidth:80}}>{item.n}</span>
-        {item.ap&&<span style={{fontSize:".72rem",color:a,fontFamily:"'Cinzel',serif",fontWeight:700}}>{item.ap}</span>}
-        {item.st&&<span style={{fontSize:".66rem",background:`${a}22`,color:C.bright,padding:"2px 9px",borderRadius:11,whiteSpace:"nowrap",fontWeight:600,border:`1px solid ${a}55`}}>{item.st}</span>}
-        {item.ef&&<span style={{fontSize:".68rem",color:C.dim,fontStyle:"italic",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.ef}</span>}
-        {item.wt&&<span style={{fontSize:".66rem",color:C.dim,whiteSpace:"nowrap"}}>⚖{item.wt}</span>}
-        <span style={{color:a,fontSize:".62rem",transform:o?"rotate(90deg)":"rotate(0)",transition:"transform .2s",flexShrink:0}}>▶</span>
+    <div className="item-card" style={{border:`1px solid ${o?a+"55":"#ffffff10"}`,borderLeft:isEquipped?`3px solid ${o?a:a+"55"}`:"3px solid #333",borderRadius:7,marginBottom:7,background:o?"#1d1911":C.card,overflow:"hidden",boxShadow:o?`0 2px 16px #00000050`:"none"}}>
+      <button onClick={()=>setO(!o)} style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"10px 13px 10px 12px",background:"none",border:"none",cursor:"pointer",textAlign:"left",flexWrap:"wrap"}}>
+        <span style={{width:7,height:7,borderRadius:"50%",background:isEquipped?a:"#3a3428",flexShrink:0,boxShadow:isEquipped&&o?`0 0 6px ${a}`:""}}/>
+        <span style={{flex:"1 1 110px",fontSize:".86rem",color:isEquipped?C.bright:C.dim,fontWeight:isEquipped?600:400,minWidth:80}}>{item.n}</span>
+        {item.ap&&<span style={{fontSize:".72rem",color:a,fontFamily:"'Cinzel',serif",fontWeight:700,flexShrink:0}}>{item.ap}</span>}
+        {item.st&&<span style={{fontSize:".65rem",background:`${a}1a`,color:C.bright,padding:"2px 10px",borderRadius:20,whiteSpace:"nowrap",fontWeight:600,border:`1px solid ${a}44`,flexShrink:0}}>{item.st}</span>}
+        {item.ef&&!o&&<span style={{fontSize:".68rem",color:C.dim,fontStyle:"italic",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.ef}</span>}
+        {item.wt&&<span style={{fontSize:".65rem",color:C.dim,whiteSpace:"nowrap",flexShrink:0}}>⚖ {item.wt}</span>}
+        <span style={{color:a,fontSize:".6rem",transform:o?"rotate(90deg)":"rotate(0deg)",transition:"transform .2s",flexShrink:0,marginLeft:"auto"}}>▶</span>
       </button>
-      {o&&<div style={{padding:"4px 13px 14px 30px",fontSize:".8rem",lineHeight:1.65}}>
-        {item.d&&<p style={{color:C.text,margin:"0 0 9px"}}>{item.d}</p>}
-        {[{i:"📍",l:"LOCATION",v:item.loc},{i:"⬆",l:"UPGRADE",v:item.up},{i:"💡",l:"TIPS",v:item.tip}].filter(x=>x.v&&x.v!=="N/A").map((x,i)=>(
-          <div key={i} style={{background:"#ffffff08",borderRadius:5,padding:"8px 11px",marginBottom:5,borderLeft:`3px solid ${a}`}}>
-            <span style={{color:a,fontWeight:700,fontSize:".72rem",letterSpacing:".05em"}}>{x.i} {x.l}: </span><span style={{color:C.text}}>{x.v}</span>
+      {o&&<div style={{padding:"2px 14px 14px 28px",fontSize:".8rem",lineHeight:1.65}}>
+        {item.ef&&<div style={{fontSize:".76rem",color:a,fontWeight:600,marginBottom:8,fontStyle:"italic"}}>{item.ef}</div>}
+        {item.d&&<p style={{color:C.text,margin:"0 0 10px",lineHeight:1.6}}>{item.d}</p>}
+        {[{i:"📍",l:"LOCATION",v:item.loc},{i:"⬆",l:"UPGRADE",v:item.up},{i:"💡",l:"TIPS",v:item.tip}].filter(x=>x.v&&x.v!=="N/A"&&x.v!=="Acquired.").map((x,j)=>(
+          <div key={j} style={{background:"#ffffff06",borderRadius:5,padding:"7px 12px",marginBottom:5,borderLeft:`2px solid ${a}88`}}>
+            <span style={{color:a,fontWeight:700,fontSize:".7rem",letterSpacing:".04em"}}>{x.i} {x.l}: </span><span style={{color:C.text}}>{x.v}</span>
           </div>
         ))}
       </div>}
@@ -433,15 +435,15 @@ const StatBar=({l,v,max,a,p,softCap})=>{
   const pct=Math.min((v/max)*100,100);
   const grew=p!=null&&v>p;
   return (
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-      <span style={{width:36,fontSize:".72rem",color:C.dim,fontFamily:"'Cinzel',serif",textAlign:"right"}}>{l}</span>
-      <div style={{flex:1,height:14,background:"#ffffff0a",borderRadius:7,overflow:"hidden",position:"relative"}}>
-        {p!=null&&<div style={{position:"absolute",width:`${Math.min((p/max)*100,100)}%`,height:"100%",background:`${a}33`,borderRadius:7}}/>}
-        <div style={{position:"relative",width:`${pct}%`,height:"100%",background:a,borderRadius:7,transition:"width .4s"}}/>
-        {softCap&&<div style={{position:"absolute",left:`${(softCap/max)*100}%`,top:-1,width:2,height:"calc(100% + 2px)",background:"#ffffff66"}}/>}
+    <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:7}}>
+      <span style={{width:36,fontSize:".7rem",color:C.dim,fontFamily:"'Cinzel',serif",textAlign:"right",letterSpacing:".03em",flexShrink:0}}>{l}</span>
+      <div style={{flex:1,height:17,background:"#ffffff09",borderRadius:8,overflow:"hidden",position:"relative"}}>
+        {p!=null&&<div style={{position:"absolute",width:`${Math.min((p/max)*100,100)}%`,height:"100%",background:`${a}28`,borderRadius:8}}/>}
+        <div className="stat-fill" style={{position:"relative",width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${a}88,${a})`,borderRadius:8,boxShadow:pct>0?`0 0 8px ${a}66,inset 0 1px 0 rgba(255,255,255,0.15)`:"none"}}/>
+        {softCap&&<div style={{position:"absolute",left:`${(softCap/max)*100}%`,top:0,width:1,height:"100%",background:"#ffffff55",boxShadow:"0 0 3px #ffffff88"}}/>}
       </div>
-      <span style={{width:28,fontSize:".84rem",color:C.bright,fontWeight:700,textAlign:"right"}}>{v}</span>
-      {grew?<span style={{fontSize:".64rem",color:C.green,fontWeight:700,width:24}}>+{v-p}</span>:<span style={{width:24}}/>}
+      <span style={{width:28,fontSize:".86rem",color:C.bright,fontWeight:700,textAlign:"right",flexShrink:0}}>{v}</span>
+      {grew?<span style={{fontSize:".64rem",color:C.green,fontWeight:700,width:24,flexShrink:0}}>+{v-p}</span>:<span style={{width:24,flexShrink:0}}/>}
     </div>
   );
 };
@@ -885,6 +887,14 @@ Each loadout: {"id":"unique_id","label":"Variant Name","weaponWt":"~N","endReq":
 
 Each phase: {"name":"Phase Name","range":"Lv X-Y","stats":{${statObjStr}},"sn":"1-2 sentence stat priority note","weapons":[{"n":"Weapon","ap":"~N","st":"status","eq":true,"d":"desc","loc":"specific location","up":"upgrade material","tip":"tip"}],"armor":[{"n":"Armor","wt":"~N","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"acc":[{"n":"Ring","ef":"effect","eq":true,"d":"desc","loc":"location","up":"N/A","tip":"tip"}],"spells":[],"dmg":{"ps":"~N","sp":"status procs","bs":"boss speed","n":"notes"}}
 
+ITEM FIELD REQUIREMENTS — every single item (weapon, armor, ring, spell) must have ALL fields filled with real, specific data:
+- "eq": true for recommended/core items. Only use false for explicitly labeled alternatives.
+- "d": 1-2 sentences explaining WHY this item is good for THIS build specifically.
+- "loc": SPECIFIC location — zone name + landmark/NPC/boss name. NEVER write "Exploration", "Acquired", "Mid-game exploration", or "N/A" for loc. Every item has a real location.
+- "up": exact upgrade material name for weapons (e.g. "Regular Deralium Nuggets"). "N/A" only for rings/amulets/armor with no upgrades.
+- "tip": actionable gameplay tip for using the item (not just a description).
+EXAMPLE complete ring entry: {"n":"Bloodbane Ring","ef":"Bleed when you inflict Poison","eq":true,"d":"The build's engine — makes Poison proc Bleed simultaneously, doubling status application without extra hits.","loc":"Forsaken Fen — ruined building on the eastern swamp shore, before the Vestige of Blind Agatha.","up":"N/A","tip":"Never unequip under any circumstances. Socket a backup onto a shield if you need ring flexibility."}
+
 Generate exactly 3 phases: Phase 1 (Early Game, Lv 1-20, starter gear), Phase 2 (Core Weapon, Lv 15-25, acquires signature weapon), Phase 3 (Key Accessories, Lv 20-30, build-defining rings)
 
 RULES:
@@ -913,6 +923,8 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. No pr
 SCHEMA: {"ph":[<phase4>,<phase5>,<phase6>,<phase7_ngplus>]}
 
 Phases 4-6: {"name":"Phase Name","range":"Lv X-Y","stats":{${resolvedStatObjStr}},"sn":"stat note","weapons":[{"n":"...","ap":"~N","st":"...","eq":true,"d":"...","loc":"...","up":"...","tip":"..."}],"armor":[{"n":"...","wt":"~N","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"acc":[{"n":"...","ef":"...","eq":true,"d":"...","loc":"...","up":"N/A","tip":"..."}],"spells":[{"n":"Spell","ef":"effect","eq":true,"d":"desc","loc":"where learned","up":"scaling","tip":"tip"}],"dmg":{"ps":"~N","sp":"...","bs":"...","n":"..."}}
+
+ITEM FIELD REQUIREMENTS: ALL item fields must be fully filled. "eq" true = recommended, false = alternative only. "d" = why this item matters for the build. "loc" = specific zone + NPC/boss/landmark (NEVER "Acquired", "Exploration", or "N/A"). "up" = exact material name for weapons, "N/A" for rings. "tip" = actionable gameplay advice. "ef" for accessories must describe the mechanic precisely.
 
 Phase 7 (NG+) SPECIAL structure: {"name":"NG+","range":"NG+1 to NG+7","stats":{${resolvedStatObjStr}},"sn":"NG+ overview","ngCycles":[{"label":"NG+1","stats":{${resolvedStatObjStr}},"notes":"NG+1 priorities"},{"label":"NG+3","stats":{${resolvedStatObjStr}},"notes":"NG+3 priorities"},{"label":"NG+5","stats":{${resolvedStatObjStr}},"notes":"NG+5 priorities"},{"label":"NG+7","stats":{${resolvedStatObjStr}},"notes":"NG+7 max"}],"weapons":[...],"armor":[...],"acc":[...],"spells":[...],"dmg":{"ps":"~N NG+1, ~N NG+7","sp":"...","bs":"...","n":"..."}}
 
@@ -1058,8 +1070,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
   ];
 
   return (
-    <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",background:C.bg,color:C.text,minHeight:"100vh",padding:"20px 0"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
+    <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",background:C.bg,color:C.text,height:"100vh",display:"flex",overflow:"hidden"}}>
 
       {/* SETTINGS MODAL */}
       {showSettings&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#000000ee",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}} onClick={()=>Object.values(apiKeys).some(v=>v.trim())&&setShowSettings(false)}>
@@ -1210,131 +1221,183 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         </div>
       </div>}
 
-      <div style={{maxWidth:920,margin:"0 auto",padding:"0 16px"}}>
+      {/* ══ SIDEBAR ══ */}
+      <div style={{width:230,flexShrink:0,background:"#0f0c09",borderRight:"1px solid #1c1810",display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
 
-        {/* HEADER */}
-        <div style={{textAlign:"center",marginBottom:20,position:"relative"}}>
-          <div style={{fontSize:".58rem",letterSpacing:".35em",color:a,textTransform:"uppercase",marginBottom:3,fontWeight:600}}>Master Build Codex</div>
-          <h1 style={{fontFamily:"'Cinzel',serif",fontSize:"1.6rem",color:C.bright,letterSpacing:".1em",margin:0,fontWeight:800}}>OP BUILDS</h1>
-          <div style={{width:80,height:2,background:a,margin:"8px auto 0",borderRadius:1}}/>
-          <button onClick={()=>{setSettingsDraft({claude:"",perplexity:"",openai:"",gemini:"",groq:""});setShowSettings(true);}} title="Settings" style={{position:"absolute",top:20,right:20,background:"transparent",border:"1px solid #ffffff22",borderRadius:5,padding:"6px 10px",cursor:"pointer",color:C.dim,fontSize:".72rem",fontFamily:"'Cinzel',serif",fontWeight:700,display:"flex",alignItems:"center",gap:5}}>
-            <span>{PROVIDERS[provider]?.icon||"⚙"}</span>
-            <span style={{color:apiKey?C.text:C.fire}}>{apiKey?PROVIDERS[provider]?.label:"No Key"}</span>
-            <span style={{color:"#ffffff33"}}>▸</span>
+        {/* Branding */}
+        <div style={{padding:"18px 16px 14px",borderBottom:"1px solid #1c1810",flexShrink:0}}>
+          <div style={{fontSize:".44rem",letterSpacing:".45em",color:a,textTransform:"uppercase",fontWeight:700,marginBottom:5}}>Master Build</div>
+          <div style={{fontFamily:"'Cinzel Decorative','Cinzel',serif",fontSize:"1.05rem",color:C.bright,fontWeight:900,letterSpacing:".04em",lineHeight:1}}>CODEX</div>
+          <div style={{width:28,height:2,background:`linear-gradient(90deg,${a},${a}44)`,borderRadius:1,marginTop:8,boxShadow:`0 0 6px ${a}88`}}/>
+        </div>
+
+        {/* Active build hero */}
+        <div style={{padding:"13px 14px",borderBottom:"1px solid #1c1810",background:`${a}09`,flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:40,height:40,borderRadius:8,background:`${a}18`,border:`1px solid ${a}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.4rem",flexShrink:0,boxShadow:`0 0 14px ${a}22`}}>{B.icon}</div>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontFamily:"'Cinzel',serif",fontSize:".78rem",color:C.bright,fontWeight:800,lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{B.label}</div>
+              <div style={{fontSize:".55rem",color:a,letterSpacing:".1em",textTransform:"uppercase",fontWeight:700,marginTop:3}}>{B.sub}</div>
+            </div>
+          </div>
+          <div style={{fontSize:".6rem",color:C.dim,marginTop:9,lineHeight:1.4,borderTop:`1px solid ${a}18`,paddingTop:7}}>{B.cls} · {B.caps}</div>
+        </div>
+
+        {/* Game list */}
+        <div style={{padding:"11px 10px 4px",flexShrink:0}}>
+          <div style={{fontSize:".48rem",letterSpacing:".22em",color:"#4a4035",textTransform:"uppercase",fontWeight:700,marginBottom:6,paddingLeft:3}}>Game</div>
+          {Object.entries(allGames).map(([k,g])=>{
+            const isAct=game===k; const isCG=!games[k];
+            return(<button key={k} onClick={()=>handleGameSwitch(k)} className="sb-btn" style={{width:"100%",display:"flex",alignItems:"center",gap:8,background:isAct?`${a}12`:"transparent",border:`1px solid ${isAct?a+"44":"transparent"}`,borderRadius:6,padding:"6px 9px",cursor:"pointer",marginBottom:2,textAlign:"left"}}>
+              <span style={{fontSize:".95rem",filter:isAct?"none":"grayscale(70%) opacity(0.4)"}}>{g.icon}</span>
+              <span style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:isAct?C.bright:C.dim,fontWeight:700,flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.name}</span>
+              {isCG&&<span style={{fontSize:".44rem",color:a,background:`${a}18`,padding:"1px 5px",borderRadius:3,fontWeight:700,flexShrink:0}}>AI</span>}
+            </button>);
+          })}
+        </div>
+
+        {/* Build list */}
+        <div style={{padding:"4px 10px",flex:1,overflowY:"auto",minHeight:0}}>
+          <div style={{fontSize:".48rem",letterSpacing:".22em",color:"#4a4035",textTransform:"uppercase",fontWeight:700,marginBottom:6,paddingLeft:3}}>Builds</div>
+          {buildKeys.map(k=>{
+            const bld=allBuilds[k]; const isAct=safeBuildKey===k; const isCust=k.startsWith("custom_");
+            return(<button key={k} onClick={()=>handleBuildSwitch(k)} className="sb-btn" style={{width:"100%",display:"flex",alignItems:"center",gap:7,background:isAct?`${bld.accent}12`:"transparent",border:`1px solid ${isAct?bld.accent+"44":"transparent"}`,borderLeft:isAct?`3px solid ${bld.accent}`:"3px solid transparent",borderRadius:6,padding:"6px 9px",cursor:"pointer",marginBottom:2,textAlign:"left"}}>
+              <span style={{fontSize:".85rem"}}>{bld.icon}</span>
+              <span style={{fontFamily:"'Cinzel',serif",fontSize:".66rem",color:isAct?C.bright:C.dim,fontWeight:700,flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{bld.label}</span>
+              {isCust&&<span style={{fontSize:".44rem",color:bld.accent,fontWeight:700,flexShrink:0}}>✦</span>}
+            </button>);
+          })}
+        </div>
+
+        {/* Action buttons */}
+        <div style={{padding:"9px 10px",borderTop:"1px solid #1c1810",flexShrink:0}}>
+          <button onClick={()=>{setAddTargetGame(safeGame);setShowAdd(true);setAddError("");}} style={{width:"100%",background:`${a}12`,border:`1px dashed ${a}55`,borderRadius:6,padding:"8px",cursor:"pointer",color:a,fontFamily:"'Cinzel',serif",fontSize:".65rem",fontWeight:700,textAlign:"center",marginBottom:6,letterSpacing:".06em"}}>✦ Add Build</button>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:4}}>
+            <button onClick={handleUpdateGame} disabled={updating} title="Check for latest patch updates" style={{background:"transparent",border:"1px solid #ffffff0e",borderRadius:5,padding:"5px 3px",cursor:updating?"not-allowed":"pointer",color:C.dim,fontSize:".58rem",fontWeight:700,textAlign:"center",opacity:updating?0.6:1}}>{updating?"⟳":"↻"} Up</button>
+            <button onClick={handleExport} title="Export/backup your codex" style={{background:"transparent",border:"1px solid #ffffff0e",borderRadius:5,padding:"5px 3px",cursor:"pointer",color:C.dim,fontSize:".58rem",fontWeight:700,textAlign:"center"}}>💾 Save</button>
+            <label title="Import a saved codex" style={{background:"transparent",border:"1px solid #ffffff0e",borderRadius:5,padding:"5px 3px",cursor:"pointer",color:C.dim,fontSize:".58rem",fontWeight:700,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>📂<input type="file" accept=".json,application/json" onChange={handleImport} style={{display:"none"}}/>Load</label>
+          </div>
+          {(hiddenStaticBuilds.length>0||Object.keys(dynamicBuilds).length>0||Object.keys(dynamicGames).length>0||safeBuildKey)&&
+            <div style={{display:"flex",gap:4}}>
+              {(hiddenStaticBuilds.length>0||Object.keys(dynamicBuilds).length>0||Object.keys(dynamicGames).length>0)&&<button onClick={handleRestoreAll} style={{flex:1,background:"transparent",border:"1px solid #ffffff0e",borderRadius:5,padding:"5px 3px",cursor:"pointer",color:C.dim,fontSize:".57rem",fontWeight:700,textAlign:"center"}}>↺ Reset</button>}
+              {(safeBuildKey&&B.label!=="No builds")&&<button onClick={handleDeleteBuild} style={{flex:1,background:"transparent",border:"1px solid #e74c3c28",borderRadius:5,padding:"5px 3px",cursor:"pointer",color:"#e74c3c66",fontSize:".57rem",fontWeight:700,textAlign:"center"}}>✕ Del</button>}
+            </div>
+          }
+        </div>
+
+        {/* Settings */}
+        <div style={{padding:"8px 10px",borderTop:"1px solid #1c1810",flexShrink:0}}>
+          <button onClick={()=>{setSettingsDraft({claude:"",perplexity:"",openai:"",gemini:"",groq:""});setShowSettings(true);}} className="sb-btn" style={{width:"100%",background:"transparent",border:"1px solid #ffffff0e",borderRadius:6,padding:"9px 11px",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:"1.05rem"}}>{PROVIDERS[provider]?.icon||"⚙"}</span>
+            <div style={{flex:1,textAlign:"left"}}>
+              <div style={{fontFamily:"'Cinzel',serif",fontSize:".62rem",color:apiKey?C.text:C.fire,fontWeight:700}}>{apiKey?PROVIDERS[provider]?.label:"No API Key!"}</div>
+              <div style={{fontSize:".5rem",color:C.dim,marginTop:1}}>API Settings</div>
+            </div>
+            {!apiKey&&<span style={{fontSize:".9rem"}}>⚠️</span>}
           </button>
         </div>
+      </div>
 
-        {/* GAME SELECTOR */}
-        <div style={{display:"flex",gap:8,marginBottom:14,padding:"5px",background:C.card,borderRadius:8,border:"1px solid #ffffff0d",flexWrap:"wrap"}}>
-          {Object.entries(allGames).map(([k,g])=>{
-            const isActive=game===k;const isCustomGame=!games[k];
-            return(<button key={k} onClick={()=>handleGameSwitch(k)} style={{flex:"1 1 140px",background:isActive?C.cardHi:"transparent",border:`1px solid ${isActive?a+"66":"transparent"}`,borderRadius:6,padding:"11px 12px",cursor:"pointer",textAlign:"center",transition:"all .2s",position:"relative"}}>
-              <div style={{fontSize:"1.5rem",marginBottom:3,filter:isActive?"none":"grayscale(50%) opacity(0.5)"}}>{g.icon}</div>
-              <div style={{fontFamily:"'Cinzel',serif",fontSize:".78rem",color:isActive?C.bright:C.dim,fontWeight:700,letterSpacing:".06em"}}>{g.name}</div>
-              {isCustomGame&&<div style={{position:"absolute",top:4,right:6,fontSize:".5rem",color:a,fontWeight:700}}>✦ AI</div>}
-            </button>);
-          })}
+      {/* ══ MAIN CONTENT PANEL ══ */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+        {/* Status bar */}
+        {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0)&&
+          <div style={{padding:"4px 18px",background:"#0f0c09",borderBottom:"1px solid #1c1810",fontSize:".62rem",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:12}}>
+            <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{knowledgeCache[safeGame]?.facts?.length>0&&<span>🧠 <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text}}>{G.name}</span>{knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,65)}{knowledgeCache[safeGame].patchNote.length>65?"…":""}</span>}</span>}</div>
+            {updateMsg&&<div style={{color:updateMsg.startsWith("✓")?"#7ddb8a":updateMsg.startsWith("✗")?"#ff8a7a":C.dim,fontStyle:"italic",fontWeight:600,flexShrink:0}}>{updateMsg}</div>}
+          </div>
+        }
+
+        {/* Tab bar */}
+        <div style={{display:"flex",background:"#0f0c09",borderBottom:"1px solid #1c1810",flexShrink:0,overflowX:"auto"}}>
+          {tabs.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?"#18140f":"transparent",border:"none",borderBottom:tab===t.id?`2px solid ${a}`:"2px solid transparent",padding:"10px 18px",cursor:"pointer",flexShrink:0,textAlign:"left"}}>
+              <div style={{fontSize:".78rem",color:tab===t.id?C.bright:C.dim,fontWeight:700,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}><span>{t.icon}</span>{t.l}</div>
+              <div style={{fontSize:".56rem",color:tab===t.id?a:"#3a3428",marginTop:1,whiteSpace:"nowrap"}}>{t.s}</div>
+            </button>
+          ))}
         </div>
 
-        {/* BUILD SELECTOR */}
-        <div style={{display:"flex",gap:6,marginBottom:8,padding:"4px",background:C.card,borderRadius:7,border:"1px solid #ffffff0d",flexWrap:"wrap",alignItems:"stretch"}}>
-          {buildKeys.map(k=>{
-            const bld=allBuilds[k];const isActive=safeBuildKey===k;const isCustom=k.startsWith("custom_");
-            return(<button key={k} onClick={()=>handleBuildSwitch(k)} style={{flex:"1 1 120px",background:isActive?C.cardHi:"transparent",border:`1px solid ${isActive?bld.accent+"66":"transparent"}`,borderRadius:5,padding:"8px 10px",cursor:"pointer",textAlign:"center",transition:"all .2s",position:"relative"}}>
-              <div style={{fontSize:"1.1rem",marginBottom:2}}>{bld.icon}</div>
-              <div style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:isActive?C.bright:C.dim,fontWeight:700,letterSpacing:".05em"}}>{bld.label}</div>
-              {isCustom&&<div style={{position:"absolute",top:3,right:5,fontSize:".5rem",color:bld.accent,fontWeight:700}}>✦ AI</div>}
-            </button>);
-          })}
-        </div>
+        {/* Scrollable content */}
+        <div style={{flex:1,overflowY:"auto",padding:"22px 26px"}} className="tab-content">
 
-        {/* ACTION BUTTONS + CACHE STATUS */}
-        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-          <button onClick={()=>{setAddTargetGame(safeGame);setShowAdd(true);setAddError("");}} style={{background:"transparent",border:`1px dashed ${a}66`,borderRadius:5,padding:"8px 14px",cursor:"pointer",color:a,fontFamily:"'Cinzel',serif",fontSize:".72rem",fontWeight:700,whiteSpace:"nowrap",transition:"all .2s"}}>+ Add Build</button>
-          <button onClick={handleUpdateGame} disabled={updating} style={{background:updating?"#ffffff08":"transparent",border:`1px dashed ${a}66`,borderRadius:5,padding:"8px 12px",cursor:updating?"not-allowed":"pointer",color:a,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap",opacity:updating?0.6:1}}>{updating?"⟳ Checking...":"↻ Update"}</button>
-          <button onClick={handleExport} style={{background:"transparent",border:"1px dashed #ffffff22",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap"}}>💾 Save</button>
-          <label style={{background:"transparent",border:"1px dashed #ffffff22",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center"}}>📂 Load<input type="file" accept=".json,application/json" onChange={handleImport} style={{display:"none"}}/></label>
-          {(hiddenStaticBuilds.length>0||Object.keys(dynamicBuilds).length>0||Object.keys(dynamicGames).length>0)&&<button onClick={handleRestoreAll} style={{background:"transparent",border:"1px dashed #ffffff22",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:C.dim,fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap"}}>↺ Reset</button>}
-          {(safeBuildKey&&B.label!=="No builds")&&<button onClick={handleDeleteBuild} title="Delete this build" style={{background:"transparent",border:"1px dashed #e74c3c44",borderRadius:5,padding:"8px 12px",cursor:"pointer",color:"#e74c3c88",fontFamily:"'Cinzel',serif",fontSize:".7rem",fontWeight:700,whiteSpace:"nowrap",marginLeft:"auto"}}>✕ Delete</button>}
-        </div>
-        {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0)&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14,padding:"6px 11px",background:C.card,border:"1px solid #ffffff0d",borderRadius:6,fontSize:".68rem"}}>
-          <div style={{color:C.dim}}>{knowledgeCache[safeGame]?.facts?.length>0&&<span>🧠 <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text}}>{G.name}</span>{knowledgeCache[safeGame]?.patchNote&&<span style={{color:C.dim}}> · {knowledgeCache[safeGame].patchNote.slice(0,60)}{knowledgeCache[safeGame].patchNote.length>60?"…":""}</span>}</span>}</div>
-          {updateMsg&&<div style={{color:updateMsg.startsWith("✓")?"#7ddb8a":updateMsg.startsWith("✗")?"#ff8a7a":C.dim,fontStyle:"italic",fontWeight:600}}>{updateMsg}</div>}
-        </div>}
-
-        {/* TABS NAV */}
-        <div style={{display:"flex",gap:2,marginBottom:18,borderBottom:`1px solid #ffffff14`,overflowX:"auto"}}>
-          {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?C.card:"transparent",border:"none",borderBottom:tab===t.id?`2px solid ${a}`:"2px solid transparent",padding:"9px 14px",cursor:"pointer",textAlign:"left",flexShrink:0,transition:"all .2s"}}><div style={{fontSize:".82rem",color:tab===t.id?C.bright:C.dim,fontWeight:700,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}><span>{t.icon}</span>{t.l}</div><div style={{fontSize:".6rem",color:tab===t.id?a:"#555",marginTop:1,whiteSpace:"nowrap"}}>{t.s}</div></button>))}
-        </div>
-
-        {/* MAIN TAB */}
-        {tab==="main"&&<div>
-          <div style={{background:C.card,border:`1px solid ${a}55`,borderLeft:`4px solid ${a}`,borderRadius:8,padding:16,marginBottom:16}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-              <span style={{fontSize:"1.9rem"}}>{B.icon}</span>
-              <div><div style={{fontFamily:"'Cinzel',serif",fontSize:"1.2rem",color:C.bright,fontWeight:800,letterSpacing:".04em"}}>{B.label}</div><div style={{fontSize:".7rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginTop:2,fontWeight:700}}>{B.sub}</div></div>
+          {/* MAIN TAB */}
+          {tab==="main"&&<div>
+            <div style={{background:C.card,border:`1px solid ${a}44`,borderLeft:`4px solid ${a}`,borderRadius:10,padding:"18px 20px",marginBottom:18,boxShadow:`0 0 30px ${a}0d,0 4px 20px #00000050`}}>
+              <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:12}}>
+                <div style={{width:54,height:54,borderRadius:10,background:`${a}18`,border:`1px solid ${a}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"2rem",flexShrink:0,boxShadow:`0 0 18px ${a}33`}}>{B.icon}</div>
+                <div>
+                  <div style={{fontFamily:"'Cinzel',serif",fontSize:"1.2rem",color:C.bright,fontWeight:800,letterSpacing:".04em"}}>{B.label}</div>
+                  <div style={{fontSize:".68rem",color:a,letterSpacing:".12em",textTransform:"uppercase",marginTop:4,fontWeight:700}}>{B.sub}</div>
+                </div>
+              </div>
+              <div style={{fontSize:".86rem",color:C.text,lineHeight:1.65,marginBottom:13}}>{B.playstyle}</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:".7rem"}}>
+                <span style={{background:`${a}22`,color:C.bright,padding:"4px 12px",borderRadius:20,border:`1px solid ${a}66`,fontWeight:600}}>Class: {B.cls}</span>
+                <span style={{background:"#ffffff07",color:C.text,padding:"4px 12px",borderRadius:20,border:"1px solid #ffffff14"}}>Caps: {B.caps}</span>
+                <span style={{background:"#ffffff07",color:C.text,padding:"4px 12px",borderRadius:20,border:"1px solid #ffffff14"}}>Req: {B.weaponReq}</span>
+              </div>
             </div>
-            <div style={{fontSize:".85rem",color:C.text,lineHeight:1.6,marginBottom:11}}>{B.playstyle}</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:".7rem"}}>
-              <span style={{background:`${a}22`,color:C.bright,padding:"4px 11px",borderRadius:11,border:`1px solid ${a}66`,fontWeight:600}}>Class: {B.cls}</span>
-              <span style={{background:"#ffffff08",color:C.text,padding:"4px 11px",borderRadius:11,border:"1px solid #ffffff14"}}>Caps: {B.caps}</span>
-              <span style={{background:"#ffffff08",color:C.text,padding:"4px 11px",borderRadius:11,border:"1px solid #ffffff14"}}>Req: {B.weaponReq}</span>
+            <div style={{fontSize:".74rem",color:C.dim,marginBottom:14,fontStyle:"italic",borderLeft:`3px solid ${a}44`,paddingLeft:10,lineHeight:1.5}}>Click phase buttons to see progression. Click items to expand for location/upgrade info. Green +numbers = gains from previous phase.</div>
+            {B.loadouts&&<LoadoutSelector lo={lo} setLo={setLo} a={a} loadouts={B.loadouts}/>}
+            <div style={{display:"flex",gap:5,marginBottom:20,flexWrap:"wrap"}}>
+              {B.ph.map((ph,i)=>{const isActive=i===safePi;const isPast=i<safePi;return(<button key={i} onClick={()=>{setPi(i);setNgCycle(0);}} className="phase-btn" style={{flex:"1 1 auto",minWidth:88,background:isActive?a:"transparent",border:`1px solid ${isActive?a:isPast?a+"55":"#ffffff1a"}`,borderRadius:7,padding:"8px 10px",cursor:"pointer",textAlign:"center",boxShadow:isActive?`0 0 14px ${a}55,0 2px 10px #00000060`:"none"}}>
+                <div style={{fontSize:".7rem",color:isActive?"#fff":isPast?a:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{ph.name}</div>
+                <div style={{fontSize:".56rem",color:isActive?"#ffffffaa":C.dim,marginTop:1}}>{ph.range}</div>
+              </button>);})}
             </div>
-          </div>
-          <div style={{fontSize:".76rem",color:C.dim,marginBottom:14,fontStyle:"italic",borderLeft:`2px solid ${a}66`,paddingLeft:10,lineHeight:1.5}}>Click phase buttons to see progression. Click items to expand for location/upgrade info. Green +numbers = gains from previous phase.</div>
-          {B.loadouts&&<LoadoutSelector lo={lo} setLo={setLo} a={a} loadouts={B.loadouts}/>}
-          <div style={{display:"flex",gap:4,marginBottom:18,flexWrap:"wrap"}}>
-            {B.ph.map((ph,i)=>{const isActive=i===safePi;const isPast=i<safePi;return(<button key={i} onClick={()=>{setPi(i);setNgCycle(0);}} style={{flex:"1 1 auto",minWidth:90,background:isActive?a:"transparent",border:`1px solid ${isActive?a:isPast?a+"66":"#ffffff22"}`,borderRadius:6,padding:"8px 10px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:".72rem",color:isActive?"#fff":isPast?a:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{ph.name}</div><div style={{fontSize:".58rem",color:isActive?"#ffffffbb":C.dim,marginTop:1}}>{ph.range}</div></button>);})}
-          </div>
-          <SL a={a}>Stats — {p.name}</SL>
-          {p.ngCycles&&<div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>{p.ngCycles.map((c,i)=>(<button key={i} onClick={()=>setNgCycle(i)} style={{flex:"1 1 auto",minWidth:70,background:i===ngCycle?`${a}33`:"transparent",border:`1px solid ${i===ngCycle?a:"#ffffff14"}`,borderRadius:5,padding:"6px 8px",cursor:"pointer",textAlign:"center",transition:"all .2s"}}><div style={{fontSize:".7rem",color:i===ngCycle?C.bright:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{c.label}</div></button>))}</div>}
-          {(()=>{const cur=p.ngCycles?p.ngCycles[ngCycle]:null;const stats=cur?cur.stats:p.stats;return Object.entries(stats).map(([k,v])=><StatBar key={k} l={k} v={v} max={G.statMax} a={a} p={pv?pv.stats[k]:null} softCap={G.softCaps?G.softCaps[k]:null}/>);})()}
-          <div style={{fontSize:".78rem",color:C.dim,fontStyle:"italic",marginBottom:14,paddingLeft:10,borderLeft:`2px solid ${a}66`,lineHeight:1.5}}>{p.ngCycles&&p.ngCycles[ngCycle]?p.ngCycles[ngCycle].notes:p.sn}</div>
-          <SL a={a}>Weapons</SL>{p.weapons.map((w,i)=><ItemCard key={i} item={w} a={a}/>)}
-          <SL a={a}>Armor</SL>{p.armor.map((ar,i)=><ItemCard key={i} item={ar} a={a}/>)}
-          <SL a={a}>Accessories / Rings</SL>{p.acc.map((ac,i)=><ItemCard key={i} item={ac} a={a}/>)}
-          <SL a={a}>Spells / Buffs</SL>{p.spells.length>0?p.spells.map((s,i)=><ItemCard key={i} item={s} a={a}/>):<div style={{fontSize:".78rem",color:C.dim,fontStyle:"italic",padding:"6px 0"}}>No spells at this phase.</div>}
-          <SL a={a}>Damage — {p.name}</SL><DBox d={p.dmg} a={a}/>
-        </div>}
+            <SL a={a}>Stats — {p.name}</SL>
+            {p.ngCycles&&<div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>{p.ngCycles.map((c,i)=>(<button key={i} onClick={()=>setNgCycle(i)} className="phase-btn" style={{flex:"1 1 auto",minWidth:70,background:i===ngCycle?`${a}28`:"transparent",border:`1px solid ${i===ngCycle?a:"#ffffff14"}`,borderRadius:5,padding:"6px 8px",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:".7rem",color:i===ngCycle?C.bright:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700}}>{c.label}</div></button>))}</div>}
+            {(()=>{const cur=p.ngCycles?p.ngCycles[ngCycle]:null;const stats=cur?cur.stats:p.stats;return Object.entries(stats).map(([k,v])=><StatBar key={k} l={k} v={v} max={G.statMax} a={a} p={pv?pv.stats[k]:null} softCap={G.softCaps?G.softCaps[k]:null}/>);})()}
+            <div style={{fontSize:".78rem",color:C.dim,fontStyle:"italic",marginBottom:16,paddingLeft:10,borderLeft:`2px solid ${a}44`,lineHeight:1.55}}>{p.ngCycles&&p.ngCycles[ngCycle]?p.ngCycles[ngCycle].notes:p.sn}</div>
+            <SL a={a}>Weapons</SL>{p.weapons.map((w,i)=><ItemCard key={i} item={w} a={a}/>)}
+            <SL a={a}>Armor</SL>{p.armor.map((ar,i)=><ItemCard key={i} item={ar} a={a}/>)}
+            <SL a={a}>Accessories / Rings</SL>{p.acc.map((ac,i)=><ItemCard key={i} item={ac} a={a}/>)}
+            <SL a={a}>Spells / Buffs</SL>{p.spells.length>0?p.spells.map((s,i)=><ItemCard key={i} item={s} a={a}/>):<div style={{fontSize:".78rem",color:C.dim,fontStyle:"italic",padding:"6px 0"}}>No spells at this phase.</div>}
+            <SL a={a}>Damage — {p.name}</SL><DBox d={p.dmg} a={a}/>
+          </div>}
 
-        {/* MATERIALS TAB */}
-        {tab==="mats"&&<div>
-          <SL a={a}>Upgrade Material Guide</SL>
-          {G.mats.map((m,i)=><div key={i} style={{border:`1px solid ${a}33`,borderLeft:`3px solid ${a}`,borderRadius:7,marginBottom:10,background:C.card,padding:13}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}><span style={{fontFamily:"'Cinzel',serif",fontSize:".86rem",color:C.bright,fontWeight:700}}>{m.tier}</span><span style={{fontSize:".68rem",background:`${a}22`,color:C.bright,padding:"3px 10px",borderRadius:11,border:`1px solid ${a}55`,fontWeight:700}}>{m.range}</span></div>
-            {[{l:"🛒 BUY",v:m.buy},{l:"⚔ FARM",v:m.farm},{l:"📍 FIND",v:m.find},{l:"💡 TIP",v:m.tip}].map((x,j)=>(<div key={j} style={{background:"#ffffff06",borderRadius:5,padding:"7px 10px",marginBottom:5,fontSize:".8rem",borderLeft:`2px solid ${a}66`}}><span style={{color:a,fontWeight:700,fontSize:".7rem"}}>{x.l}: </span><span style={{color:C.text}}>{x.v}</span></div>))}
-          </div>)}
-          <SL a={a}>Encumbrance & Weight</SL>
-          <div style={{background:C.card,border:`1px solid ${a}33`,borderLeft:`3px solid ${a}`,borderRadius:7,padding:13,fontSize:".8rem",lineHeight:1.7}}>
-            <div style={{marginBottom:8}}><span style={{color:C.green,fontWeight:700,fontFamily:"'Cinzel',serif"}}>LIGHT</span> — {G.weightInfo.light}</div>
-            <div style={{marginBottom:8}}><span style={{color:C.yellow,fontWeight:700,fontFamily:"'Cinzel',serif"}}>MEDIUM</span> — {G.weightInfo.medium}</div>
-            <div style={{marginBottom:8}}><span style={{color:C.fire,fontWeight:700,fontFamily:"'Cinzel',serif"}}>HEAVY</span> — {G.weightInfo.heavy}</div>
-            <div style={{borderTop:"1px solid #ffffff14",paddingTop:9,marginTop:5,color:C.text}}>{G.weightInfo.note}</div>
-          </div>
-        </div>}
+          {/* MATERIALS TAB */}
+          {tab==="mats"&&<div>
+            <SL a={a}>Upgrade Material Guide</SL>
+            {G.mats.map((m,i)=><div key={i} style={{border:`1px solid ${a}33`,borderLeft:`3px solid ${a}`,borderRadius:8,marginBottom:10,background:C.card,padding:14,boxShadow:"0 2px 14px #00000040"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontFamily:"'Cinzel',serif",fontSize:".88rem",color:C.bright,fontWeight:700}}>{m.tier}</span><span style={{fontSize:".68rem",background:`${a}22`,color:C.bright,padding:"3px 11px",borderRadius:20,border:`1px solid ${a}55`,fontWeight:700}}>{m.range}</span></div>
+              {[{l:"🛒 BUY",v:m.buy},{l:"⚔ FARM",v:m.farm},{l:"📍 FIND",v:m.find},{l:"💡 TIP",v:m.tip}].map((x,j)=>(<div key={j} style={{background:"#ffffff05",borderRadius:5,padding:"7px 11px",marginBottom:5,fontSize:".8rem",borderLeft:`2px solid ${a}55`}}><span style={{color:a,fontWeight:700,fontSize:".7rem"}}>{x.l}: </span><span style={{color:C.text}}>{x.v}</span></div>))}
+            </div>)}
+            <SL a={a}>Encumbrance & Weight</SL>
+            <div style={{background:C.card,border:`1px solid ${a}33`,borderLeft:`3px solid ${a}`,borderRadius:8,padding:14,fontSize:".8rem",lineHeight:1.7}}>
+              <div style={{marginBottom:8}}><span style={{color:C.green,fontWeight:700,fontFamily:"'Cinzel',serif"}}>LIGHT</span> — {G.weightInfo.light}</div>
+              <div style={{marginBottom:8}}><span style={{color:C.yellow,fontWeight:700,fontFamily:"'Cinzel',serif"}}>MEDIUM</span> — {G.weightInfo.medium}</div>
+              <div style={{marginBottom:8}}><span style={{color:C.fire,fontWeight:700,fontFamily:"'Cinzel',serif"}}>HEAVY</span> — {G.weightInfo.heavy}</div>
+              <div style={{borderTop:"1px solid #ffffff10",paddingTop:9,marginTop:5,color:C.text}}>{G.weightInfo.note}</div>
+            </div>
+          </div>}
 
-        {/* SIMILAR TAB */}
-        {tab==="sim"&&<div>
-          <div style={{fontSize:".8rem",color:C.dim,marginBottom:14,fontStyle:"italic",borderLeft:`2px solid ${a}66`,paddingLeft:10,lineHeight:1.5}}>Variants of <span style={{color:C.bright,fontWeight:600}}>{B.label}</span> with the same archetype.</div>
-          {B.sim.map((b,i)=><ABC key={i} b={b} statMax={G.statMax} softCaps={G.softCaps}/>)}
-        </div>}
+          {/* SIMILAR TAB */}
+          {tab==="sim"&&<div>
+            <div style={{fontSize:".8rem",color:C.dim,marginBottom:16,fontStyle:"italic",borderLeft:`2px solid ${a}55`,paddingLeft:10,lineHeight:1.5}}>Variants of <span style={{color:C.bright,fontWeight:600}}>{B.label}</span> with the same archetype.</div>
+            {B.sim.map((b,i)=><ABC key={i} b={b} statMax={G.statMax} softCaps={G.softCaps}/>)}
+          </div>}
 
-        {/* OTHER OP TAB */}
-        {tab==="oth"&&<div>
-          <div style={{fontSize:".8rem",color:C.dim,marginBottom:14,fontStyle:"italic",borderLeft:`2px solid ${a}66`,paddingLeft:10,lineHeight:1.5}}>Different playstyles than <span style={{color:C.bright,fontWeight:600}}>{B.label}</span>, equally overpowered.</div>
-          {B.oth.map((b,i)=><ABC key={i} b={b} statMax={G.statMax} softCaps={G.softCaps}/>)}
-        </div>}
+          {/* OTHER OP TAB */}
+          {tab==="oth"&&<div>
+            <div style={{fontSize:".8rem",color:C.dim,marginBottom:16,fontStyle:"italic",borderLeft:`2px solid ${a}55`,paddingLeft:10,lineHeight:1.5}}>Different playstyles than <span style={{color:C.bright,fontWeight:600}}>{B.label}</span>, equally overpowered.</div>
+            {B.oth.map((b,i)=><ABC key={i} b={b} statMax={G.statMax} softCaps={G.softCaps}/>)}
+          </div>}
 
-        {/* REF TAB */}
-        {tab==="ref"&&<div>
-          <SL a={a}>{B.label} Build Family</SL>
-          <div style={{overflowX:"auto",border:`1px solid ${a}33`,borderRadius:7,background:C.card}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:".76rem"}}>
-              <thead><tr>{["Build","Weapon","AP","Status","Armor","Style"].map((h,i)=><th key={i} style={{textAlign:"left",padding:"9px 8px",background:`${a}18`,color:C.bright,fontFamily:"'Cinzel',serif",fontSize:".66rem",letterSpacing:".1em",textTransform:"uppercase",borderBottom:`2px solid ${a}`,whiteSpace:"nowrap",fontWeight:700}}>{h}</th>)}</tr></thead>
-              <tbody>{B.ref.map((d,i)=><tr key={i} style={{borderBottom:"1px solid #ffffff0a"}}><td style={{padding:"8px",whiteSpace:"nowrap"}}><span style={{marginRight:5}}>{d.i}</span><span style={{color:C.bright,fontWeight:700}}>{d.n}</span></td><td style={{padding:"8px",color:C.text}}>{d.w}</td><td style={{padding:"8px",color:d.a,fontWeight:600}}>{d.ap}</td><td style={{padding:"8px",color:C.dim}}>{d.st}</td><td style={{padding:"8px",color:C.dim}}>{d.ar}</td><td style={{padding:"8px",color:C.dim,fontStyle:"italic"}}>{d.s}</td></tr>)}</tbody>
-            </table>
-          </div>
-        </div>}
+          {/* REF TAB */}
+          {tab==="ref"&&<div>
+            <SL a={a}>{B.label} Build Family</SL>
+            <div style={{overflowX:"auto",border:`1px solid ${a}33`,borderRadius:8,background:C.card,boxShadow:"0 4px 20px #00000050"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:".76rem"}}>
+                <thead><tr>{["Build","Weapon","AP","Status","Armor","Style"].map((h,i)=><th key={i} style={{textAlign:"left",padding:"10px 10px",background:`${a}18`,color:C.bright,fontFamily:"'Cinzel',serif",fontSize:".63rem",letterSpacing:".1em",textTransform:"uppercase",borderBottom:`2px solid ${a}`,whiteSpace:"nowrap",fontWeight:700}}>{h}</th>)}</tr></thead>
+                <tbody>{B.ref.map((d,i)=><tr key={i} style={{borderBottom:"1px solid #ffffff08"}}><td style={{padding:"9px 10px",whiteSpace:"nowrap"}}><span style={{marginRight:6}}>{d.i}</span><span style={{color:C.bright,fontWeight:700}}>{d.n}</span></td><td style={{padding:"9px 10px",color:C.text}}>{d.w}</td><td style={{padding:"9px 10px",color:d.a,fontWeight:600}}>{d.ap}</td><td style={{padding:"9px 10px",color:C.dim}}>{d.st}</td><td style={{padding:"9px 10px",color:C.dim}}>{d.ar}</td><td style={{padding:"9px 10px",color:C.dim,fontStyle:"italic"}}>{d.s}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </div>}
+
+        </div>
       </div>
     </div>
   );
