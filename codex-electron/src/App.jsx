@@ -565,6 +565,7 @@ export default function App(){
   const [knowledgeCache,setKnowledgeCache]=useState({});
   const [provider,setProvider]=useState("claude");
   const [selectedProviders,setSelectedProviders]=useState(["claude"]); // ordered: [core, cont, variants]
+  const [multiAI,setMultiAI]=useState(()=>{try{return localStorage.getItem("codex_multiAI")!=="false";}catch{return true;}});
   const [apiKeys,setApiKeys]=useState({claude:"",perplexity:""});
   const [genInfo,setGenInfo]=useState(null); // {prov,label,step,total} — shown in floating indicator
   const [confirmClearCache,setConfirmClearCache]=useState(false); // inline confirm to avoid window.confirm() Electron focus bug
@@ -646,6 +647,10 @@ export default function App(){
     if(!storageLoaded)return;
     try{localStorage.setItem("codex_knowledge",JSON.stringify(knowledgeCache));}catch(e){}
   },[storageLoaded,knowledgeCache]);
+
+  // Persist multi-AI toggle
+  useEffect(()=>{try{localStorage.setItem("codex_multiAI",multiAI);}catch(_){}
+  },[multiAI]);
 
   // Merge static and dynamic games, filter hidden static builds
   const allGames={};
@@ -738,7 +743,12 @@ export default function App(){
       if(!n||typeof n!=="string")return true;
       const l=n.trim().toLowerCase();
       if(l.length<3)return true;
-      return ["n/a","none","various","any","item","weapon","armor","ring","accessory","starting gear","placeholder","use whatever you find","save a ring slot"].some(s=>l===s||l.startsWith(s));
+      // Exact or prefix matches for generic placeholders
+      if(["n/a","none","various","any","item","weapon","armor","ring","accessory","starting gear","placeholder","use whatever you find","save a ring slot"].some(s=>l===s||l.startsWith(s)))return true;
+      // Placeholder weapon/armor phrases regardless of position
+      if(/\b(2nd|second|third|another|off.?hand|additional|extra|alternate|backup)\s+(weapon|sword|axe|blade|ring|armor|shield)/i.test(n))return true;
+      if(/^(best |your |the |any |upgrade |based on )/i.test(n))return true;
+      return false;
     };
 
     if(build.label)facts.push(`Build "${build.label}" (${build.sub||"—"}): class=${build.cls||"?"}, caps=${build.caps||"?"}, req=${build.weaponReq||"?"}`);
@@ -812,10 +822,15 @@ export default function App(){
 
     (build.ph||[]).forEach(ph=>{
       (ph.armor||[]).forEach(ar=>{
-        if(ar.eq===false||isVagueName(ar.n)||isVagueLoc(ar.loc))return;
+        if(ar.eq===false||isVagueName(ar.n))return;
         const k=ar.n.trim().toLowerCase();
-        // Keep entry with most detail (longer loc wins)
-        if(!armorSeen.has(k)||ar.loc.length>(armorSeen.get(k).loc||"").length)armorSeen.set(k,ar);
+        // Keep the entry with the most specific (longest real) location
+        const existing=armorSeen.get(k);
+        const curLocReal=!isVagueLoc(ar.loc);
+        const prevLocReal=existing&&!isVagueLoc(existing.loc||"");
+        // Prefer: real loc > vague loc. Tie-break by longer loc string.
+        if(!existing||(curLocReal&&!prevLocReal)||(curLocReal===prevLocReal&&(ar.loc||"").length>(existing.loc||"").length))
+          armorSeen.set(k,ar);
       });
       (ph.acc||[]).forEach(ac=>{
         if(ac.eq===false||isVagueName(ac.n)||isVagueLoc(ac.loc))return;
@@ -830,7 +845,11 @@ export default function App(){
     });
 
     for(const ar of armorSeen.values()){
-      facts.push(`ARMOR ${ar.n} — loc: ${ar.loc}${ar.wt?` | wt: ${ar.wt}`:""}`);
+      const parts=[];
+      if(!isVagueLoc(ar.loc))parts.push(`loc: ${ar.loc}`);
+      if(ar.wt)parts.push(`wt: ${ar.wt}`);
+      if(ar.d&&ar.d.trim())parts.push(`note: ${ar.d.trim().slice(0,90)}${ar.d.trim().length>90?"…":""}`);
+      facts.push("ARMOR "+ar.n+(parts.length>0?" — "+parts.join(" | "):""));
     }
 
     for(const ac of accSeen.values()){
@@ -885,7 +904,7 @@ export default function App(){
     if(!k||!k.facts||k.facts.length===0)return "";
     const factList=k.facts.slice(-30).join("\n"); // cap at 30 most-recent facts to keep tokens low
     const ageHours=k.lastUpdated?Math.round((Date.now()-k.lastUpdated)/3600000):null;
-    return `\n\nKNOWN FACTS FROM PREVIOUS BUILDS IN THIS CODEX (verified from earlier research${ageHours!=null?`, ${ageHours}h old`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}Use these as supplementary references. Always web search to verify exact item locations, costs, and stat requirements — cached facts may be incomplete.\n`;
+    return `\n\nITEMS SEEN IN PAST BUILDS FOR THIS GAME (reference only${ageHours!=null?`, ${ageHours}h ago`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}IMPORTANT: These are items from PREVIOUS builds — do NOT copy them into the current build unless they genuinely suit this specific build concept. Each build must be designed independently. Use web search to discover the best weapons, armor, and rings for THIS build's archetype — do not default to whatever was used before.\n`;
   };
 
   const PROVIDERS={
@@ -1045,16 +1064,18 @@ export default function App(){
 
       // ── Provider routing from user selection ───────────────────────────────
       // selectedProviders is ordered: [0]=Core build, [1]=Continuation, [2]=Variants
+      // When multi-AI is OFF, all steps use the same provider as core
       const [provCore=provider, provCont2, provVars2]=selectedProviders;
+      const singleProvMode=!multiAI;
       // Step 0 Research: prefer a search-capable provider from the selection;
       // fall back to any search-capable provider not already used for Core.
       const researchProv=
         selectedProviders.find(p=>p!==provCore&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable)
         ||["perplexity"].find(p=>!selectedProviders.includes(p)&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable);
-      // Step 2 Continuation: use explicit selection if set, otherwise auto-pick
-      const contProv=provCont2||(["perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore);
-      // Step 3 Variants: use explicit selection if set, otherwise auto-pick
-      const variantsProv=provVars2||(["claude","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore);
+      // Step 2 Continuation: use explicit selection if set, otherwise auto-pick (single-AI mode locks to provCore)
+      const contProv=singleProvMode?provCore:(provCont2||(["perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore));
+      // Step 3 Variants: same (single-AI mode locks to provCore)
+      const variantsProv=singleProvMode?provCore:(provVars2||(["claude","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore));
 
       // ── Step 0: Web research — short, targeted, non-fatal ───────────────────
       // Only runs if a search-capable provider is available AND different from main
@@ -1521,9 +1542,22 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
           <div style={{background:"#ffffff05",border:"1px solid #ffffff0d",borderRadius:8,padding:"10px 12px",marginBottom:14}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
               <span style={{fontSize:".6rem",color:C.dim,fontFamily:"'Cinzel',serif",fontWeight:700,letterSpacing:".08em"}}>AI PROVIDERS</span>
-              <span style={{fontSize:".56rem",color:C.dim,fontStyle:"italic"}}>Click to add · order = which step each handles</span>
+              <div style={{display:"flex",alignItems:"center",gap:7}}>
+                {multiAI&&<span style={{fontSize:".56rem",color:C.dim,fontStyle:"italic"}}>Click to add · order = which step each handles</span>}
+                {/* Multi-AI toggle */}
+                <button onClick={()=>setMultiAI(v=>!v)} disabled={adding}
+                  title={multiAI?"Multi-AI: each step uses a different provider":"Single-AI: one provider handles all steps"}
+                  style={{display:"flex",alignItems:"center",gap:5,background:"none",border:`1px solid ${multiAI?a+"55":"#ffffff1a"}`,borderRadius:20,padding:"2px 8px",cursor:adding?"not-allowed":"pointer",opacity:adding?0.5:1,transition:"all .2s"}}>
+                  <span style={{fontSize:".55rem",color:multiAI?a:C.dim,fontWeight:700,fontFamily:"'Cinzel',serif",letterSpacing:".05em",whiteSpace:"nowrap"}}>
+                    {multiAI?"MULTI-AI":"SINGLE-AI"}
+                  </span>
+                  <div style={{width:22,height:12,background:multiAI?`${a}44`:"#ffffff12",borderRadius:6,position:"relative",transition:"background .2s"}}>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:multiAI?a:"#555",position:"absolute",top:1,left:multiAI?10:1,transition:"all .2s"}}/>
+                  </div>
+                </button>
+              </div>
             </div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,opacity:multiAI?1:0.45,pointerEvents:multiAI?"auto":"none"}}>
               {Object.entries(PROVIDERS).map(([key,p])=>{
                 const idx=selectedProviders.indexOf(key);
                 const isSelected=idx!==-1;
@@ -1558,7 +1592,8 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
                 );
               })}
             </div>
-            {selectedProviders.length>1&&<div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>
+            {!multiAI&&(()=>{const p=PROVIDERS[selectedProviders[0]||provider];return p?(<div style={{marginTop:7,fontSize:".58rem",color:C.dim}}><span style={{color:a,fontWeight:700}}>{p.icon} {p.label}</span> handles <span style={{color:C.text}}>all steps</span> — turn on Multi-AI to split across providers</div>):null;})()}
+            {multiAI&&selectedProviders.length>1&&<div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>
               {selectedProviders.map((key,i)=>{
                 const p=PROVIDERS[key];const stepColors=[a,C.cyan,C.purple];
                 const stepDesc=["Core Build (phases 1–3, metadata)","Continuation (phases 4–7, NG+)","Variants (similar builds, ref table)"];
