@@ -568,6 +568,7 @@ export default function App(){
   const [apiKeys,setApiKeys]=useState({claude:"",perplexity:""});
   const [genInfo,setGenInfo]=useState(null); // {prov,label,step,total} — shown in floating indicator
   const [confirmClearCache,setConfirmClearCache]=useState(false); // inline confirm to avoid window.confirm() Electron focus bug
+  const [showCacheViewer,setShowCacheViewer]=useState(false);
   const [wikiUrls,setWikiUrls]=useState(""); // wiki import URLs (one per line)
   const [wikiImporting,setWikiImporting]=useState(false); // wiki fetch in progress
 
@@ -1672,16 +1673,62 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         {/* Status bar */}
         {(updateMsg||knowledgeCache[safeGame]?.facts?.length>0)&&
           <div style={{padding:"4px 18px",background:"#0f0c09",borderBottom:"1px solid #1c1810",fontSize:".62rem",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:12}}>
-            <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{knowledgeCache[safeGame]?.facts?.length>0&&<span>🧠 <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text}}>{G.name}</span>{knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,65)}{knowledgeCache[safeGame].patchNote.length>65?"…":""}</span>}</span>}</div>
-            {knowledgeCache[safeGame]?.facts?.length>0&&!confirmClearCache&&<button onClick={()=>setConfirmClearCache(true)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px",flexShrink:0}} title="Clear memory bank for this game">Clear cache</button>}
+            <div style={{color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>
+              {knowledgeCache[safeGame]?.facts?.length>0&&<span>
+                🧠 <button onClick={()=>{setShowCacheViewer(v=>!v);setConfirmClearCache(false);}} style={{background:"none",border:"none",cursor:"pointer",padding:0,color:"inherit",font:"inherit",display:"inline"}}>
+                  <span style={{color:a}}>{knowledgeCache[safeGame].facts.length}</span> facts cached for <span style={{color:C.text,textDecoration:"underline dotted",textUnderlineOffset:2}}>{G.name}</span>
+                </button>
+                {knowledgeCache[safeGame]?.patchNote&&<span> · {knowledgeCache[safeGame].patchNote.slice(0,65)}{knowledgeCache[safeGame].patchNote.length>65?"…":""}</span>}
+              </span>}
+            </div>
+            {knowledgeCache[safeGame]?.facts?.length>0&&!confirmClearCache&&<button onClick={()=>setConfirmClearCache(true)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px",flexShrink:0}} title="Clear memory bank for this game">Clear all</button>}
             {confirmClearCache&&<span style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
-              <span style={{fontSize:".6rem",color:"#ff8a7a"}}>Clear {knowledgeCache[safeGame]?.facts?.length} facts?</span>
-              <button onClick={()=>{setKnowledgeCache(prev=>{const n={...prev};delete n[safeGame];return n;});setConfirmClearCache(false);}} style={{background:"#e74c3c",border:"none",borderRadius:3,color:"#fff",cursor:"pointer",fontSize:".6rem",padding:"1px 7px"}}>Yes</button>
+              <span style={{fontSize:".6rem",color:"#ff8a7a"}}>Clear all {knowledgeCache[safeGame]?.facts?.length} facts?</span>
+              <button onClick={()=>{setKnowledgeCache(prev=>{const n={...prev};delete n[safeGame];return n;});setConfirmClearCache(false);setShowCacheViewer(false);}} style={{background:"#e74c3c",border:"none",borderRadius:3,color:"#fff",cursor:"pointer",fontSize:".6rem",padding:"1px 7px"}}>Yes</button>
               <button onClick={()=>setConfirmClearCache(false)} style={{background:"none",border:"1px solid #3a2e22",borderRadius:3,color:C.dim,cursor:"pointer",fontSize:".6rem",padding:"1px 7px"}}>No</button>
             </span>}
             {updateMsg&&<div style={{color:updateMsg.startsWith("✓")?"#7ddb8a":updateMsg.startsWith("✗")?"#ff8a7a":C.dim,fontStyle:"italic",fontWeight:600,flexShrink:0}}>{updateMsg}</div>}
           </div>
         }
+
+        {/* Cache fact viewer — toggled by clicking the facts count */}
+        {showCacheViewer&&knowledgeCache[safeGame]?.facts?.length>0&&(()=>{
+          const facts=knowledgeCache[safeGame].facts;
+          const deleteFact=(f)=>setKnowledgeCache(prev=>({...prev,[safeGame]:{...prev[safeGame],facts:prev[safeGame].facts.filter(x=>x!==f)}}));
+          const tagColor=(f)=>{
+            if(f.startsWith("WEAPON"))return a;
+            if(f.startsWith("ARMOR"))return "#7eb8d4";
+            if(f.startsWith("RING"))return "#82d482";
+            if(f.startsWith("SPELL"))return "#c794e8";
+            if(f.startsWith("PATCH"))return "#f0c070";
+            return C.dim;
+          };
+          const tagLabel=(f)=>{
+            const m=f.match(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)/i);
+            return m?m[1].toUpperCase():"INFO";
+          };
+          return(
+            <div style={{background:"#080705",borderBottom:"2px solid #1c1810",flexShrink:0,maxHeight:320,overflowY:"auto"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 18px",borderBottom:"1px solid #1c1810",position:"sticky",top:0,background:"#080705",zIndex:1}}>
+                <span style={{fontSize:".65rem",color:C.dim,fontFamily:"'Cinzel',serif",letterSpacing:".06em"}}>MEMORY BANK — {G.name} ({facts.length} facts)</span>
+                <button onClick={()=>setShowCacheViewer(false)} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:".8rem",padding:"0 4px",lineHeight:1}}>✕</button>
+              </div>
+              {facts.map((f,i)=>{
+                const tag=tagLabel(f);
+                const col=tagColor(f);
+                // Strip the tag prefix for cleaner display
+                const body=f.replace(/^(WEAPON|ARMOR|RING\/ACC|SPELL|PATCH UPDATE|Build)\s+/i,"").replace(/^"([^"]+)"\s*—?\s*/,"$1 — ");
+                return(
+                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 18px",borderBottom:"1px solid #0d0b09",fontSize:".65rem",lineHeight:1.55}}>
+                    <span style={{color:col,fontWeight:700,fontSize:".58rem",flexShrink:0,marginTop:2,minWidth:52,letterSpacing:".04em"}}>{tag}</span>
+                    <span style={{color:C.text,flex:1,wordBreak:"break-word"}}>{body}</span>
+                    <button onClick={()=>deleteFact(f)} title="Delete this fact" style={{background:"none",border:"none",color:"#4a3a32",cursor:"pointer",fontSize:".75rem",flexShrink:0,padding:"0 2px",lineHeight:1,marginTop:1}} onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#4a3a32"}>✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Tab bar */}
         <div style={{display:"flex",background:"#0f0c09",borderBottom:"1px solid #1c1810",flexShrink:0,overflowX:"auto"}}>
