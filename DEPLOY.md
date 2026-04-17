@@ -7,7 +7,7 @@ This app uses Express on port 5000 with a SQLite database. For production deploy
 1. Push code to a GitHub repository
 2. Create a new Railway project → "Deploy from GitHub"
 3. Set environment variables in Railway dashboard:
-   - `ANTHROPIC_API_KEY` = your Claude API key
+   - `PERPLEXITY_API_KEY` = your Perplexity API key
    - `NODE_ENV` = `production`
 4. Railway auto-detects `npm start` from `package.json`
 5. SQLite `dev.db` is created automatically on first startup
@@ -19,14 +19,14 @@ This app uses Express on port 5000 with a SQLite database. For production deploy
 3. Set:
    - Build Command: `npm run build`
    - Start Command: `npm start`
-   - Environment variables: `ANTHROPIC_API_KEY`, `NODE_ENV=production`
+   - Environment variables: `PERPLEXITY_API_KEY`, `NODE_ENV=production`
 4. Add a persistent disk at `/app` mount point so `dev.db` survives deploys
 
 ## Option C — Fly.io
 
 ```bash
 fly launch
-fly secrets set ANTHROPIC_API_KEY=sk-ant-...
+fly secrets set PERPLEXITY_API_KEY=pplx-xxxx...
 fly volumes create data --size 1
 # Add volume mount in fly.toml: [mounts] destination = "/data"
 # Set DB path via env: DB_PATH=/data/dev.db
@@ -39,7 +39,7 @@ fly deploy
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Claude API key from console.anthropic.com |
+| `PERPLEXITY_API_KEY` | Yes | Perplexity API key from perplexity.ai/api |
 | `NODE_ENV` | Yes | Set to `production` |
 | `PORT` | No | Defaults to 5000 |
 

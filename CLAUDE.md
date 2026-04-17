@@ -4,7 +4,7 @@
 
 Multi-game soulslike build guide with AI-powered build generation, persistent storage, and a knowledge cache system.
 
-**Stack:** Express + Vite + React + TypeScript + Tailwind CSS + Drizzle ORM (SQLite) + Anthropic SDK
+**Stack:** Express + Vite + React + TypeScript + Tailwind CSS + Drizzle ORM (SQLite) + Perplexity AI SDK
 
 ---
 

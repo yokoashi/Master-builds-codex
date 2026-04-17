@@ -125,7 +125,7 @@ export function updateKnowledgeCache(
     factMap.set(fact.raw.substring(0, DEDUP_PREFIX_LEN), fact);
   }
 
-  let merged = [...factMap.values()];
+  let merged = Array.from(factMap.values());
 
   // Cap at MAX_FACTS (keep newest by dropping oldest)
   if (merged.length > MAX_FACTS) {
@@ -226,7 +226,9 @@ export function parseLearnLines(raw: string, gameKey: string, gameName: string):
   const lines = raw
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l.length > 10 && l.includes("—") || l.includes("|") || l.includes(":"));
+    // Parentheses required: && binds tighter than ||, so without them a 2-char
+    // line containing only ":" would pass the length check incorrectly.
+    .filter((l) => l.length > 10 && (l.includes("—") || l.includes("|") || l.includes(":")));
 
   const facts: KnowledgeFact[] = [];
 
