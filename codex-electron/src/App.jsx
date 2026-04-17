@@ -949,22 +949,48 @@ export default function App(){
       const ageDays=profile.lastUpdated?Math.round((Date.now()-profile.lastUpdated)/86400000):null;
       block+=`\n\nGAME KNOWLEDGE PROFILE FOR ${gn} (research-verified${ageDays!=null?`, ${ageDays}d ago`:""}):\n`;
       block+=`${profile.summary}\n`;
-      block+=`Progression: ${profile.levelTerm||"Level"} system, max ${profile.levelMax||"unknown"}. `;
-      block+=profile.hasNGPlus?"Has New Game Plus.\n":"No New Game Plus.\n";
-      if(profile.stats?.length){
-        block+=`Stats: ${profile.stats.map(s=>`${s.key}${s.softCap?` (soft cap ${s.softCap})`:""}`).join(", ")}. Stat max: ${profile.statMax||99}.\n`;
+      block+=`Progression: ${profile.levelTerm||"Level"} system`;
+      if(profile.levelMax)block+=`, max ${profile.levelMax}`;
+      if(profile.pointsPerLevel)block+=`, ${profile.pointsPerLevel} stat points per level`;
+      block+=`. ${profile.hasNGPlus?"Has NG+.":"No NG+."}\n`;
+      // Grouped stat categories (Deepwoken-style: Base Stats / Attunements / Proficiencies / Weapon Training)
+      if(profile.statCategories?.length){
+        block+=`\nSTAT SYSTEM (stat max: ${profile.statMax||99}):\n`;
+        for(const cat of profile.statCategories){
+          const stats=cat.stats||[];
+          if(!stats.length)continue;
+          block+=`  ${cat.name}: `;
+          block+=stats.map(s=>`${s.key}/${s.name}${s.softCap?` (soft cap ${s.softCap})`:""}${s.description?` — ${s.description}`:""}`).join(" | ");
+          block+="\n";
+        }
+      }else if(profile.stats?.length){
+        // Legacy flat stat list
+        block+=`Stats: ${profile.stats.map(s=>`${s.key}${s.softCap?` (sc${s.softCap})`:""}`).join(", ")}. Max: ${profile.statMax||99}.\n`;
       }
-      if(profile.statDescriptions&&Object.keys(profile.statDescriptions).length){
+      if(profile.statDescriptions&&Object.keys(profile.statDescriptions).length&&!profile.statCategories?.length){
         block+=`Stat roles: ${Object.entries(profile.statDescriptions).map(([k,v])=>`${k}=${v}`).join("; ")}\n`;
       }
+      // Character options (Race, Origin, Oath, Murmur, Boons, Flaws, etc.)
+      const cOpts=profile.characterOptions;
+      if(cOpts){
+        if(cOpts.races?.length)block+=`Races: ${cOpts.races.join(", ")}\n`;
+        if(cOpts.origins?.length)block+=`Origins/Starting options: ${cOpts.origins.join(", ")}\n`;
+        if(cOpts.oaths?.length)block+=`Oaths (endgame identity): ${cOpts.oaths.join(", ")}\n`;
+        if(cOpts.otherOptions?.length)block+=`Other character options: ${cOpts.otherOptions.join(", ")}\n`;
+      }
       if(profile.weaponTypes?.length)block+=`Weapon types: ${profile.weaponTypes.join(", ")}\n`;
-      if(profile.spellSystem)block+=`Spells/Abilities: ${profile.spellSystem}\n`;
+      if(profile.weaponStatMap&&Object.keys(profile.weaponStatMap).length){
+        block+=`Weapon→stat: ${Object.entries(profile.weaponStatMap).map(([w,s])=>`${w}→${s}`).join(", ")}\n`;
+      }
+      const spellLabel=profile.spellName||"Spells/Abilities";
+      if(profile.spellSystem)block+=`${spellLabel}: ${profile.spellSystem}\n`;
       if(profile.attunements?.length)block+=`Attunements/Schools: ${profile.attunements.join(", ")}\n`;
       if(profile.upgradeSystem)block+=`Upgrade system: ${profile.upgradeSystem}\n`;
-      if(profile.startingClasses?.length)block+=`Starting options: ${profile.startingClasses.join(", ")}\n`;
+      if(profile.startingClasses?.length)block+=`Starting classes: ${profile.startingClasses.join(", ")}\n`;
       if(profile.uniqueMechanics?.length)block+=`Key mechanics: ${profile.uniqueMechanics.join("; ")}\n`;
       if(profile.endgame)block+=`Endgame: ${profile.endgame}\n`;
       if(profile.metaNotes)block+=`Current meta: ${profile.metaNotes}\n`;
+      if(profile.buildTips?.length)block+=`Build tips: ${profile.buildTips.join(" | ")}\n`;
     }
     // Perm cache comes first — highest confidence, no caveats
     if(perm&&perm.facts&&perm.facts.length>0){
@@ -1121,20 +1147,25 @@ export default function App(){
     const researchProv=hasPplx?"perplexity":"claude";
     onStatus?.(`${PROVIDERS[researchProv].icon} ${PROVIDERS[researchProv].label} sonar-deep-research — researching ${gameName} mechanics & systems...`);
     try{
-      const rPrompt=`Do comprehensive research on the game "${gameName}" for a build guide tool. Cover ALL of the following:
+      const rPrompt=`Do comprehensive research on the game "${gameName}" for a build guide tool. Cover ALL of the following in detail:
 
 1. GAME OVERVIEW: Platform, genre, setting. What kind of game is it?
-2. PROGRESSION SYSTEM: Exact name for progression levels (e.g. "Power", "Level", "Soul Level"). Min and max values. What currency/mechanic drives progression?
-3. STAT SYSTEM: List EVERY stat with its exact in-game abbreviation and full name. What does each stat scale/unlock? What are the soft caps and hard caps for each?
-4. WEAPON TYPES: Every weapon category that exists in the game.
+2. PROGRESSION SYSTEM: Exact name for progression levels (e.g. "Power", "Level", "Soul Level"). Min and max values. How many stat points do you get per level?
+3. STAT SYSTEM — CRITICAL: List EVERY stat with its EXACT in-game name, in-game abbreviation, and what it does. Group them by category:
+   - Base/Combat stats (e.g. Strength, Agility, Intelligence, Fortitude, Willpower, Charisma)
+   - Elemental/Magic attunements (e.g. Flamecharm, Frostdraw, Thundercall, Galebreathe, Shadowcast, Ironsing, Bloodrend)
+   - Proficiency/Secondary stats (e.g. Vitality, Erudition, Proficiency, Songchant)
+   - Weapon training categories (e.g. Heavy Weapon, Medium Weapon, Light Weapon)
+   For EACH stat: what does it scale? What are soft caps (where returns diminish)? What is the hard cap?
+4. WEAPON TYPES: Every weapon category. Which stat governs each? Examples of best weapons per category.
 5. ARMOR TYPES: Every armor category.
-6. ACCESSORIES: Rings, amulets, talismans, trinkets — what slot types and how many?
-7. SPELL/ABILITY SYSTEM: Do spells exist? What are they called (Spells, Mantras, Incantations, etc.)? How are they learned/unlocked? What schools or attunements exist?
-8. UPGRADE SYSTEM: Can weapons/armor be upgraded? What materials? What upgrade paths?
-9. STARTING OPTIONS: All starting classes, origins, or character creation options.
-10. UNIQUE MECHANICS: What makes this game special/different? (e.g. permadeath, depth system, oath system, attunements, resonance, etc.)
-11. NG+ / ENDGAME: Does this game have New Game Plus? What constitutes endgame? Final bosses? Max content?
-12. CURRENT META: Strongest builds, best weapons, dominant strategies as of today.
+6. ACCESSORIES & CHARACTER OPTIONS: Rings, amulets, talismans. Also: Race choices, Origin/starting options, Oath system, Murmur system, Boons, Flaws, Bell — what do these do?
+7. SPELL/ABILITY SYSTEM: What are they called (Mantras, Spells, Incantations, etc.)? How learned/unlocked? Which stat governs each school? What attunement investment is needed to unlock abilities?
+8. UPGRADE SYSTEM: Can weapons/armor be upgraded? What materials? What upgrade paths? Max upgrade level?
+9. STARTING OPTIONS: All starting classes, origins, or character creation choices. Which are best for different builds?
+10. UNIQUE MECHANICS: Everything that makes this game special (permadeath, oath system, depth system, guild system, resonance, etc.)
+11. NG+ / ENDGAME: Does this game have New Game Plus? What is the endgame? Max content? Final challenges?
+12. CURRENT META: Top builds, strongest weapons, dominant strategies. What stat allocations define each meta build?
 
 Search multiple sources including wikis, Reddit, YouTube guides, and community resources. Be exhaustive and specific.`;
       rawResearch=await apiCall(rPrompt,true,{prov:researchProv,rawText:true,maxTokens:8000,
@@ -1155,25 +1186,44 @@ Output a single JSON object with ALL of these fields:
   "gameName": "${gameName}",
   "platform": "platform name (e.g. PC, Roblox, PS5, etc.)",
   "summary": "3-4 sentence overview: what the game is, its combat system, and what makes it unique",
-  "levelTerm": "exact term this game uses for progression levels — e.g. 'Power', 'Level', 'Soul Level', 'Resonance'",
+  "levelTerm": "exact term this game uses for progression levels — e.g. 'Power', 'Level', 'Soul Level'",
   "levelMin": 1,
   "levelMax": N,
+  "pointsPerLevel": N,
   "statMax": N,
   "hasNGPlus": true or false,
-  "stats": [{"key":"SHORT","name":"Full Name","description":"what it scales/affects","softCap":N,"hardCap":N}],
-  "statDescriptions": {"SHORT": "concise role description"},
+  "statCategories": [
+    {
+      "name": "category name — e.g. 'Base Stats', 'Attunements', 'Proficiencies', 'Weapon Training'",
+      "description": "what this category of stats controls",
+      "stats": [
+        {"key": "ABBREV", "name": "Full Stat Name", "description": "what investing here does", "softCap": N, "hardCap": N}
+      ]
+    }
+  ],
+  "allStatKeys": ["every","stat","abbreviation","from","all","categories","flat","list"],
+  "statDescriptions": {"ABBREV": "concise 1-line role description"},
+  "characterOptions": {
+    "races": ["race1","race2",...],
+    "origins": ["origin1","origin2",...],
+    "oaths": ["oath1","oath2",...],
+    "otherOptions": ["any other character creation options like Murmur, Bell, Boons, Flaws, etc."]
+  },
   "weaponTypes": ["type1","type2",...],
+  "weaponStatMap": {"weapon type": "governing stat abbreviation"},
   "armorTypes": ["type1","type2",...],
-  "accessorySlots": N,
-  "spellSystem": "description of spells/abilities system — name, how learned, requirements — or null if no spells",
-  "attunements": ["school1","school2",...] or [],
-  "upgradeSystem": "description of upgrade mechanics — materials, paths, max upgrade level — or 'No upgrade system'",
+  "spellName": "what abilities/spells are called in this game — e.g. 'Mantras', 'Spells', 'Incantations'",
+  "spellSystem": "how abilities work — how learned, attunement requirements, stat scaling",
+  "attunements": ["school1","school2",...],
+  "upgradeSystem": "upgrade mechanics — materials, max level — or 'No upgrade system'",
   "startingClasses": ["class1","class2",...],
-  "uniqueMechanics": ["Mechanic name: description","..."],
-  "endgame": "description of endgame content and what the max build looks like",
-  "metaNotes": "current meta — strongest builds, best weapons, dominant strategies",
-  "buildTips": ["tip1","tip2","tip3"]
+  "uniqueMechanics": ["Mechanic: description","..."],
+  "endgame": "endgame content description and what the max build looks like",
+  "metaNotes": "current meta — top builds, strongest weapons, dominant stat allocations",
+  "buildTips": ["actionable tip1","tip2","tip3"]
 }
+
+IMPORTANT: statCategories must capture ALL stat groups separately (base stats, attunements, proficiencies, weapon training, etc.). allStatKeys must be the complete flat list of every investable stat abbreviation. If a game has Race/Origin/Oath/Murmur/Boon/Flaw systems, put them in characterOptions.
 
 Research data:
 ${rawResearch.slice(0,6000)}`;
@@ -1415,7 +1465,10 @@ ${userConstraints}`;
         const prof=gameProfiles[cacheKey];
         customGameMeta=step1.game_meta||{};
         // Prefer profile stats (research-verified) over AI-detected game_meta
-        const profKeys=prof?.stats?.map(s=>s.key).filter(Boolean)||[];
+        // allStatKeys is the flat list from all stat categories (new schema); fall back to flattening statCategories, then legacy stats array
+        const profKeys=prof?.allStatKeys?.filter(Boolean)
+          ||(prof?.statCategories?.flatMap(c=>c.stats?.map(s=>s.key)||[]).filter(Boolean))
+          ||prof?.stats?.map(s=>s.key).filter(Boolean)||[];
         const metaKeys=customGameMeta.stat_keys||[];
         const phaseKeys=Object.keys(step1.ph?.[0]?.stats||{});
         const keys=profKeys.length?profKeys:(metaKeys.length?metaKeys:phaseKeys);
