@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
+import path from "path";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -30,7 +31,7 @@ const allowlist = [
   "zod-validation-error",
 ];
 
-async function buildAll() {
+async function buildAll(electron = false) {
   await rm("dist", { recursive: true, force: true });
 
   console.log("building client...");
@@ -57,9 +58,37 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  if (electron) {
+    console.log("building electron main + preload...");
+    // Main process — CJS, targets Electron's Node version, bundles nothing
+    // (electron itself is external by nature in an electron-builder package)
+    await esbuild({
+      entryPoints: ["electron/main.ts"],
+      platform: "node",
+      bundle: true,
+      format: "cjs",
+      outfile: "dist/electron/main.js",
+      external: ["electron"],
+      minify: false, // keep readable for debugging
+      logLevel: "info",
+    });
+    // Preload — must be CJS and sandboxed
+    await esbuild({
+      entryPoints: ["electron/preload.ts"],
+      platform: "node",
+      bundle: true,
+      format: "cjs",
+      outfile: "dist/electron/preload.js",
+      external: ["electron"],
+      minify: false,
+      logLevel: "info",
+    });
+  }
 }
 
-buildAll().catch((err) => {
+const isElectron = process.argv.includes("--electron");
+buildAll(isElectron).catch((err) => {
   console.error(err);
   process.exit(1);
 });
