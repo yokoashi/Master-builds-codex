@@ -92,7 +92,7 @@ function createWindow() {
     title: "Master Build Codex",
     backgroundColor: "#0f0e0c",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },

@@ -68,7 +68,7 @@ async function buildAll(electron = false) {
       platform: "node",
       bundle: true,
       format: "cjs",
-      outfile: "dist/electron/main.js",
+      outfile: "dist/electron/main.cjs",
       external: ["electron"],
       minify: false, // keep readable for debugging
       logLevel: "info",
@@ -79,7 +79,7 @@ async function buildAll(electron = false) {
       platform: "node",
       bundle: true,
       format: "cjs",
-      outfile: "dist/electron/preload.js",
+      outfile: "dist/electron/preload.cjs",
       external: ["electron"],
       minify: false,
       logLevel: "info",
