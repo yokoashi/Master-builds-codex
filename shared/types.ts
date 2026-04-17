@@ -115,13 +115,37 @@ export interface RefRow {
 
 // ── Knowledge cache ────────────────────────────────────────────────────────────
 export interface KnowledgeFact {
-  type: "WEAPON" | "SHIELD" | "CATALYST" | "ARMOR" | "RING" | "SPELL" | "BUFF" | "BUILD" | "ITEM" | "MECHANIC";
+  type: "WEAPON" | "SHIELD" | "CATALYST" | "ARMOR" | "RING" | "SPELL" | "BUFF" | "BUILD" | "ITEM" | "MECHANIC" | "GEM" | "UPGRADE" | "MAP" | "LORE";
   name: string;
   location?: string;
   upgrade?: string;
   ap?: number;
   status?: string;
   effect?: string;
+  /** Damage at each upgrade level: e.g. "100/120/145/170/200/230/260/295/330/365/400" (+0 to +10) */
+  damageTable?: string;
+  /** Scaling grade at each upgrade level: e.g. "D/D/C/C/B/B/B/A/A/A/S" */
+  scalingTable?: string;
+  /** Status buildup at each upgrade level: e.g. "30/35/40/45/50/55/62/70/77/82/85" */
+  statusTable?: string;
+  /** Stat requirements: e.g. "STR 12 / DEX 18" */
+  requirements?: string;
+  /** Physical defense (armor pieces) */
+  physDef?: number;
+  /** Magic defense (armor pieces) */
+  magicDef?: number;
+  /** Fire defense (armor pieces) */
+  fireDef?: number;
+  /** Lightning defense (armor pieces) */
+  lightningDef?: number;
+  /** Holy/dark/non-phys defense (armor pieces) */
+  holyDef?: number;
+  /** Poise (armor) or stability (shields) */
+  poise?: number;
+  /** Item weight */
+  weight?: number;
+  /** Quantity or count (upgrade mats, consumables) */
+  quantity?: string;
   raw: string;
 }
 

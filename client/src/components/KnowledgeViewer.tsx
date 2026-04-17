@@ -23,6 +23,10 @@ const CATEGORY_ICONS: Record<string, string> = {
   ITEM: "◉",
   MECHANIC: "⚙",
   BUILD: "★",
+  GEM: "💎",
+  UPGRADE: "🪨",
+  MAP: "🗺",
+  LORE: "📖",
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -36,15 +40,36 @@ const CATEGORY_COLORS: Record<string, string> = {
   ITEM: "#5591c7",
   MECHANIC: "#8a8070",
   BUILD: "#e8c05a",
+  GEM: "#4ecdc4",
+  UPGRADE: "#c9a96e",
+  MAP: "#5ab870",
+  LORE: "#a8a0d8",
 };
 
+// Ordered display for category tabs
+const CAT_ORDER = [
+  "ALL",
+  "WEAPON", "SHIELD", "CATALYST",
+  "ARMOR",
+  "RING", "SPELL", "BUFF",
+  "BUILD", "ITEM", "MECHANIC",
+  "GEM", "UPGRADE", "MAP", "LORE",
+];
+
 const PAGE_SIZE = 50;
+
+/** Format a defense stat number, showing — if undefined */
+function def(v: number | undefined): string {
+  return v !== undefined ? String(v) : "—";
+}
+
 
 export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: Props) {
   const [activeCategory, setActiveCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
   const clearMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/knowledge/${gameKey}`),
@@ -66,11 +91,10 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
 
   const facts = data?.facts ?? [];
 
-  // Collect unique categories from the data
+  // Build ordered category list based on what actually exists in data
   const categories = useMemo(() => {
-    const seen = new Set<string>();
-    facts.forEach((f) => seen.add(f.type));
-    return ["ALL", ...Array.from(seen).sort()];
+    const seen = new Set<string>(facts.map((f) => f.type));
+    return CAT_ORDER.filter((c) => c === "ALL" || seen.has(c));
   }, [facts]);
 
   // Filter by category + search
@@ -86,6 +110,8 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
           f.name.toLowerCase().includes(q) ||
           (f.location ?? "").toLowerCase().includes(q) ||
           (f.effect ?? "").toLowerCase().includes(q) ||
+          (f.status ?? "").toLowerCase().includes(q) ||
+          (f.requirements ?? "").toLowerCase().includes(q) ||
           f.raw.toLowerCase().includes(q)
       );
     }
@@ -96,14 +122,26 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
   const safePage = Math.min(page, totalPages);
   const pageSlice = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
+  // Determine display mode based on active category
+  const isArmorView = activeCategory === "ARMOR";
+  const isWeaponView = activeCategory === "WEAPON" || activeCategory === "SHIELD" || activeCategory === "CATALYST";
+  const isTextView = activeCategory === "MAP" || activeCategory === "LORE" || activeCategory === "MECHANIC";
+  const isGemView = activeCategory === "GEM" || activeCategory === "UPGRADE";
+
   function handleCategoryChange(cat: string) {
     setActiveCategory(cat);
     setPage(1);
+    setExpandedRow(null);
   }
 
   function handleSearch(val: string) {
     setSearch(val);
     setPage(1);
+    setExpandedRow(null);
+  }
+
+  function toggleExpand(i: number) {
+    setExpandedRow(expandedRow === i ? null : i);
   }
 
   return (
@@ -117,7 +155,7 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
       <div
         className="flex flex-col h-full overflow-hidden"
         style={{
-          width: "min(760px, 100vw)",
+          width: "min(880px, 100vw)",
           background: "var(--color-bg)",
           borderLeft: "1px solid #2a2318",
         }}
@@ -194,7 +232,7 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
             type="text"
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Search by name, location, effect..."
+            placeholder="Search by name, location, effect, status..."
             className="w-full px-3 py-1.5 rounded text-sm"
             style={{
               background: "var(--color-card)",
@@ -255,28 +293,67 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
                   : "No results match your search."}
               </p>
             </div>
-          ) : (
+          ) : isTextView ? (
+            /* ── Text/lore view (MAP, LORE, MECHANIC) ── */
+            <div className="p-4 space-y-2">
+              {pageSlice.map((fact, i) => {
+                const catColor = CATEGORY_COLORS[fact.type] ?? accent;
+                return (
+                  <div
+                    key={i}
+                    className="rounded p-3 cursor-pointer hover:bg-white/[0.03] transition-colors"
+                    style={{ border: "1px solid #2a2318", background: "var(--color-card)" }}
+                    onClick={() => toggleExpand(i)}
+                  >
+                    <div className="flex items-start gap-2">
+                      <span
+                        className="px-1.5 py-0.5 rounded flex-shrink-0"
+                        style={{
+                          background: hexToRgba(catColor, 0.12),
+                          border: `1px solid ${hexToRgba(catColor, 0.3)}`,
+                          color: catColor,
+                          fontSize: "0.6rem",
+                          fontFamily: "var(--font-display)",
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        {fact.type}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold" style={{ color: "var(--color-bright)" }}>
+                          {fact.name}
+                        </p>
+                        {fact.location && (
+                          <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>
+                            📍 {fact.location}
+                          </p>
+                        )}
+                        {(expandedRow === i) && (
+                          <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text)", opacity: 0.75 }}>
+                            {fact.effect || fact.raw}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : isArmorView ? (
+            /* ── Armor view: all 5 defense stats ── */
             <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
               <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                 <tr style={{ background: "var(--color-card)", borderBottom: "1px solid #2a2318" }}>
-                  <th className="text-left px-4 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "22%" }}>
-                    Name
-                  </th>
-                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "9%" }}>
-                    Type
-                  </th>
-                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "20%" }}>
-                    Location
-                  </th>
-                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "8%" }}>
-                    AP
-                  </th>
-                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "14%" }}>
-                    Status / Effect
-                  </th>
-                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>
-                    Notes
-                  </th>
+                  <th className="text-left px-4 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "22%" }}>Name</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "8%" }}>Type</th>
+                  <th className="text-center px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#d64545", width: "7%" }}>Phys</th>
+                  <th className="text-center px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#5591c7", width: "7%" }}>Mag</th>
+                  <th className="text-center px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#e87d3e", width: "7%" }}>Fire</th>
+                  <th className="text-center px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#e8c05a", width: "7%" }}>Lgt</th>
+                  <th className="text-center px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#a8a0d8", width: "7%" }}>Holy</th>
+                  <th className="text-center px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "7%" }}>Poise</th>
+                  <th className="text-center px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "6%" }}>Wt</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Location</th>
                 </tr>
               </thead>
               <tbody>
@@ -288,11 +365,192 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
                       style={{ borderBottom: "1px solid #1e1a14" }}
                       className="hover:bg-white/[0.02] transition-colors"
                     >
-                      {/* Name */}
-                      <td className="px-4 py-2 font-medium" style={{ color: "var(--color-bright)" }}>
-                        {fact.name}
+                      <td className="px-4 py-2 font-medium" style={{ color: "var(--color-bright)" }}>{fact.name}</td>
+                      <td className="px-2 py-2">
+                        <span
+                          className="px-1.5 py-0.5 rounded"
+                          style={{
+                            background: hexToRgba(catColor, 0.12),
+                            border: `1px solid ${hexToRgba(catColor, 0.3)}`,
+                            color: catColor,
+                            fontSize: "0.6rem",
+                            fontFamily: "var(--font-display)",
+                          }}
+                        >
+                          {fact.type}
+                        </span>
                       </td>
-                      {/* Type badge */}
+                      <td className="px-2 py-2 text-center" style={{ color: "#d64545" }}>{def(fact.physDef)}</td>
+                      <td className="px-2 py-2 text-center" style={{ color: "#5591c7" }}>{def(fact.magicDef)}</td>
+                      <td className="px-2 py-2 text-center" style={{ color: "#e87d3e" }}>{def(fact.fireDef)}</td>
+                      <td className="px-2 py-2 text-center" style={{ color: "#e8c05a" }}>{def(fact.lightningDef)}</td>
+                      <td className="px-2 py-2 text-center" style={{ color: "#a8a0d8" }}>{def(fact.holyDef)}</td>
+                      <td className="px-2 py-2 text-center" style={{ color: "var(--color-dim)" }}>{def(fact.poise)}</td>
+                      <td className="px-2 py-2 text-center" style={{ color: "var(--color-dim)" }}>{fact.weight !== undefined ? fact.weight : "—"}</td>
+                      <td className="px-2 py-2" style={{ color: "var(--color-dim)" }}>{fact.location || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : isWeaponView ? (
+            /* ── Weapon view: AP table, scaling, status buildup ── */
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+              <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                <tr style={{ background: "var(--color-card)", borderBottom: "1px solid #2a2318" }}>
+                  <th className="text-left px-4 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "18%" }}>Name</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "8%" }}>Type</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#d64545", width: "22%" }}>AP (+0 → +10)</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#6daa45", width: "18%" }}>Scaling</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "#b370d8", width: "14%" }}>Status</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Req / Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageSlice.map((fact, i) => {
+                  const catColor = CATEGORY_COLORS[fact.type] ?? accent;
+                  return (
+                    <tr
+                      key={i}
+                      style={{ borderBottom: "1px solid #1e1a14" }}
+                      className="hover:bg-white/[0.02] transition-colors cursor-pointer"
+                      onClick={() => toggleExpand(i)}
+                    >
+                      <td className="px-4 py-2 font-medium" style={{ color: "var(--color-bright)" }}>{fact.name}</td>
+                      <td className="px-2 py-2">
+                        <span
+                          className="px-1.5 py-0.5 rounded"
+                          style={{
+                            background: hexToRgba(catColor, 0.12),
+                            border: `1px solid ${hexToRgba(catColor, 0.3)}`,
+                            color: catColor,
+                            fontSize: "0.6rem",
+                            fontFamily: "var(--font-display)",
+                          }}
+                        >
+                          {fact.type}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 font-mono" style={{ color: "#d64545", fontSize: "0.65rem" }}>
+                        {fact.damageTable
+                          ? <span title={fact.damageTable}>{fact.damageTable.slice(0, 40)}{fact.damageTable.length > 40 ? "…" : ""}</span>
+                          : fact.ap ? `~${fact.ap}` : "—"}
+                      </td>
+                      <td className="px-2 py-2 font-mono" style={{ color: "#6daa45", fontSize: "0.65rem" }}>
+                        {fact.scalingTable
+                          ? <span title={fact.scalingTable}>{fact.scalingTable.slice(0, 25)}{fact.scalingTable.length > 25 ? "…" : ""}</span>
+                          : "—"}
+                      </td>
+                      <td className="px-2 py-2" style={{ color: "#b370d8" }}>
+                        {fact.statusTable
+                          ? <span title={fact.statusTable}>{fact.status || "Buildup"} ↑</span>
+                          : fact.status || "—"}
+                      </td>
+                      <td className="px-2 py-2" style={{ color: "var(--color-dim)" }}>
+                        {expandedRow === i ? (
+                          <div className="space-y-0.5">
+                            {fact.requirements && <p><span style={{ color: "var(--color-dim)", opacity: 0.6 }}>Req:</span> {fact.requirements}</p>}
+                            {fact.location && <p><span style={{ color: "var(--color-dim)", opacity: 0.6 }}>Loc:</span> {fact.location}</p>}
+                            {fact.weight !== undefined && <p><span style={{ color: "var(--color-dim)", opacity: 0.6 }}>Wt:</span> {fact.weight}</p>}
+                            {fact.upgrade && <p><span style={{ color: "var(--color-dim)", opacity: 0.6 }}>Up:</span> {fact.upgrade}</p>}
+                          </div>
+                        ) : (
+                          <span
+                            className="truncate block"
+                            style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          >
+                            {fact.requirements || fact.location || fact.upgrade || "—"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : isGemView ? (
+            /* ── Gem/Upgrade view ── */
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+              <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                <tr style={{ background: "var(--color-card)", borderBottom: "1px solid #2a2318" }}>
+                  <th className="text-left px-4 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "22%" }}>Name</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "8%" }}>Type</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "30%" }}>Effect</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "8%" }}>Qty</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageSlice.map((fact, i) => {
+                  const catColor = CATEGORY_COLORS[fact.type] ?? accent;
+                  return (
+                    <tr
+                      key={i}
+                      style={{ borderBottom: "1px solid #1e1a14" }}
+                      className="hover:bg-white/[0.02] transition-colors"
+                    >
+                      <td className="px-4 py-2 font-medium" style={{ color: "var(--color-bright)" }}>{fact.name}</td>
+                      <td className="px-2 py-2">
+                        <span
+                          className="px-1.5 py-0.5 rounded"
+                          style={{
+                            background: hexToRgba(catColor, 0.12),
+                            border: `1px solid ${hexToRgba(catColor, 0.3)}`,
+                            color: catColor,
+                            fontSize: "0.6rem",
+                            fontFamily: "var(--font-display)",
+                          }}
+                        >
+                          {fact.type}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2" style={{ color: "var(--color-dim)" }}>
+                        <span
+                          className="block truncate"
+                          title={fact.effect || fact.raw}
+                          style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >
+                          {fact.effect || "—"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2" style={{ color: "var(--color-gold)" }}>{fact.quantity || "—"}</td>
+                      <td className="px-2 py-2" style={{ color: "var(--color-dim)" }}>{fact.location || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            /* ── Default / ALL view: mixed table showing most-useful fields ── */
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+              <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                <tr style={{ background: "var(--color-card)", borderBottom: "1px solid #2a2318" }}>
+                  <th className="text-left px-4 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "20%" }}>Name</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "9%" }}>Type</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "18%" }}>Location</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "9%" }}>AP / Def</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)", width: "12%" }}>Status / Effect</th>
+                  <th className="text-left px-2 py-2 font-medium uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageSlice.map((fact, i) => {
+                  const catColor = CATEGORY_COLORS[fact.type] ?? accent;
+                  // Pick the most useful summary value for "AP / Def" column
+                  const apDefValue = fact.damageTable
+                    ? fact.damageTable.split("/")[0] + "→" + fact.damageTable.split("/").slice(-1)[0]
+                    : fact.physDef !== undefined
+                    ? `P:${fact.physDef}`
+                    : fact.ap
+                    ? `+${fact.ap}`
+                    : "—";
+                  return (
+                    <tr
+                      key={i}
+                      style={{ borderBottom: "1px solid #1e1a14" }}
+                      className="hover:bg-white/[0.02] transition-colors"
+                    >
+                      <td className="px-4 py-2 font-medium" style={{ color: "var(--color-bright)" }}>{fact.name}</td>
                       <td className="px-2 py-2">
                         <span
                           className="px-1.5 py-0.5 rounded"
@@ -308,26 +566,22 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
                           {fact.type}
                         </span>
                       </td>
-                      {/* Location */}
-                      <td className="px-2 py-2" style={{ color: "var(--color-dim)" }}>
-                        {fact.location || "—"}
-                      </td>
-                      {/* AP */}
-                      <td className="px-2 py-2" style={{ color: fact.ap ? catColor : "var(--color-dim)" }}>
-                        {fact.ap ? `+${fact.ap}` : "—"}
-                      </td>
-                      {/* Status / Effect */}
+                      <td className="px-2 py-2" style={{ color: "var(--color-dim)" }}>{fact.location || "—"}</td>
+                      <td className="px-2 py-2 font-mono" style={{ color: catColor, fontSize: "0.65rem" }}>{apDefValue}</td>
                       <td className="px-2 py-2" style={{ color: "var(--color-purple)" }}>
-                        {fact.status || fact.effect || "—"}
+                        {fact.statusTable
+                          ? <span title={fact.statusTable}>{fact.status || "Buildup"}↑</span>
+                          : fact.status || fact.effect || "—"}
                       </td>
-                      {/* Raw / upgrade */}
                       <td className="px-2 py-2" style={{ color: "var(--color-dim)", maxWidth: 200 }}>
                         <span
                           className="truncate block"
-                          title={fact.upgrade || fact.raw}
+                          title={fact.scalingTable || fact.requirements || fact.upgrade || fact.raw}
                           style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                         >
-                          {fact.upgrade || fact.raw}
+                          {fact.scalingTable
+                            ? `Scaling: ${fact.scalingTable.slice(0, 20)}`
+                            : fact.requirements || fact.upgrade || fact.raw.slice(0, 60)}
                         </span>
                       </td>
                     </tr>

@@ -5,7 +5,7 @@ const MAX_FACTS = 1500; // was 200 — raised to support 8 categories × 150+ it
 const DISPLAY_PER_CAT = 150; // show up to 150 per category (raised from 80 to surface more seed facts)
 const DEDUP_PREFIX_LEN = 40;
 
-const CAT_ORDER = ["WEAPON", "SHIELD", "CATALYST", "ARMOR", "RING", "SPELL", "BUFF", "BUILD", "ITEM", "MECHANIC"] as const;
+const CAT_ORDER = ["WEAPON", "SHIELD", "CATALYST", "ARMOR", "RING", "SPELL", "BUFF", "BUILD", "ITEM", "MECHANIC", "GEM", "UPGRADE", "MAP", "LORE"] as const;
 const CAT_LABELS: Record<string, string> = {
   WEAPON: "Weapons",
   SHIELD: "Shields & Offhand",
@@ -17,6 +17,10 @@ const CAT_LABELS: Record<string, string> = {
   BUILD: "Bosses & Progression",
   ITEM: "Items",
   MECHANIC: "Mechanics",
+  GEM: "Ashes of War & Gems",
+  UPGRADE: "Upgrade Materials",
+  MAP: "Areas & Maps",
+  LORE: "Lore & Questlines",
 };
 
 /** Detect if an item should be classified as a SHIELD based on name/equip-slot */
@@ -200,11 +204,29 @@ export function shouldSkipWebSearch(
   }
 }
 
+/** Helper: parse a slash-separated numeric progression string (e.g. "100/120/145") */
+function parseSlashTable(val: string): string | undefined {
+  const clean = val.trim().replace(/\s*\/\s*/g, "/");
+  // Must contain at least one slash and look like numbers or letter grades
+  if (/[\/]/.test(clean) && clean.length > 2) return clean;
+  return undefined;
+}
+
+/** Helper: parse a →-separated or (+N)-annotated progression into a slash table */
+function parseArrowTable(val: string): string | undefined {
+  // "100(+0)/120(+1)/145(+2)" or "100 → 400"
+  const arrowMatch = val.match(/([\d.]+)\s*[→\-]+\s*([\d.]+)/);
+  if (arrowMatch) return `${arrowMatch[1]}→${arrowMatch[2]}`;
+  // "AP: 100(+0)/120(+1)/..." — strip the (+N) annotations and keep values
+  const annotated = val.replace(/\(\+\d+\)/g, "").trim();
+  return parseSlashTable(annotated);
+}
+
 /** Parse raw AI output lines into KnowledgeFact objects (used by /api/learn) */
 export function parseLearnLines(raw: string, gameKey: string, gameName: string): KnowledgeFact[] {
   if (!raw) return [];
 
-  // Map variant prefixes to canonical types
+  // Canonical type for first-word prefixes
   const REMAP: Record<string, KnowledgeFact["type"]> = {
     // Shields → SHIELD (not WEAPON)
     shield: "SHIELD", greatshield: "SHIELD", buckler: "SHIELD", parrying: "SHIELD",
@@ -221,13 +243,23 @@ export function parseLearnLines(raw: string, gameKey: string, gameName: string):
     acc: "RING", talisman: "RING", amulet: "RING", charm: "RING", trinket: "RING",
     // Endgame → BUILD
     ng: "BUILD", endgame: "BUILD", boss: "BUILD", milestone: "BUILD", build: "BUILD",
+    // Ashes / gems → GEM
+    gem: "GEM", ash: "GEM", ashes: "GEM", infusion: "GEM", whetblade: "GEM",
+    // Upgrade materials → UPGRADE
+    upgrade: "UPGRADE", smithing: "UPGRADE", titanite: "UPGRADE", shard: "UPGRADE",
+    somber: "UPGRADE", bone: "UPGRADE",
+    // Areas / maps → MAP
+    map: "MAP", area: "MAP", zone: "MAP", region: "MAP", location: "MAP",
+    // Lore / questlines → LORE
+    lore: "LORE", npc: "LORE", questline: "LORE", quest: "LORE", story: "LORE",
+    // Mechanics → MECHANIC (non-item game systems)
+    mechanic: "MECHANIC", scaling: "MECHANIC", system: "MECHANIC",
   };
 
   const lines = raw
     .split("\n")
     .map((l) => l.trim())
-    // Parentheses required: && binds tighter than ||, so without them a 2-char
-    // line containing only ":" would pass the length check incorrectly.
+    // Must be substantive and contain a field delimiter
     .filter((l) => l.length > 10 && (l.includes("—") || l.includes("|") || l.includes(":")));
 
   const facts: KnowledgeFact[] = [];
@@ -236,14 +268,16 @@ export function parseLearnLines(raw: string, gameKey: string, gameName: string):
     let type: KnowledgeFact["type"] | null = null;
     let rest = line;
 
-    // Try explicit prefix match first
-    const prefixMatch = line.match(/^(WEAPON|SHIELD|CATALYST|ARMOR|RING\/ACC|RING|SPELL|BUFF|BUILD)\s+/i);
+    // 1. Try explicit keyword prefix (WEAPON:, SHIELD:, MECHANIC:, GEM:, etc.)
+    const prefixMatch = line.match(
+      /^(WEAPON|SHIELD|CATALYST|ARMOR|RING\/ACC|RING|SPELL|BUFF|BUILD|ITEM|MECHANIC|GEM|UPGRADE|MAP|LORE)[:\s]+/i
+    );
     if (prefixMatch) {
-      const key = prefixMatch[1].toUpperCase().replace("/ACC", "").replace("/", "");
-      type = (key === "RING" ? "RING" : key) as KnowledgeFact["type"];
+      const key = prefixMatch[1].toUpperCase().replace("/ACC", "") as KnowledgeFact["type"];
+      type = key;
       rest = line.slice(prefixMatch[0].length);
     } else {
-      // Try first word REMAP
+      // 2. First-word REMAP fallback
       const wordMatch = line.match(/^([A-Za-z]+)\s+/);
       if (wordMatch) {
         const key = wordMatch[1].toLowerCase();
@@ -254,25 +288,108 @@ export function parseLearnLines(raw: string, gameKey: string, gameName: string):
 
     if (!type) continue;
 
-    // Extract name (everything before first — or |)
-    const nameMatch = rest.match(/^([^—|]+)/);
-    const name = nameMatch ? nameMatch[1].trim() : rest.slice(0, 60).trim();
+    // ── Field extraction ───────────────────────────────────────────────────
+
+    // Name: everything before first — or | or a labelled field
+    const nameMatch = rest.match(/^([^—|\[]+)/);
+    const name = nameMatch ? nameMatch[1].replace(/^[:\-]+/, "").trim() : rest.slice(0, 60).trim();
     if (!name || name.length < 2) continue;
 
-    // Extract location
-    const locMatch = rest.match(/[Ll]oc:\s*([^|—\n]+)/);
+    // Location
+    const locMatch = rest.match(/[Ll]oc[:\s]+([^|—\n]+)/);
     const location = locMatch ? locMatch[1].trim() : undefined;
 
-    // Extract effect
-    const efMatch = rest.match(/[Ee]ffect:\s*([^|—\n]+)|[Ee]f:\s*([^|—\n]+)/);
+    // Effect / Ef
+    const efMatch = rest.match(/[Ee]ffect[:\s]+([^|—\n]+)|\bef[:\s]+([^|—\n]+)/i);
     const effect = efMatch ? (efMatch[1] ?? efMatch[2])?.trim() : undefined;
+
+    // Status (e.g. "status: Bleed 45" or "st: Frost 30")
+    const stMatch = rest.match(/\bstatus[:\s]+([^|—\n]+)|\bst[:\s]+([^|—\n]+)/i);
+    const status = stMatch ? (stMatch[1] ?? stMatch[2])?.trim() : undefined;
+
+    // Attack power (scalar: "AP: 250" or "ap: 300")
+    const apMatch = rest.match(/\bAP[:\s]+([\d]+)/);
+    const ap = apMatch ? parseInt(apMatch[1], 10) : undefined;
+
+    // Damage table: "AP: 100(+0)/120(+1)/..." or "AP: 100/120/145/..." or "100 → 400"
+    const dmgTableMatch = rest.match(/\bAP[:\s]+([\d()+\/→\-]+(?:[\d()+\/→\-]+)+)/i);
+    const damageTable = dmgTableMatch ? parseArrowTable(dmgTableMatch[1]) : undefined;
+
+    // Scaling table: "scaling: D/D/C/C/B/A/S" or "scaling: D(+0)/C(+5)/S(+10)"
+    const scaleMatch = rest.match(/\bscaling[:\s]+([A-S][\/()+\d A-S]+)/i);
+    const scalingTable = scaleMatch ? parseSlashTable(scaleMatch[1].replace(/\(\+\d+\)/g, "")) : undefined;
+
+    // Status buildup table: "bleed: 30/35/40/.../85" or "status: Bleed 30(+0)/35(+1)/.../85(+10)"
+    const statusTableMatch = rest.match(/\b(?:bleed|frost|poison|rot|madness|blood|buildup)[:\s]+([\d()+\/]+(?:[\d()+\/]+)+)/i);
+    const statusTable = statusTableMatch ? parseArrowTable(statusTableMatch[1]) : undefined;
+
+    // Stat requirements: "STR 12 / DEX 18" or "stat: STR 12 / DEX 18"
+    const reqMatch = rest.match(/\bstat[:\s]+([A-Z]{2,3}\s*\d[^|—\n]+)/i)
+      || rest.match(/\b(STR\s+\d[^|—\n]*(?:DEX|INT|FTH|ARC|END|VIG)[^|—\n]*)/i);
+    const requirements = reqMatch ? reqMatch[1].trim() : undefined;
+
+    // Weight: "weight: 12.5" or "wt: 8"
+    const wtMatch = rest.match(/\b(?:weight|wt)[:\s]+([\d.]+)/i);
+    const weight = wtMatch ? parseFloat(wtMatch[1]) : undefined;
+
+    // Armor defense stats: "phys:42.5 | magic:28.3 | fire:31.1 | lightning:25.6 | holy:30.2"
+    const physMatch = rest.match(/\bphys(?:ical)?\s*(?:def)?[:\s]+([\d.]+)/i);
+    const magicMatch = rest.match(/\bmagic(?:al)?\s*(?:def)?[:\s]+([\d.]+)/i);
+    const fireMatch = rest.match(/\bfire\s*(?:def)?[:\s]+([\d.]+)/i);
+    const lightMatch = rest.match(/\blightning\s*(?:def)?[:\s]+([\d.]+)/i);
+    const holyMatch = rest.match(/\b(?:holy|dark|strike)\s*(?:def)?[:\s]+([\d.]+)/i);
+    const poiseMatch = rest.match(/\bpoise[:\s]+([\d.]+)/i);
+
+    const physDef = physMatch ? parseFloat(physMatch[1]) : undefined;
+    const magicDef = magicMatch ? parseFloat(magicMatch[1]) : undefined;
+    const fireDef = fireMatch ? parseFloat(fireMatch[1]) : undefined;
+    const lightningDef = lightMatch ? parseFloat(lightMatch[1]) : undefined;
+    const holyDef = holyMatch ? parseFloat(holyMatch[1]) : undefined;
+    const poise = poiseMatch ? parseFloat(poiseMatch[1]) : undefined;
+
+    // Quantity (upgrade mats): "x3", "qty: 3", "found N times"
+    const qtyMatch = rest.match(/\bqty[:\s]+(\d+)|\bx(\d+)\b/i);
+    const quantity = qtyMatch ? (qtyMatch[1] ?? qtyMatch[2]) : undefined;
+
+    // Build the raw summary string (compact, factual)
+    let rawParts = [`${type}: ${name}`];
+    if (location) rawParts.push(`Loc:${location}`);
+    if (ap && !damageTable) rawParts.push(`AP:${ap}`);
+    if (damageTable) rawParts.push(`AP:${damageTable}`);
+    if (scalingTable) rawParts.push(`Scaling:${scalingTable}`);
+    if (status) rawParts.push(`Status:${status}`);
+    if (statusTable) rawParts.push(`Buildup:${statusTable}`);
+    if (physDef !== undefined) rawParts.push(`Phys:${physDef}`);
+    if (magicDef !== undefined) rawParts.push(`Mag:${magicDef}`);
+    if (fireDef !== undefined) rawParts.push(`Fire:${fireDef}`);
+    if (lightningDef !== undefined) rawParts.push(`Lgt:${lightningDef}`);
+    if (holyDef !== undefined) rawParts.push(`Holy:${holyDef}`);
+    if (poise !== undefined) rawParts.push(`Poise:${poise}`);
+    if (weight !== undefined) rawParts.push(`Wt:${weight}`);
+    if (requirements) rawParts.push(`Req:${requirements}`);
+    if (effect) rawParts.push(`Ef:${effect}`);
+    if (quantity) rawParts.push(`Qty:${quantity}`);
 
     facts.push({
       type,
       name,
       location,
+      ap,
+      status,
       effect,
-      raw: `${type}: ${name}${location ? ` | Loc:${location}` : ""}${effect ? ` | Ef:${effect}` : ""} | ${rest.slice(0, 200)}`,
+      damageTable,
+      scalingTable,
+      statusTable,
+      requirements,
+      physDef,
+      magicDef,
+      fireDef,
+      lightningDef,
+      holyDef,
+      poise,
+      weight,
+      quantity,
+      raw: rawParts.join(" | "),
     });
   }
 

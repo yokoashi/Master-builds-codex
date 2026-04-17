@@ -879,31 +879,46 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
         }
       }
 
-      const RULES = `\nRules:\n- EXHAUSTIVE — every item in ${gameName} including rare, DLC, NG+-exclusive\n- Exact in-game names only\n- loc: specific zone + NPC/boss/chest — never "Various", "Exploration", "N/A"\n- ALL numeric values required (AP, weight, damage, scaling, buildup)\n- Output ONLY item lines in exact format — no headers, no markdown`;
+      const RULES = `\nRules:\n- EXHAUSTIVE — every item in ${gameName} including rare, DLC, NG+-exclusive\n- Exact in-game names only\n- loc: specific zone + NPC/boss/chest — never "Various", "Exploration", "N/A"\n- ALL numeric values required (AP, weight, damage, scaling, buildup)\n- Output ONLY item lines in exact format — no headers, no markdown\n- Each line MUST start with the EXACT prefix shown (e.g. WEAPON:, ARMOR:, GEM:) — never omit or change it`;
 
-      const WPN = `WEAPON Name — [weapon type]; AP: ~N (+0) → ~N (+max); scaling: [grade STAT at max]; status: [N buildup (+0) → N (+max) or "none"]; weight: ~N — loc: [zone + source] — stat: [requirements; upgrade mat]`;
-      const SHD = `SHIELD Name — [type: small/medium/great/parrying]; stability: N (+0) → N (max); guard boost: N%; block: N% physical / N% elemental; weight: ~N — loc: [zone + source] — stat: [requirements; upgrade mat]`;
-      const CAT = `CATALYST Name — [type: staff/seal/wand]; spell buff: ~N (+0) → ~N (max); scaling: [STAT grade]; weight: ~N — loc: [zone + source] — stat: [INT/FTH/ARC required]`;
-      const ARM = `ARMOR Name — [piece: helm/chest/gauntlets/leggings]; set: [set name]; weight: ~N; physical def: ~N; elemental def: ~N fire / ~N lightning / ~N magic / ~N holy; poise: ~N — loc: [zone + source]`;
-      const RNG = `RING/ACC Name — [precise effect WITH NUMBERS: "+15% Bleed dmg", "+60 buildup/hit", "+20 Stamina"] — loc: [zone + source]`;
-      const SPL = `SPELL Name — [school]; damage: ~N per cast; effect: [precise]; FP: N — loc: [NPC + zone] — stat: [N STAT required; scales with STAT]`;
-      const BUF = `BUFF Name — [school]; effect: [WITH NUMBERS: "+15% dmg 60s", "heals 300 HP"]; duration: Ns; FP: N — loc: [NPC + zone] — stat: [N STAT required]`;
+      // Damage/scaling format: full +0 to +10 table
+      const WPN = `WEAPON: Name — [weapon type]; AP: N(+0)/N(+1)/N(+2)/N(+3)/N(+4)/N(+5)/N(+6)/N(+7)/N(+8)/N(+9)/N(+10); scaling: G(+0)/G(+1)/G(+2)/G(+3)/G(+4)/G(+5)/G(+6)/G(+7)/G(+8)/G(+9)/G(+10) where G=letter grade; status: [TYPE N(+0)/N(+5)/N(+10) buildup or "none"]; weight: N — loc: [zone + source] — stat: [STR N / DEX N / INT N / FTH N / ARC N; upgrade mat]`;
+      const SHD = `SHIELD: Name — [type: small/medium/great/parrying]; stability: N(+0)/N(+5)/N(+10); guard boost: N%; block: N% phys / N% magic / N% fire / N% lightning / N% holy; weight: N — loc: [zone + source] — stat: [STR N; upgrade mat]`;
+      const CAT = `CATALYST: Name — [type: staff/seal/wand]; spell buff: N(+0)/N(+5)/N(+10); scaling: G(+0)/G(+5)/G(+10); weight: N — loc: [zone + source] — stat: [INT N / FTH N / ARC N]`;
+      // Armor: ALL 5 defense stats + poise + weight
+      const ARM = `ARMOR: Name — [piece: helm/chest/gauntlets/leggings]; set: [set name]; physical def: N; magic def: N; fire def: N; lightning def: N; holy def: N; poise: N; weight: N — loc: [zone + source]`;
+      const RNG = `RING/ACC: Name — [precise effect WITH NUMBERS: "+15% Bleed dmg", "+60 buildup/hit", "+20 Stamina"] — loc: [zone + source]`;
+      const SPL = `SPELL: Name — [school]; damage: N per cast; effect: [precise]; FP: N — loc: [NPC + zone] — stat: [N STAT required; scales with STAT]`;
+      const BUF = `BUFF: Name — [school]; effect: [WITH NUMBERS: "+15% dmg 60s", "heals 300 HP"]; duration: Ns; FP: N — loc: [NPC + zone] — stat: [N STAT required]`;
+      const GEM = `GEM: Name — [type: ash of war/infusion/whetblade]; effect: [precise description WITH NUMBERS]; compatible with: [weapon types]; affinity options: [list] — loc: [zone + source]`;
+      const UPG = `UPGRADE: Name — [type: smithing stone/somber/titanite/bone/etc.]; tier: +N to +N; quantity per run: N; weight: N — loc: [zone + source, drop rate if farmable]`;
+      const MAP_T = `MAP: Name — [type: area/region/dungeon/legacy dungeon]; connects to: [adjacent areas]; key landmarks: [boss, NPC, shortcut]; unlock: [how to reach] — note: [shortcuts or secrets]`;
+      const LRE = `LORE: Name — [type: NPC/questline/item lore/story event]; summary: [2-3 sentences]; reward: [items/endings unlocked]; steps: [brief sequence] — loc: [where NPC/event is found]`;
 
       const categories = [
-        { name: "physical & quality weapons", prompt: `Search ${gameName} wiki. List EVERY physical weapon: swords, greatswords, daggers, axes, hammers, maces, clubs, fists. One line per weapon:\n${WPN}${RULES}` },
-        { name: "colossal & ultra-great weapons", prompt: `Search ${gameName} wiki. List EVERY colossal weapon, ultra-greatsword, great hammer, colossal axe. One line per weapon:\n${WPN}${RULES}` },
-        { name: "polearms, halberds, spears & ranged", prompt: `Search ${gameName} wiki. List EVERY polearm, halberd, spear, lance, whip, bow, crossbow, greatbow. One line per weapon:\n${WPN}${RULES}` },
-        { name: "status & elemental weapons", prompt: `Search ${gameName} wiki. List EVERY weapon with status/elemental: Bleed, Poison, Frost, Fire, Lightning, Holy, Scarlet Rot, Madness. Start each line with WEAPON:\n${WPN}\nCRITICAL: status field must show buildup at +0 AND max upgrade.${RULES}` },
-        { name: "catalysts, staves & seals — start each line with CATALYST", prompt: `Search ${gameName} wiki. List EVERY casting tool: staves, seals, wands, catalysts, foci. CRITICAL: each line MUST start with CATALYST (not WEAPON):\n${CAT}${RULES}` },
-        { name: "shields & offhand — start each line with SHIELD", prompt: `Search ${gameName} wiki. List EVERY shield: small, medium, greatshield, parrying, torch, lantern. CRITICAL: each line MUST start with SHIELD (not WEAPON):\n${SHD}${RULES}` },
-        { name: "light & medium armor — start each line with ARMOR", prompt: `Search ${gameName} wiki. List EVERY light and medium armor piece (helm/chest/gauntlets/leggings for every set). CRITICAL: each line MUST start with ARMOR:\n${ARM}${RULES}` },
-        { name: "heavy, boss & special armor — start each line with ARMOR", prompt: `Search ${gameName} wiki. List EVERY heavy armor, boss armor set, unique armor, DLC armor. CRITICAL: each line MUST start with ARMOR. loc field must say exactly how to obtain:\n${ARM}${RULES}` },
-        { name: "unique missable & NG+ armor — start each line with ARMOR", prompt: `Search ${gameName} wiki. List EVERY missable, questline, covenant, or NG+-exclusive armor. loc field is critical — be specific about HOW to obtain. Start each line with ARMOR:\n${ARM}${RULES}` },
-        { name: "rings, talismans & accessories", prompt: `Search ${gameName} wiki. List EVERY ring, talisman, amulet, charm, accessory. Effects MUST have specific numbers. Start each line with RING/ACC:\n${RNG}${RULES}` },
-        { name: "offensive spells — start each line with SPELL", prompt: `Search ${gameName} wiki. List EVERY offensive spell/sorcery/incantation/pyromancy. CRITICAL: each line MUST start with SPELL. Damage must be real numbers:\n${SPL}${RULES}` },
-        { name: "support & buff spells — start each line with BUFF", prompt: `Search ${gameName} wiki. List EVERY buff/heal/support/utility spell. CRITICAL: each line MUST start with BUFF (not SPELL). Effect magnitudes must be numbers:\n${BUF}${RULES}` },
-        { name: "endgame, final bosses & NG+", prompt: `Search ${gameName} wiki for final bosses and their drops, NG+ cycle changes, NG+-exclusive items, recommended stats per NG+ tier. For boss/NG+ output:\nBUILD [Name] — [drops/unlocks]; rec level: ~N; key stats: [VIG N / STR N] — loc: [area or NG+N]${RULES}` },
-        { name: "unique legendary & boss weapons", prompt: `Search ${gameName} wiki. List EVERY unique/legendary weapon, boss weapon, remembrance weapon. Note "unique/uninfusable" in type. loc MUST say exactly HOW to obtain:\n${WPN}${RULES}` },
+        // ── Weapons ────────────────────────────────────────────────────────────
+        { name: "physical & quality weapons", prompt: `Search ${gameName} wiki. List EVERY physical weapon: swords, greatswords, daggers, axes, hammers, maces, clubs, fists. CRITICAL: each line MUST start with WEAPON: (colon required). Include full +0 to +10 AP table and scaling grade table.\n${WPN}${RULES}` },
+        { name: "colossal & ultra-great weapons", prompt: `Search ${gameName} wiki. List EVERY colossal weapon, ultra-greatsword, great hammer, colossal axe. CRITICAL: start each line with WEAPON:. Full damage table required.\n${WPN}${RULES}` },
+        { name: "polearms, halberds, spears & ranged", prompt: `Search ${gameName} wiki. List EVERY polearm, halberd, spear, lance, whip, bow, crossbow, greatbow. CRITICAL: start each line with WEAPON:. Include damage at each upgrade level.\n${WPN}${RULES}` },
+        { name: "status & elemental weapons", prompt: `Search ${gameName} wiki. List EVERY weapon with status/elemental: Bleed, Poison, Frost, Fire, Lightning, Holy, Scarlet Rot, Madness. CRITICAL: start each line with WEAPON:. Status buildup MUST be shown at each upgrade level (+0 through +10).\n${WPN}${RULES}` },
+        { name: "catalysts, staves & seals", prompt: `Search ${gameName} wiki. List EVERY casting tool: staves, seals, wands, catalysts, foci. CRITICAL: each line MUST start with CATALYST: (not WEAPON:).\n${CAT}${RULES}` },
+        { name: "shields & offhand", prompt: `Search ${gameName} wiki. List EVERY shield: small, medium, greatshield, parrying, torch, lantern. CRITICAL: each line MUST start with SHIELD: (not WEAPON:). Include all block percentages.\n${SHD}${RULES}` },
+        // ── Armor ──────────────────────────────────────────────────────────────
+        { name: "light & medium armor", prompt: `Search ${gameName} wiki. List EVERY light and medium armor piece (helm, chest, gauntlets, leggings for each set). CRITICAL: each line MUST start with ARMOR:. ALL 5 defense stats (physical, magic, fire, lightning, holy) + poise + weight REQUIRED.\n${ARM}${RULES}` },
+        { name: "heavy, boss & special armor", prompt: `Search ${gameName} wiki. List EVERY heavy armor, boss armor set, unique armor, DLC armor. CRITICAL: start each line with ARMOR:. All 5 defense stats required. loc MUST say exactly how to obtain.\n${ARM}${RULES}` },
+        { name: "unique missable & NG+ armor", prompt: `Search ${gameName} wiki. List EVERY missable, questline, covenant, NG+-exclusive armor. CRITICAL: start each line with ARMOR:. All 5 defense stats required. loc must be very specific.\n${ARM}${RULES}` },
+        // ── Rings / Spells ─────────────────────────────────────────────────────
+        { name: "rings, talismans & accessories", prompt: `Search ${gameName} wiki. List EVERY ring, talisman, amulet, charm, accessory. Effects MUST include exact numbers. Start each line with RING/ACC:.\n${RNG}${RULES}` },
+        { name: "offensive spells", prompt: `Search ${gameName} wiki. List EVERY offensive spell/sorcery/incantation/pyromancy. CRITICAL: each line MUST start with SPELL: (not WEAPON: or MECHANIC:). Damage must be real numbers.\n${SPL}${RULES}` },
+        { name: "support & buff spells", prompt: `Search ${gameName} wiki. List EVERY buff/heal/support/utility spell. CRITICAL: each line MUST start with BUFF: (not SPELL:). Effect magnitudes must be numbers.\n${BUF}${RULES}` },
+        // ── Progression / World ────────────────────────────────────────────────
+        { name: "endgame, final bosses & NG+", prompt: `Search ${gameName} wiki for final bosses, their drops, NG+ cycle changes, NG+-exclusive items, recommended stats per NG+ tier. CRITICAL: start each line with BUILD:.\nBUILD: Name — [drops/unlocks]; rec level: N; key stats: [VIG N / STR N] — loc: [area or NG+N]${RULES}` },
+        { name: "unique legendary & boss weapons", prompt: `Search ${gameName} wiki. List EVERY unique/legendary weapon, boss weapon, remembrance weapon. CRITICAL: start each line with WEAPON:. Note "unique/uninfusable" in type. Include full damage table.\n${WPN}${RULES}` },
+        // ── New categories ─────────────────────────────────────────────────────
+        { name: "ashes of war & infusion gems", prompt: `Search ${gameName} wiki. List EVERY ash of war, infusion gem, whetblade, and affinity-modifying item. CRITICAL: each line MUST start with GEM: — NOT WEAPON: or MECHANIC:.\n${GEM}${RULES}` },
+        { name: "upgrade materials & farming", prompt: `Search ${gameName} wiki. List EVERY upgrade material: smithing stones, somber stones, titanite shards, bone fragments, upgrade gems, and special mats. CRITICAL: each line MUST start with UPGRADE:.\n${UPG}${RULES}` },
+        { name: "areas, maps & navigation", prompt: `Search ${gameName} wiki. List EVERY major area, region, legacy dungeon, catacomb, cave, and dungeon. CRITICAL: each line MUST start with MAP:. Include shortcuts, key bosses, and how to unlock.\n${MAP_T}${RULES}` },
+        { name: "lore, NPC questlines & story", prompt: `Search ${gameName} wiki. List EVERY major NPC questline, story event, ending, and lore item. CRITICAL: each line MUST start with LORE: — do NOT use MECHANIC: for NPCs or questlines.\n${LRE}${RULES}` },
       ];
 
       const allFacts: import("@shared/types").KnowledgeFact[] = [];
@@ -952,16 +967,22 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
       if (allFacts.length > 0) {
         try {
           const rawLines = allFacts.map((f) => f.raw).join("\n").slice(0, 40000);
-          const synthPrompt = `You are validating a ${gameName} item database. 14 categories were searched. Here is the raw data.
+          const synthPrompt = `You are validating a ${gameName} item database. 18 categories were searched. Here is the raw data.
 
 Tasks:
 1. REMOVE duplicates (same item twice — keep version with more numbers)
 2. REMOVE lines with vague placeholders like "AP: ~N" or "damage: varies"
-3. VERIFY prefixes: WEAPON/SHIELD/CATALYST/ARMOR/RING\/ACC/SPELL/BUFF/BUILD
-   - Shields MUST stay SHIELD (not WEAPON)
-   - Casting tools MUST stay CATALYST (not WEAPON)
-   - Support spells MUST stay BUFF (not SPELL)
-4. Output ONLY cleaned item lines, one per line. No commentary.
+3. VERIFY and ENFORCE prefixes exactly:
+   WEAPON: / SHIELD: / CATALYST: / ARMOR: / RING\/ACC: / SPELL: / BUFF: / BUILD: / ITEM: / MECHANIC: / GEM: / UPGRADE: / MAP: / LORE:
+   - Shields MUST stay SHIELD: (not WEAPON:)
+   - Casting tools MUST stay CATALYST: (not WEAPON:)
+   - Support spells MUST stay BUFF: (not SPELL:)
+   - Ashes of War / infusion gems MUST be GEM: (not WEAPON: or MECHANIC:)
+   - Smithing stones / upgrade mats MUST be UPGRADE: (not ITEM:)
+   - Areas / dungeons MUST be MAP: (not MECHANIC: or LORE:)
+   - NPC questlines / story events MUST be LORE: (not MECHANIC:)
+4. ADD missing fields where possible: AP table, scaling table, status buildup, all 5 armor def stats
+5. Output ONLY cleaned item lines, one per line. No commentary.
 
 Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(", ")}
 
