@@ -11,6 +11,7 @@ import OtherTab from "@/components/OtherTab";
 import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
+import KnowledgeViewer from "@/components/KnowledgeViewer";
 
 const TABS = ["Your Build", "Materials", "Similar", "Other OP", "Quick Ref"] as const;
 type Tab = typeof TABS[number];
@@ -25,6 +26,7 @@ export default function CodexPage() {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [learnHintUrl, setLearnHintUrl] = useState("");
   const [showLearnInput, setShowLearnInput] = useState(false);
+  const [showKnowledge, setShowKnowledge] = useState(false);
 
   const { data: games = [] } = useQuery<Game[]>({
     queryKey: ["/api/games"],
@@ -475,9 +477,14 @@ export default function CodexPage() {
           >
             <div className="flex items-center gap-1" style={{ color: "var(--color-dim)" }}>
               {knowledgeInfo && knowledgeInfo.count > 0 ? (
-                <span>
+                <button
+                  onClick={() => setShowKnowledge(true)}
+                  className="hover:text-white transition-colors cursor-pointer"
+                  style={{ background: "none", border: "none", padding: 0 }}
+                  title="View cached knowledge"
+                >
                   🧠 {knowledgeInfo.count} facts · {currentGame?.name ?? selectedGameKey}
-                </span>
+                </button>
               ) : (
                 <span>Ready</span>
               )}
@@ -524,6 +531,15 @@ export default function CodexPage() {
             setSelectedBuildKey(build.key);
             setShowAddModal(false);
           }}
+        />
+      )}
+
+      {showKnowledge && currentGame && (
+        <KnowledgeViewer
+          gameKey={selectedGameKey}
+          gameName={currentGame.name}
+          accent={accent}
+          onClose={() => setShowKnowledge(false)}
         />
       )}
 

@@ -233,6 +233,19 @@ export function registerRoutes(httpServer: Server, app: Express) {
     }
   });
 
+  // ── GET /api/knowledge/:gameKey/facts — full fact list for cache viewer ─────
+  app.get("/api/knowledge/:gameKey/facts", (req, res) => {
+    const { gameKey } = req.params;
+    const cache = storage.getKnowledgeCache(gameKey);
+    if (!cache) return res.json({ facts: [], patchNote: null, updatedAt: null });
+    try {
+      const facts = JSON.parse(cache.facts);
+      res.json({ facts, patchNote: cache.patchNote, updatedAt: cache.updatedAt });
+    } catch {
+      res.json({ facts: [], patchNote: null, updatedAt: null });
+    }
+  });
+
   // ── POST /api/generate/step1 — metadata + loadouts + phases 1-3 ───────────
   // Model: sonar-pro (200K context, web search grounded item locations)
   app.post("/api/generate/step1", async (req, res) => {
