@@ -909,7 +909,7 @@ export default function App(){
       // When a newer fact for the same item arrives, replace the old one so locations get updated
       const factMap=new Map(existing.facts.map(f=>[itemKey(f),f]));
       for(const f of newFacts)factMap.set(itemKey(f),f);
-      const merged=[...factMap.values()].slice(-100); // cap at 100 unique items
+      const merged=[...factMap.values()].slice(-500); // cap at 500 unique items
       return {...prev,[gameKey]:{name:gameName,lastUpdated:Date.now(),facts:merged,patchNote:patchNote||existing.patchNote}};
     });
   };
@@ -932,11 +932,11 @@ export default function App(){
     let block="";
     // Perm cache comes first — highest confidence, no caveats
     if(perm&&perm.facts&&perm.facts.length>0){
-      block+=`\n\nVERIFIED ITEM DATABASE FOR ${(perm.name||"THIS GAME").toUpperCase()} (confirmed accurate — use freely):\n${perm.facts.slice(-50).join("\n")}\n`;
+      block+=`\n\nVERIFIED ITEM DATABASE FOR ${(perm.name||"THIS GAME").toUpperCase()} (confirmed accurate — use freely):\n${perm.facts.slice(-200).join("\n")}\n`;
     }
     // Temp cache second — reference only
     if(k&&k.facts&&k.facts.length>0){
-      const factList=k.facts.slice(-30).join("\n");
+      const factList=k.facts.slice(-100).join("\n");
       const ageHours=k.lastUpdated?Math.round((Date.now()-k.lastUpdated)/3600000):null;
       block+=`\n\nITEMS SEEN IN PAST BUILDS FOR THIS GAME (reference only${ageHours!=null?`, ${ageHours}h ago`:""}):\n${factList}\n${k.patchNote?`Patch context: ${k.patchNote}\n`:""}IMPORTANT: These are items from PREVIOUS builds — do NOT copy them into the current build unless they genuinely suit this specific build concept. Each build must be designed independently. Use web search to discover the best weapons, armor, and rings for THIS build's archetype — do not default to whatever was used before.\n`;
     }
