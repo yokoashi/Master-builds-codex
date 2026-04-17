@@ -196,7 +196,7 @@ export default function CodexPage() {
   }));
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: "var(--color-bg)", color: "var(--color-text)" }}>
+    <div className="flex flex-col h-screen overflow-hidden relative" style={{ background: "var(--color-bg)", color: "var(--color-text)" }}>
       {/* ── Title Bar / Menu Bar ─────────────────────────────────────────────── */}
       <div
         className="flex items-center justify-between flex-shrink-0 select-none"
@@ -587,7 +587,8 @@ export default function CodexPage() {
 
       {showTeamLog && (
         <div
-          className="fixed inset-0 z-50 flex items-stretch justify-end"
+          className="absolute inset-0 z-50 flex items-stretch justify-end"
+          style={{ pointerEvents: "auto" }}
           onClick={() => setShowTeamLog(false)}
         >
           <div
