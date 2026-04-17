@@ -4,6 +4,9 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import Database from "better-sqlite3";
 import path from "path";
+import { updateKnowledgeCache } from "./knowledge";
+import { storage } from "./storage";
+import { SEED_KNOWLEDGE } from "@shared/seed-knowledge";
 
 // Run migrations on startup
 function runMigrations() {
@@ -39,6 +42,36 @@ function runMigrations() {
   sqlite.close();
 }
 runMigrations();
+
+// Seed the knowledge cache on first run (only if a game has no cached facts yet).
+// This gives the AI generation pipeline verified item data before any Learn session.
+function seedKnowledgeCache() {
+  const GAME_NAMES: Record<string, string> = {
+    lotf: "Lords of the Fallen",
+    ds1:  "Dark Souls",
+  };
+  for (const [gameKey, facts] of Object.entries(SEED_KNOWLEDGE)) {
+    if (facts.length === 0) continue;
+    const existing = storage.getKnowledgeCache(gameKey);
+    let existingCount = 0;
+    if (existing) {
+      try { existingCount = (JSON.parse(existing.facts) as unknown[]).length; } catch { /* ignore */ }
+    }
+    // Only seed when the cache is empty so we never overwrite user-learned data
+    if (existingCount === 0) {
+      updateKnowledgeCache(
+        gameKey,
+        GAME_NAMES[gameKey] ?? gameKey,
+        facts,
+        "Seeded from wiki data on first startup"
+      );
+      console.log(`[seed] Seeded ${facts.length} facts for ${gameKey}`);
+    } else {
+      console.log(`[seed] Skipped ${gameKey} — already has ${existingCount} facts`);
+    }
+  }
+}
+seedKnowledgeCache();
 
 const app = express();
 const httpServer = createServer(app);

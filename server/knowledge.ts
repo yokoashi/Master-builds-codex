@@ -2,7 +2,7 @@ import type { Build, KnowledgeFact } from "@shared/types";
 import { storage } from "./storage";
 
 const MAX_FACTS = 1500; // was 200 — raised to support 8 categories × 150+ items each
-const DISPLAY_PER_CAT = 80; // show up to 80 per category (was 80 total flat — now per-category)
+const DISPLAY_PER_CAT = 150; // show up to 150 per category (raised from 80 to surface more seed facts)
 const DEDUP_PREFIX_LEN = 40;
 
 const CAT_ORDER = ["WEAPON", "SHIELD", "CATALYST", "ARMOR", "RING", "SPELL", "BUFF", "BUILD", "ITEM", "MECHANIC"] as const;
