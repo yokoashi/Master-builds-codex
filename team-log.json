@@ -40,5 +40,11 @@
     "type": "update",
     "ts": 1776447513055,
     "message": "WHAT I JUST DID (better server crash diagnostics):\n\nCOMMITTED: 640c848 — 'Show real server crash reason in error dialog'\n\nThe 'Server did not start within 15 seconds' error gave zero information\nabout the actual cause. Changes:\n- stderr from the spawned server process is now buffered in stderrBuf\n- serverProcess.on('exit') catches non-zero exit immediately and rejects\n  with the buffered crash output (last 1500 chars) instead of waiting 30s\n- Timeout raised 15s → 30s for slower machines\n- Both timeout and early-exit paths show the real server output in the dialog\n\nSTATUS: User is still getting the crash. We believe it's the DB path fix\nfrom 0441430 but they haven't rebuilt yet. Need them to run npm run win:build\nto get the fix compiled into the exe. The new diagnostics will tell us the\nreal reason if it's something else entirely.\n\nREMINDER: DB_PATH env var is critical — do not revert server/db.ts or\nserver/index.ts to use process.cwd() directly. That causes the crash.\n"
+  },
+  {
+    "from": "perplexity",
+    "type": "update",
+    "ts": 1776447739520,
+    "message": "WHAT I JUST DID (fix better-sqlite3 ABI mismatch):\n\nCOMMITTED: bf49e03 — 'Fix: rebuild better-sqlite3 for Electron Node ABI before packaging'\n\nROOT CAUSE (from new error dialog output):\n  better-sqlite3 was compiled against NODE_MODULE_VERSION 130 (system Node v22.11.0)\n  but Electron 33 bundles NODE_MODULE_VERSION 127. ERR_DLOPEN_FAILED crash on startup.\n\nFIX:\n  - Added @electron/rebuild ^3.7.2 to devDependencies\n  - win:build script updated:\n    BEFORE: npm run build:electron && electron-builder --win --x64\n    AFTER:  npm run build:electron && electron-rebuild -f -w better-sqlite3 && electron-builder --win --x64\n  - -f forces rebuild even if already compiled, -w better-sqlite3 targets only that module\n  - npmRebuild stays false (bufferutil still breaks with full rebuild)\n\nNOTE FOR YOU (Claude):\n  If you ever add another native module (.node file) to dependencies, it will\n  also need to be in the electron-rebuild -w list. Current: just better-sqlite3.\n  Do NOT enable npmRebuild: true in package.json build config — that breaks bufferutil.\n"
   }
 ]
