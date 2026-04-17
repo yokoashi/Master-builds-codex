@@ -6,7 +6,6 @@ import {
   extractFactsFromBuild,
   updateKnowledgeCache,
   buildKnowledgeBlock,
-  shouldSkipWebSearch,
 } from "./knowledge";
 import { parseJsonResponse } from "./parse-json";
 import { SEED_GAMES, SEED_BUILDS } from "@shared/seed-data";
@@ -567,7 +566,7 @@ Generate 2 sim, 2 oth, 5 ref entries.`;
   app.post("/api/generate/finalize", (req, res) => {
     try {
       const body = req.body as Build & { _customGameName?: string; _customGameKey?: string };
-      const { _customGameName, _customGameKey, ...build } = body as any;
+      const { _customGameName, _customGameKey, ...build } = body;
       const finalBuild = build as Build;
 
       if (!finalBuild.key || !finalBuild.gameKey) {
@@ -632,12 +631,22 @@ Generate 2 sim, 2 oth, 5 ref entries.`;
         })),
       };
 
-      // Save build to DB
-      storage.createDynamicBuild({
-        key: normalizedBuild.key,
-        gameKey: normalizedBuild.gameKey,
-        data: JSON.stringify(normalizedBuild),
-      });
+      // Save build to DB — upsert in case the same key was generated before
+      // (avoids UNIQUE constraint error on re-generation of same build description)
+      const existingBuild = storage.getDynamicBuild(normalizedBuild.key);
+      if (existingBuild) {
+        storage.updateDynamicBuild(normalizedBuild.key, {
+          key: normalizedBuild.key,
+          gameKey: normalizedBuild.gameKey,
+          data: JSON.stringify(normalizedBuild),
+        });
+      } else {
+        storage.createDynamicBuild({
+          key: normalizedBuild.key,
+          gameKey: normalizedBuild.gameKey,
+          data: JSON.stringify(normalizedBuild),
+        });
+      }
 
       res.json({ ok: true, build: normalizedBuild });
     } catch (err) {
@@ -679,7 +688,7 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
       const response = await pplx.chat.completions.create({
         model: SONAR_PRO,
         stream: false as const,
-        max_tokens: 4000,
+        max_tokens: 8000,
         messages: [{ role: "user", content: prompt }],
         response_format: {
           type: "json_schema",

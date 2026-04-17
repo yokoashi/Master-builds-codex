@@ -125,6 +125,9 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
     mutationFn: async () => {
       setError(null);
       const knowledgeBlock = ""; // backend builds this server-side
+      // AbortController with a 3-minute total timeout for the full 3-step pipeline
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3 * 60 * 1000);
 
       const isCustom = customGameName.trim().length > 0;
       const targetGameKey = isCustom ? `custom_${Date.now()}` : game.key;
@@ -238,9 +241,16 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         }
       );
 
+      // Deduplicate key — append timestamp suffix so re-generating a similar build
+      // description doesn't collide with an existing build in the DB.
+      const existingBuildsData = queryClient.getQueryData<Build[]>(["/api/builds"]) ?? [];
+      const rawKey = partial.key ?? slugify(`${targetGameKey}-${Date.now()}`);
+      const keyExists = existingBuildsData.some((b) => b.key === rawKey);
+      const uniqueKey = keyExists ? `${rawKey}-${Date.now()}` : rawKey;
+
       // Assemble final build
       const finalBuild: Build = {
-        key: partial.key ?? slugify(`${targetGameKey}-${Date.now()}`),
+        key: uniqueKey,
         gameKey: targetGameKey,
         label: partial.label ?? "Generated Build",
         sub: partial.sub ?? "",
@@ -260,11 +270,15 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
 
       // Finalize (save + extract facts)
       setGenerationStatus("💾 Saving...");
-      await apiRequest("POST", "/api/generate/finalize", {
-        ...finalBuild,
-        _customGameName: isCustom ? targetGameName : undefined,
-        _customGameKey: isCustom ? targetGameKey : undefined,
-      });
+      try {
+        await apiRequest("POST", "/api/generate/finalize", {
+          ...finalBuild,
+          _customGameName: isCustom ? targetGameName : undefined,
+          _customGameKey: isCustom ? targetGameKey : undefined,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       return finalBuild;
     },
     onSuccess: (build: Build) => {

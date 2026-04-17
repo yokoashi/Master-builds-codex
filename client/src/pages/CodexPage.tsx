@@ -24,22 +24,6 @@ export default function CodexPage() {
   const [deletePending, setDeletePending] = useState<Build | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
 
-  // Keep selection in URL params
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const g = params.get("game");
-    const b = params.get("build");
-    if (g) setSelectedGameKey(g);
-    if (b) setSelectedBuildKey(b);
-  }, []);
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("game", selectedGameKey);
-    url.searchParams.set("build", selectedBuildKey);
-    window.history.replaceState({}, "", url.toString());
-  }, [selectedGameKey, selectedBuildKey]);
-
   const { data: games = [] } = useQuery<Game[]>({
     queryKey: ["/api/games"],
   });
@@ -70,11 +54,16 @@ export default function CodexPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (key: string) => apiRequest("DELETE", `/api/builds/${key}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/builds"] });
+    onSuccess: (_data, deletedKey) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/builds"] }).then(() => {
+        // Select next build from freshly-invalidated data to avoid stale closure
+        const fresh = queryClient.getQueryData<Build[]>(["/api/builds"]) ?? [];
+        const remaining = fresh.filter(
+          (b) => b.gameKey === selectedGameKey && b.key !== deletedKey
+        );
+        if (remaining.length > 0) setSelectedBuildKey(remaining[0].key);
+      });
       setDeletePending(null);
-      const remaining = builds.filter((b) => b.key !== currentBuild?.key);
-      if (remaining.length > 0) setSelectedBuildKey(remaining[0].key);
       toast({ title: "Build deleted" });
     },
   });
@@ -98,10 +87,18 @@ export default function CodexPage() {
     },
   });
 
+  type ExportData = {
+    version: number;
+    exportedAt: string;
+    hiddenSeedBuilds: string[];
+    dynamicGames: Game[];
+    dynamicBuilds: Build[];
+  };
   const exportMutation = useMutation({
-    mutationFn: () => apiRequest<Blob>("POST", "/api/export"),
-    onSuccess: (data) => {
-      const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+    mutationFn: () => apiRequest<ExportData>("POST", "/api/export"),
+    onSuccess: (data: ExportData) => {
+      // Server returns JSON directly — stringify once for the download blob
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

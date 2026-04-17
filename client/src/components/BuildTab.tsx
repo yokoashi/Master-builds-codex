@@ -1,4 +1,4 @@
-import { useState, Component } from "react";
+import { useState, useEffect, Component } from "react";
 import type { Build, Game, Phase, Item, NgCycle } from "@shared/types";
 import { cn, hexToRgba, statGain } from "@/lib/utils";
 import ItemCard from "./ItemCard";
@@ -6,11 +6,18 @@ import StatBar from "./StatBar";
 
 // ── Error boundary so a bad build never blacks out the whole page ─────────────
 class BuildErrorBoundary extends Component<
-  { children: React.ReactNode; accent: string },
+  { children: React.ReactNode; accent: string; buildKey: string },
   { error: string | null }
 > {
   state = { error: null };
   static getDerivedStateFromError(e: Error) { return { error: e.message }; }
+  // Reset error state when the build changes so switching to a different
+  // build doesn't keep showing the previous build's error screen.
+  componentDidUpdate(prevProps: { buildKey: string }) {
+    if (prevProps.buildKey !== this.props.buildKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
   render() {
     if (this.state.error) {
       return (
@@ -46,13 +53,24 @@ function BuildTabInner({ build, game, onDelete }: Props) {
   const [activeNg, setActiveNg] = useState(0);
   const [activeLoadout, setActiveLoadout] = useState(0);
 
+  // Reset all tab/index state when the user switches to a different build
+  // so phase 5 of build A doesn't bleed into a 3-phase build B, etc.
+  useEffect(() => {
+    setActivePhase(0);
+    setActiveNg(0);
+    setActiveLoadout(0);
+  }, [build.key]);
+
   const accent = build.accent;
   const accentBg = hexToRgba(accent, 0.1);
   const accentBorder = hexToRgba(accent, 0.35);
 
   // Guard: clamp activePhase to valid range (handles builds with < 7 phases)
-  const safePhaseIdx = Math.min(activePhase, build.phases.length - 1);
+  const safePhaseIdx = Math.min(activePhase, (build.phases?.length ?? 1) - 1);
   const phase: Phase = build.phases[safePhaseIdx];
+  // Guard: clamp activeLoadout so switching from a 2-loadout build to a 1-loadout
+  // build doesn't cause build.loadouts![activeLoadout] to throw.
+  const safeLoadoutIdx = Math.min(activeLoadout, (build.loadouts?.length ?? 1) - 1);
   const prevPhase: Phase | undefined = build.phases[safePhaseIdx - 1];
 
   const displayStats =
@@ -203,10 +221,10 @@ function BuildTabInner({ build, game, onDelete }: Props) {
                 onClick={() => setActiveLoadout(i)}
                 className={cn(
                   "px-3 py-1.5 rounded text-xs font-medium transition-all",
-                  activeLoadout === i ? "phase-btn-active" : "hover:bg-white/5"
+                  safeLoadoutIdx === i ? "phase-btn-active" : "hover:bg-white/5"
                 )}
                 style={
-                  activeLoadout === i
+                  safeLoadoutIdx === i
                     ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent }
                     : { border: "1px solid #2a2318", color: "var(--color-dim)" }
                 }
@@ -216,7 +234,7 @@ function BuildTabInner({ build, game, onDelete }: Props) {
             ))}
           </div>
           {(() => {
-            const l = build.loadouts![activeLoadout];
+            const l = build.loadouts![safeLoadoutIdx];
             return (
               <div
                 className="grid grid-cols-2 gap-3 p-3 rounded text-xs"
@@ -260,8 +278,10 @@ function BuildTabInner({ build, game, onDelete }: Props) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {statEntries.map(([stat, val]) => (
+            // Key includes build key + phase index so StatBar remounts on phase
+            // switch and the fill animation replays from 0 each time.
             <StatBar
-              key={stat}
+              key={`${build.key}-${safePhaseIdx}-${stat}`}
               stat={stat}
               value={val}
               prevValue={prevPhase?.stats[stat]}
@@ -318,7 +338,8 @@ function BuildTabInner({ build, game, onDelete }: Props) {
 
 export default function BuildTab(props: Props) {
   return (
-    <BuildErrorBoundary accent={props.build.accent ?? "#d64545"}>
+    // Pass buildKey so the error boundary can reset when the build changes
+    <BuildErrorBoundary accent={props.build.accent ?? "#d64545"} buildKey={props.build.key}>
       <BuildTabInner {...props} />
     </BuildErrorBoundary>
   );

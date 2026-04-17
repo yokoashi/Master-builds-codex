@@ -20,6 +20,7 @@ export interface IStorage {
   getDynamicBuilds(gameKey?: string): DynamicBuild[];
   getDynamicBuild(key: string): DynamicBuild | undefined;
   createDynamicBuild(data: InsertDynamicBuild): DynamicBuild;
+  updateDynamicBuild(key: string, data: InsertDynamicBuild): DynamicBuild;
   deleteDynamicBuild(key: string): void;
 
   // Dynamic games
@@ -61,6 +62,15 @@ export class SQLiteStorage implements IStorage {
 
   createDynamicBuild(data: InsertDynamicBuild): DynamicBuild {
     return db.insert(dynamicBuilds).values(data).returning().get();
+  }
+
+  updateDynamicBuild(key: string, data: InsertDynamicBuild): DynamicBuild {
+    return db
+      .update(dynamicBuilds)
+      .set({ gameKey: data.gameKey, data: data.data })
+      .where(eq(dynamicBuilds.key, key))
+      .returning()
+      .get();
   }
 
   deleteDynamicBuild(key: string): void {
