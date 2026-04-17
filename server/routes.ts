@@ -239,9 +239,17 @@ export function registerRoutes(httpServer: Server, app: Express) {
       const body = req.body as GenerateStep1Request;
       const knowledgeBlock = buildKnowledgeBlock(body.gameKey);
 
-      const systemContent = `You are an expert soulslike game build guide author. You create detailed, accurate build guides in structured JSON format. You know every item location, upgrade path, stat cap, and mechanic intimately. Use your web search capability to verify item locations and current patch values.
+      const systemContent = `You are an expert soulslike game build guide author. You create detailed, accurate build guides in structured JSON format.
 
 ${knowledgeBlock}
+
+CRITICAL ACCURACY RULES — FOLLOW THESE ABOVE ALL ELSE:
+- ONLY use items that ACTUALLY EXIST in ${body.gameName}. Search the web to confirm every single item name before including it.
+- NEVER invent, combine, or approximate item names. If you are not 100% certain an item exists, search for it first.
+- If web search returns no result for an item name, DO NOT include it — use a different item you can verify.
+- Every "loc" field must be a real, specific in-game location. Never write "Found in the world" or vague descriptions.
+- Every "up" field must reflect the real upgrade system of ${body.gameName}.
+- If you are unsure about any item, weapon, armor piece or accessory — search for it. Do not guess.
 
 CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }. No prose, no markdown fences, no explanation — pure JSON only.`;
 
@@ -279,7 +287,9 @@ Earlier phases should naturally lead toward the endgame targets.
         ? `NOTE: ${body.gameName} is a custom game not yet in the codex. Determine its stat system (short codes like VIG, END, STR, DEX, INT, FTH) and use those exact stat codes in every phase stats object.`
         : "";
 
-      const userContent = `Create the first part of a build guide for ${body.gameName}.
+      const userContent = `Search the web for "${body.gameName} ${body.buildDescription} build guide" and "${body.gameName} items wiki" BEFORE generating anything. Use only items you find confirmed in search results.
+
+Create the first part of a build guide for ${body.gameName}.
 
 Build description: ${body.buildDescription}
 Stat budget: ${body.statBudget} points
@@ -385,13 +395,22 @@ Be specific with item locations, upgrade paths, and tips. Use web search to veri
       const body = req.body as GenerateStep2Request;
       const knowledgeBlock = buildKnowledgeBlock(body.gameKey);
 
-      const systemContent = `You are an expert soulslike game build guide author specializing in late-game optimization and NG+ strategies. Use deep reasoning to plan optimal stat allocation across phases 4-7 and NG+ cycles. Use web search to verify late-game item locations and boss strategies.
+      const systemContent = `You are an expert soulslike game build guide author specializing in late-game optimization and NG+ strategies.
 
 ${knowledgeBlock}
 
+CRITICAL ACCURACY RULES — FOLLOW THESE ABOVE ALL ELSE:
+- ONLY use items that ACTUALLY EXIST in ${body.gameName}. Search the web before including any item name.
+- NEVER invent, combine, or approximate item names. If uncertain, search first — if still uncertain, omit it.
+- Every weapon, armor piece, ring, and accessory must be a real item obtainable in ${body.gameName}.
+- Every "loc" must be a specific real in-game location — never vague or generic.
+- NG+ notes must reflect actual game mechanics, not invented difficulty modifiers.
+
 CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }. No prose, no markdown fences — pure JSON only.`;
 
-      const userContent = `Complete the build guide for ${body.gameName} by generating phases 4-7 including NG+ cycles.
+      const userContent = `Search the web for "${body.gameName} late game items" and "${body.gameName} endgame build guide" BEFORE generating anything. Only include items confirmed by search results.
+
+Complete the build guide for ${body.gameName} by generating phases 4-7 including NG+ cycles.
 
 Build key: ${body.buildKey}
 Build so far: ${JSON.stringify(body.partialBuild).substring(0, 2000)}
@@ -478,13 +497,22 @@ Be detailed about late-game item locations and NG+ strategy changes. No placehol
       const body = req.body as GenerateStep3Request;
       const knowledgeBlock = buildKnowledgeBlock(body.gameKey);
 
-      const systemContent = `You are an expert soulslike build author creating Similar Builds, Alternative OP Builds, and Quick Reference tables in JSON format. Use web search to find community-recommended builds and item data.
+      const systemContent = `You are an expert soulslike build author creating Similar Builds, Alternative OP Builds, and Quick Reference tables in JSON format.
 
 ${knowledgeBlock}
 
+CRITICAL ACCURACY RULES — FOLLOW THESE ABOVE ALL ELSE:
+- ONLY reference items, builds, and strategies that ACTUALLY EXIST in ${body.gameName}.
+- Search the web to verify every item name, build concept, and location before including it.
+- NEVER invent item names, combine real names, or use approximate names. Real names only.
+- Similar and Other OP builds must be real community-known archetypes for ${body.gameName}, not invented.
+- Quick Reference items must all be real obtainable items with accurate stats.
+
 CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }. Pure JSON only.`;
 
-      const userContent = `Generate the final sections for this ${body.gameName} build guide.
+      const userContent = `Search the web for "${body.gameName} best builds" and "${body.gameName} overpowered weapons" BEFORE generating anything. Only reference real confirmed items and community builds.
+
+Generate the final sections for this ${body.gameName} build guide.
 
 Build: ${JSON.stringify(body.partialBuild).substring(0, 1500)}
 
