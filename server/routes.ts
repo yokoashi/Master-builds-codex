@@ -242,6 +242,33 @@ function friendlyPplxError(err: unknown): string {
 }
 
 // ── Route registration ───────────────────────────────────────────────────────
+
+// ── Shared Perplexity web research helper ─────────────────────────────────────
+// Used by both "dual" and "claude" modes to ground AI output in real search data.
+async function pplxResearch(queries: string[], maxTokens = 4000): Promise<string> {
+  try {
+    const results = await Promise.allSettled(
+      queries.map((q) =>
+        pplx.chat.completions.create({
+          model: SONAR_PRO,
+          stream: false as const,
+          max_tokens: maxTokens,
+          messages: [{ role: "user", content: q }],
+        })
+      )
+    );
+    return results
+      .map((r, i) =>
+        r.status === "fulfilled"
+          ? `[Search ${i + 1}: ${queries[i].slice(0, 60)}]\n${extractText(r.value as PplxResponse)}`
+          : `[Search ${i + 1} failed]`
+      )
+      .join("\n\n");
+  } catch {
+    return "(Web research unavailable)";
+  }
+}
+
 export function registerRoutes(httpServer: Server, app: Express) {
 
   // ── GET /api/games — all games (seed + dynamic) ────────────────────────────
@@ -554,8 +581,17 @@ Only include items you found confirmed in search results. Exact in-game names on
           false
         );
       } else if (appSettings.aiMode === "claude") {
-        // ── Claude-only: no web research, direct JSON structuring ─────────────
-        parsed = await claudeJson<Partial<Build>>(systemContent, userContent, false);
+        // ── Claude-only + web research: Perplexity searches → Claude structures ─
+        const researchCtx = await pplxResearch([
+          `Search for "${body.gameName} ${body.buildDescription} build guide" — list every recommended weapon with AP, location, and upgrade path`,
+          `Search for "${body.gameName} ${body.buildDescription} armor sets" — list every recommended armor piece with defense stats and how to obtain`,
+          `Search for "${body.gameName} ${body.buildDescription} accessories rings talismans spells" — list each with effect, numbers, and location`,
+        ], 3000);
+        parsed = await claudeJson<Partial<Build>>(
+          systemContent,
+          `${userContent}\n\nWEB RESEARCH (use as ground truth — exact in-game names only):\n${researchCtx.substring(0, 8000)}`,
+          false
+        );
       } else {
         // ── Perplexity-only: sonar-pro with JSON schema ───────────────────────
         const sonarResp = await pplx.chat.completions.create({
@@ -662,7 +698,16 @@ Be detailed about late-game item locations and NG+ strategy changes. No placehol
 
       if (appSettings.aiMode === "dual" || appSettings.aiMode === "claude") {
         // Claude extended thinking — best for complex multi-phase planning
-        parsed2 = await claudeJson<{ phases_4_to_7: Build["phases"] }>(systemContent, userContent, true);
+        let s2UserContent = userContent;
+        if (appSettings.aiMode === "claude") {
+          // Inject live research for late-game items so Claude isn't guessing
+          const researchCtx2 = await pplxResearch([
+            `Search for "${body.gameName} late game endgame weapons upgrades NG+" — list items with exact names and locations`,
+            `Search for "${body.gameName} NG+ cycle changes enemy scaling boss drops" — list all relevant late-game details`,
+          ], 3000);
+          s2UserContent = `${userContent}\n\nWEB RESEARCH (late-game + NG+ ground truth):\n${researchCtx2.substring(0, 6000)}`;
+        }
+        parsed2 = await claudeJson<{ phases_4_to_7: Build["phases"] }>(systemContent, s2UserContent, true);
       } else {
         // sonar-reasoning-pro — CoT, strips <think> tags via parseJsonResponse
         const sonarResp = await pplx.chat.completions.create({
@@ -760,7 +805,15 @@ Generate 2 sim, 2 oth, 5 ref entries.`;
       let parsed3: { ok: true; value: Step3Result } | { ok: false; error: string };
 
       if (appSettings.aiMode === "dual" || appSettings.aiMode === "claude") {
-        parsed3 = await claudeJson<Step3Result>(systemContent, userContent, false);
+        let s3UserContent = userContent;
+        if (appSettings.aiMode === "claude") {
+          // Research similar builds and alternatives for richer suggestions
+          const researchCtx3 = await pplxResearch([
+            `Search for "${body.gameName} ${body.partialBuild?.label ?? body.buildKey} similar builds alternatives" — list viable alternatives with key differences`,
+          ], 2000);
+          s3UserContent = `${userContent}\n\nWEB RESEARCH (similar/alternative builds):\n${researchCtx3.substring(0, 4000)}`;
+        }
+        parsed3 = await claudeJson<Step3Result>(systemContent, s3UserContent, false);
       } else {
         const sonarResp = await pplx.chat.completions.create({
           model: SONAR_PRO,
