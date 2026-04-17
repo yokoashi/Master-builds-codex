@@ -137,6 +137,7 @@ export interface IStorage {
   // Knowledge cache
   getKnowledgeCache(gameKey: string): KnowledgeCache | undefined;
   upsertKnowledgeCache(data: InsertKnowledgeCache): KnowledgeCache;
+  clearKnowledgeCache(gameKey: string): void;
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────
@@ -282,6 +283,11 @@ export class SQLiteStorage implements IStorage {
       [data.gameKey]
     )!;
     return rowToCache(row);
+  }
+
+  clearKnowledgeCache(gameKey: string): void {
+    getDb().run("DELETE FROM knowledge_cache WHERE game_key = ?", [gameKey]);
+    saveToDisk();
   }
 }
 

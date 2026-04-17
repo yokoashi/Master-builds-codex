@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { KnowledgeFact } from "@shared/types";
 import { hexToRgba } from "@/lib/utils";
 
@@ -43,6 +44,16 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
   const [activeCategory, setActiveCategory] = useState("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const clearMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/knowledge/${gameKey}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${gameKey}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${gameKey}/facts`] });
+      setConfirmClear(false);
+    },
+  });
 
   const { data, isLoading } = useQuery<{
     facts: KnowledgeFact[];
@@ -134,6 +145,35 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
             <span className="text-xs" style={{ color: "var(--color-gold)" }}>
               {facts.length} facts
             </span>
+            {!confirmClear ? (
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="px-2 py-1 rounded text-xs hover:bg-white/10 transition-colors"
+                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+                title="Clear all cached facts for this game"
+              >
+                🗑 Clear
+              </button>
+            ) : (
+              <div className="flex items-center gap-1">
+                <span className="text-xs" style={{ color: "#d64545" }}>Clear all {facts.length} facts?</span>
+                <button
+                  onClick={() => clearMutation.mutate()}
+                  disabled={clearMutation.isPending}
+                  className="px-2 py-1 rounded text-xs transition-colors disabled:opacity-50"
+                  style={{ background: hexToRgba("#d64545", 0.15), border: "1px solid #d64545", color: "#d64545" }}
+                >
+                  {clearMutation.isPending ? "Clearing..." : "Yes, clear"}
+                </button>
+                <button
+                  onClick={() => setConfirmClear(false)}
+                  className="px-2 py-1 rounded text-xs hover:bg-white/10 transition-colors"
+                  style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             <button
               onClick={onClose}
               className="px-2 py-1 rounded text-xs hover:bg-white/10 transition-colors"

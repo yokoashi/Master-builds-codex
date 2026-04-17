@@ -247,6 +247,13 @@ export function registerRoutes(httpServer: Server, app: Express) {
     }
   });
 
+  // ── DELETE /api/knowledge/:gameKey — clear all cached facts for a game ─────
+  app.delete("/api/knowledge/:gameKey", (req, res) => {
+    const { gameKey } = req.params;
+    storage.clearKnowledgeCache(gameKey);
+    res.json({ ok: true });
+  });
+
   // ── GET /api/knowledge/:gameKey/facts — full fact list for cache viewer ─────
   app.get("/api/knowledge/:gameKey/facts", (req, res) => {
     const { gameKey } = req.params;
