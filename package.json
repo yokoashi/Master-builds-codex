@@ -10,7 +10,7 @@
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "build:electron": "tsx script/build.ts --electron",
-    "win:build": "npm run build:electron && node scripts/rebuild-sqlite.js && electron-builder --win --x64",
+    "win:build": "npm run build:electron && node scripts/rebuild-sqlite.cjs && electron-builder --win --x64",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push"
