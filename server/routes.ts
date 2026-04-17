@@ -55,7 +55,7 @@ learnEmitter.setMaxListeners(20);
 const SONAR_DEEP = "sonar-deep-research";
 
 // ── App settings (persisted to settings.json next to the DB) ─────────────────
-interface AppSettings { dualAi: boolean; }
+interface AppSettings { aiMode: "dual" | "perplexity" | "claude"; }
 const SETTINGS_PATH = process.env.DB_PATH
   ? join(dirname(process.env.DB_PATH), "settings.json")
   : join(process.cwd(), "settings.json");
@@ -63,10 +63,10 @@ const SETTINGS_PATH = process.env.DB_PATH
 function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
-      return { dualAi: true, ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+      return { aiMode: "dual", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
     }
   } catch { /* ignore */ }
-  return { dualAi: true };
+  return { aiMode: "dual" };
 }
 function saveSettings(s: AppSettings) {
   try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
@@ -388,15 +388,16 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
   // ── PATCH /api/settings ───────────────────────────────────────────────────
   app.patch("/api/settings", (req, res) => {
-    const { dualAi } = req.body as Partial<AppSettings>;
-    if (typeof dualAi === "boolean") appSettings.dualAi = dualAi;
+    const { aiMode } = req.body as Partial<AppSettings>;
+    if (aiMode === "dual" || aiMode === "perplexity" || aiMode === "claude") appSettings.aiMode = aiMode;
     saveSettings(appSettings);
     res.json(appSettings);
   });
 
   // ── POST /api/generate/step1 — metadata + loadouts + phases 1-3 ───────────
-  // Dual-AI: Perplexity researches → Claude structures (when dualAi=true)
-  // Single-AI: Perplexity sonar-pro with JSON schema (when dualAi=false)
+  // aiMode: "dual" = Perplexity researches + Claude structures
+  //          "perplexity" = Perplexity sonar-pro with JSON schema only
+  //          "claude" = Claude only (no web research, fastest)
   app.post("/api/generate/step1", async (req, res) => {
     try {
       const body = req.body as GenerateStep1Request;
@@ -519,7 +520,7 @@ Be specific with item locations, upgrade paths, and tips. Use web search to veri
 
       let parsed: { ok: true; value: Partial<Build> } | { ok: false; error: string };
 
-      if (appSettings.dualAi) {
+      if (appSettings.aiMode === "dual") {
         // ── Dual-AI: Perplexity researches → Claude structures ───────────────
         let researchContext = "";
         try {
@@ -552,8 +553,11 @@ Only include items you found confirmed in search results. Exact in-game names on
           `${userContent}\n\nPERPLEXITY RESEARCH (confirmed real items from web search — use these as ground truth):\n${researchContext.substring(0, 6000)}`,
           false
         );
+      } else if (appSettings.aiMode === "claude") {
+        // ── Claude-only: no web research, direct JSON structuring ─────────────
+        parsed = await claudeJson<Partial<Build>>(systemContent, userContent, false);
       } else {
-        // ── Single-AI: Perplexity sonar-pro with JSON schema ─────────────────
+        // ── Perplexity-only: sonar-pro with JSON schema ───────────────────────
         const sonarResp = await pplx.chat.completions.create({
           model: SONAR_PRO,
           stream: false as const,
@@ -656,7 +660,7 @@ Be detailed about late-game item locations and NG+ strategy changes. No placehol
 
       let parsed2: { ok: true; value: { phases_4_to_7: Build["phases"] } } | { ok: false; error: string };
 
-      if (appSettings.dualAi) {
+      if (appSettings.aiMode === "dual" || appSettings.aiMode === "claude") {
         // Claude extended thinking — best for complex multi-phase planning
         parsed2 = await claudeJson<{ phases_4_to_7: Build["phases"] }>(systemContent, userContent, true);
       } else {
@@ -755,7 +759,7 @@ Generate 2 sim, 2 oth, 5 ref entries.`;
       type Step3Result = { sim: Build["sim"]; oth: Build["oth"]; ref: Build["ref"] };
       let parsed3: { ok: true; value: Step3Result } | { ok: false; error: string };
 
-      if (appSettings.dualAi) {
+      if (appSettings.aiMode === "dual" || appSettings.aiMode === "claude") {
         parsed3 = await claudeJson<Step3Result>(systemContent, userContent, false);
       } else {
         const sonarResp = await pplx.chat.completions.create({

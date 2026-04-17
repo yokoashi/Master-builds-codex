@@ -121,13 +121,14 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
     queryKey: [`/api/knowledge/${game.key}`],
   });
 
-  const settingsQuery = useQuery<{ dualAi: boolean }>({
+  const settingsQuery = useQuery<{ aiMode: "dual" | "perplexity" | "claude" }>({
     queryKey: ["/api/settings"],
   });
-  const dualAi = settingsQuery.data?.dualAi ?? true;
+  const aiMode = settingsQuery.data?.aiMode ?? "dual";
 
-  const toggleDualAi = useMutation({
-    mutationFn: () => apiRequest<{ dualAi: boolean }>("PATCH", "/api/settings", { dualAi: !dualAi }),
+  const setAiMode = useMutation({
+    mutationFn: (mode: "dual" | "perplexity" | "claude") =>
+      apiRequest<{ aiMode: string }>("PATCH", "/api/settings", { aiMode: mode }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings"] }),
   });
 
@@ -375,29 +376,39 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
             ))}
           </div>
 
-          {/* Dual-AI engine toggle */}
-          <button
-            onClick={() => toggleDualAi.mutate()}
-            disabled={toggleDualAi.isPending}
-            title={dualAi ? "Dual-AI: Perplexity researches + Claude structures. Click to use Perplexity only." : "Single-AI: Perplexity only. Click to enable Claude+Perplexity dual engine."}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
-            style={
-              dualAi
-                ? {
-                    background: hexToRgba("#a78bfa", 0.12),
-                    border: "1px solid rgba(167,139,250,0.35)",
-                    color: "#a78bfa",
-                  }
-                : {
-                    background: "transparent",
-                    border: "1px solid #3a3028",
-                    color: "var(--color-dim2)",
-                  }
-            }
+          {/* AI mode — 3-way pill */}
+          <div
+            className="flex rounded overflow-hidden"
+            style={{ border: "1px solid #3a3028" }}
           >
-            <span style={{ fontSize: "0.65rem" }}>{dualAi ? "⚡" : "🔭"}</span>
-            {dualAi ? "Claude+Pplx" : "Pplx only"}
-          </button>
+            {(
+              [
+                { mode: "dual",       label: "Claude+Pplx", icon: "⚡", color: "#a78bfa", title: "Perplexity researches, Claude structures" },
+                { mode: "perplexity", label: "Pplx only",   icon: "🔭", color: "#5591c7", title: "Perplexity sonar-pro only" },
+                { mode: "claude",     label: "Claude only",  icon: "✦",  color: "#e8c05a", title: "Claude only — no web research, fastest" },
+              ] as const
+            ).map(({ mode, label, icon, color, title }) => {
+              const active = aiMode === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => setAiMode.mutate(mode)}
+                  disabled={setAiMode.isPending}
+                  title={title}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium transition-all"
+                  style={{
+                    background: active ? hexToRgba(color, 0.14) : "transparent",
+                    color: active ? color : "var(--color-dim2)",
+                    borderRight: mode !== "claude" ? "1px solid #3a3028" : "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: "0.65rem" }}>{icon}</span>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="p-4">
