@@ -983,12 +983,20 @@ export default function App(){
         ?"You are a game research assistant. Search for and provide accurate, concise, up-to-date information. Be specific with item names, locations, and stats."
         :"You are an expert soulslike build theorycrafter and game database. Your ENTIRE response must be a single valid JSON object — output ONLY the JSON with no markdown code fences, no text before or after, no citation markers, no footnotes. Start immediately with { and end with }.\n\nCRITICAL RULES:\n1. Every item 'n' field MUST be a REAL, SPECIFIC item name that exists in the game — NEVER write '2nd weapon +10', 'another ring', 'upgrade material', 'based on loadout', 'best armor', 'your armor', 'any weapon', 'additional ring', 'second weapon', or ANY other generic placeholder. If a second weapon is needed, name the actual weapon (e.g. 'Bloody Glory', 'Abiding Defender', 'Pieta's Sword').\n2. Every 'loc' field MUST contain a specific zone + landmark, NPC name, boss drop, or chest location. NEVER write 'Exploration', 'Acquired', 'Mid-game', 'Various locations', 'N/A', or 'Based on loadout'.\n3. Use web search to verify item names, locations, and stat requirements before writing them.";
       const urlMap={perplexity:"https://api.perplexity.ai/chat/completions"};
-      body={model:PROVIDERS[tProv].model,max_tokens:opts.rawText?1000:(opts.maxTokens||6000),messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
-      // Perplexity: disable inline citations (they corrupt JSON) and boost search context
+      // Per-call model override — lets callers pick sonar-deep-research, sonar-reasoning-pro, etc.
+      const pplxModel=opts.pplxModel||PROVIDERS[tProv].model;
+      const isDeepResearch=pplxModel==="sonar-deep-research";
+      // rawText calls respect opts.maxTokens (was hardcoded 1000 — too low for Learn categories)
+      const maxTok=opts.rawText?(opts.maxTokens||(isDeepResearch?8000:3000)):(opts.maxTokens||6000);
+      body={model:pplxModel,max_tokens:maxTok,messages:[{role:"system",content:systemMsg},{role:"user",content:prompt}]};
+      // Perplexity JSON mode: suppress inline citations (corrupt JSON) and max search context
+      // sonar-deep-research manages its own multi-step search internally; skip web_search_options
       if(tProv==="perplexity"&&!opts.rawText){
         body.return_citations=false;
-        body.search_recency_filter="month";
-        body.web_search_options={search_context_size:"high"};
+        if(!isDeepResearch){
+          body.search_recency_filter="month";
+          body.web_search_options={search_context_size:"high"};
+        }
       }
       let data;
       if(window.electronAPI){data=await window.electronAPI.callAI(tProv,body,curKey);}
@@ -1131,12 +1139,18 @@ export default function App(){
         try{
           const buildDesc=addMode==="ai"?addText.slice(0,120):addMode==="semi"?(semiForm.playstyle||semiForm.label||"OP build").slice(0,120):manualForm.label.slice(0,120)||"OP build";
           // Keep research prompt short — we only need a targeted summary, not an essay
-          const rPrompt=`${gameName} "${buildDesc}" build — search and briefly answer (under 200 words total):
-Best weapons with locations? Key stats/soft caps? Recent patches? Top tips?`;
-          const rawResearch=await apiCall(rPrompt,true,{prov:researchProv,rawText:true});
+          const rPrompt=`${gameName} "${buildDesc}" build — deep research needed:
+1. Best weapons for this build with exact locations (zone + landmark/NPC/boss drop)
+2. Stat soft caps and stat requirements for core weapons
+3. Best rings/accessories and where to find them (specific zone + method)
+4. Any synergistic spells or buffs and where to learn them
+5. Key upgrade materials and where to farm/buy them
+Search thoroughly across multiple sources. Include specific numbers.`;
+          const rawResearch=await apiCall(rPrompt,true,{prov:researchProv,rawText:true,maxTokens:4000,
+            pplxModel:researchProv==="perplexity"?"sonar-deep-research":undefined});
           if(rawResearch&&rawResearch.length>50){
-            // Cap at 900 chars to limit token injection into Steps 1-2
-            researchContext=`\n\n[${rp.label} research: ${rawResearch.slice(0,900)}]`;
+            // Cap at 2000 chars — deep-research returns more content, inject the best of it
+            researchContext=`\n\n[${rp.label} deep research:\n${rawResearch.slice(0,2000)}]`;
           }
         }catch(e){/* non-fatal — continue without research */}
       }
@@ -1274,7 +1288,8 @@ Return ONLY a single JSON object:
 }
 
 Only include items with genuine errors. If all items are correct output: {"corrections":[],"remove":[]}`;
-            const fc=await apiCall(fcPrompt,true,{prov:"perplexity",maxTokens:3000});
+            // sonar-reasoning-pro: chain-of-thought + search — best for logical item verification
+            const fc=await apiCall(fcPrompt,true,{prov:"perplexity",maxTokens:3000,pplxModel:"sonar-reasoning-pro"});
             if(fc&&typeof fc==="object"){
               const wrongType=new Set((fc.corrections||[]).filter(c=>c.issue==="wrong_type").map(c=>c.name.toLowerCase()));
               const removals=new Set((fc.remove||[]).map(n=>n.toLowerCase()));
@@ -1657,7 +1672,9 @@ ${combinedContent}`;
       setUpdateMsg(`🤖 Extracting ${batchLabel} — ${allLines.length} items so far...`);
       try{
         const prompt=buildExtractionPrompt(gameName,combinedContent,isBatch);
-        const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:8000});
+        // sonar-reasoning-pro: reasons through complex upgrade tables better than sonar-pro
+        const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:8000,
+          pplxModel:coreKey==="perplexity"?"sonar-reasoning-pro":undefined});
         const parsed=parseFactLines(rawFacts);
         allLines.push(...parsed);
         setUpdateMsg(`✓ ${batchLabel} → ${parsed.length} items (total: ${allLines.length})`);
@@ -1833,15 +1850,26 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
       }).filter(Boolean);
     };
 
-    for(let i=0;i<categories.length;i++){
-      const cat=categories[i];
-      const icon=PROVIDERS[cat.prov]?.icon||"🔍";
-      setUpdateMsg(`${icon} Learning ${cat.name} (${i+1}/${categories.length})...`);
-      try{
-        const raw=await apiCall(cat.prompt,true,{prov:cat.prov,rawText:true,maxTokens:cat.tokens});
-        const parsed=parseLines(raw);
-        allLines.push(...parsed);
-      }catch(e){/* non-fatal — skip this category and continue */}
+    // Multi-agent orchestration:
+    // - sonar-deep-research does 20-40 internal web searches per category (far more comprehensive
+    //   than a single sonar-pro call). It synthesizes across many wiki pages, forum posts, etc.
+    // - Run in parallel batches of 2 to balance speed vs rate limits.
+    // - Falls back to Claude single-threaded if no Perplexity key.
+    const LEARN_CONCURRENT=2;
+    const learnProv=hasPplx?"perplexity":"claude";
+    const learnModel=hasPplx?"sonar-deep-research":undefined;
+    for(let i=0;i<categories.length;i+=LEARN_CONCURRENT){
+      const batch=categories.slice(i,i+LEARN_CONCURRENT);
+      const batchEnd=Math.min(i+LEARN_CONCURRENT,categories.length);
+      const names=batch.map(c=>c.name).join(" + ");
+      setUpdateMsg(`🔵 Deep-researching: ${names} (${batchEnd}/${categories.length})...`);
+      const results=await Promise.allSettled(
+        batch.map(cat=>apiCall(cat.prompt,true,{prov:learnProv,rawText:true,maxTokens:cat.tokens,pplxModel:learnModel}))
+      );
+      for(const r of results){
+        if(r.status==="fulfilled"){allLines.push(...parseLines(r.value));}
+        // non-fatal — continue even if one category fails
+      }
     }
     if(allLines.length>0){
       updateKnowledgeCache(cacheKey,gameName,allLines,null);
