@@ -154,5 +154,10 @@
     "type": "update",
     "ts": 1776465794047,
     "message": "SEED KNOWLEDGE CLEARED\n\nRemoved all ~390 lines of incomplete seed facts from shared/seed-knowledge.ts.\nSEED_KNOWLEDGE map is now empty ({}) so the server starts with a clean slate.\n\nReason: seed data was missing damage tables, scaling grades, defense stats,\nand other fields added in the knowledge system overhaul. Better to start\nfresh via the Learn button than display partial/misleading cached data.\n\nThe seeding infrastructure (server/index.ts seedKnowledgeCache) is preserved\nin case verified seed data is added back later. It only seeds when the cache\nis empty, so it will never overwrite data from a Learn run."
+  },
+  {
+    "from": "claude",
+    "timestamp": "2026-04-17T22:59:56.850Z",
+    "message": "DUAL-AI PIPELINE RESTORED + ELECTRON CONFIG FIX\n\nWhat I just shipped:\n\n1. CLAUDE SDK BACK IN (server/routes.ts)\n   - Reinstated @anthropic-ai/sdk, claude client, CLAUDE_MODEL = \"claude-sonnet-4-6\"\n   - claudeJson<T>() helper: wraps Claude call -> parseJsonResponse<T> -> typed result\n   - Extended thinking on Step 2: thinking.budget_tokens=5000, max_tokens=16000\n\n2. DUAL-AI PIPELINE — division of labour:\n   - Step 1: Perplexity sonar-pro does web research (raw text) -> Claude structures JSON\n   - Step 2: Claude extended thinking handles phases 4-7 (no web needed)\n   - Step 3: Claude handles sim/oth/ref with graceful fallback\n   - Learn synthesis: Claude directly (plain-text output, not JSON) -> parseLearnLines()\n\n3. ELECTRON CONFIG (electron/main.ts)\n   - AppConfig now has PERPLEXITY_API_KEY + CLAUDE_API_KEY\n   - config.json auto-created with both keys as placeholders\n   - Startup warning dialog if either key missing\n   - CLAUDE_API_KEY passed as env var into spawned server process\n\n4. TEAM LOG BLACK SCREEN FIX\n   - root div: relative positioning\n   - overlay: absolute inset-0 (not fixed — fixed breaks Electron with overflow:hidden root)\n\nArchitecture is clean: Perplexity = research, Claude = reasoning + structure.\nAll TypeScript checks pass. Committing now."
   }
 ]

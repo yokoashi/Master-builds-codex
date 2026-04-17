@@ -23,6 +23,7 @@ const CONFIG_PATH = isPackaged
 
 interface AppConfig {
   PERPLEXITY_API_KEY?: string;
+  CLAUDE_API_KEY?: string;
 }
 
 function loadConfig(): AppConfig {
@@ -30,14 +31,9 @@ function loadConfig(): AppConfig {
     if (fs.existsSync(CONFIG_PATH)) {
       return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
     }
-    // First launch — auto-create a blank config.json next to the exe.
-    // This way the user only needs to open the file and paste their key;
-    // they never have to create it manually.
-    const placeholder: AppConfig = { PERPLEXITY_API_KEY: "" };
+    const placeholder: AppConfig = { PERPLEXITY_API_KEY: "", CLAUDE_API_KEY: "" };
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(placeholder, null, 2) + "\n", "utf-8");
-  } catch {
-    // Ignore write errors (e.g. read-only fs) — treat as empty config
-  }
+  } catch { /* ignore write errors */ }
   return {};
 }
 
@@ -45,7 +41,7 @@ let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 
 // ── Start Express server ─────────────────────────────────────────────────────
-function startServer(apiKey: string): Promise<void> {
+function startServer(apiKey: string, claudeKey = ""): Promise<void> {
   return new Promise((resolve, reject) => {
     // DB lives next to the exe so user data persists across updates.
     // We must pass this explicitly — process.cwd() inside the spawned
@@ -59,6 +55,7 @@ function startServer(apiKey: string): Promise<void> {
       NODE_ENV: "production",
       PORT: String(SERVER_PORT),
       PERPLEXITY_API_KEY: apiKey,
+      CLAUDE_API_KEY: claudeKey,
       DB_PATH: dbPath,
     };
 
@@ -149,25 +146,24 @@ app.whenReady().then(async () => {
   const config = loadConfig();
   const apiKey = config.PERPLEXITY_API_KEY ?? process.env.PERPLEXITY_API_KEY ?? "";
 
-  if (!apiKey) {
+  const claudeKey = config.CLAUDE_API_KEY ?? process.env.CLAUDE_API_KEY ?? "";
+  if (!apiKey || !claudeKey) {
+    const missing = [!apiKey && "PERPLEXITY_API_KEY", !claudeKey && "CLAUDE_API_KEY"].filter(Boolean).join(" and ");
     const result = dialog.showMessageBoxSync({
       type: "warning",
-      title: "API Key Missing",
+      title: "API Keys Missing",
       message:
-        "No Perplexity API key found.\n\n" +
-        `A config file has been created for you at:\n${CONFIG_PATH}\n\n` +
-        "Open that file, paste your Perplexity API key into the PERPLEXITY_API_KEY field, then relaunch the app.\n\n" +
-        "The app will open now but AI build generation will not work until the key is set.",
+        `Missing: ${missing}\n\n` +
+        `Config file:\n${CONFIG_PATH}\n\n` +
+        "Paste both your Perplexity and Claude (Anthropic) API keys into that file, then relaunch.\n\n" +
+        "The app will open but AI generation won't work without both keys.",
       buttons: ["Open Anyway", "Quit"],
     });
-    if (result === 1) {
-      app.quit();
-      return;
-    }
+    if (result === 1) { app.quit(); return; }
   }
 
   try {
-    await startServer(apiKey);
+    await startServer(apiKey, config.CLAUDE_API_KEY ?? process.env.CLAUDE_API_KEY ?? "");
     createWindow();
   } catch (err) {
     dialog.showErrorBox(

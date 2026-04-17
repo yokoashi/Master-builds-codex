@@ -4,6 +4,7 @@ import { EventEmitter } from "events";
 import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import Perplexity from "@perplexity-ai/perplexity_ai";
+import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "./storage";
 import {
   extractFactsFromBuild,
@@ -23,17 +24,21 @@ import type {
   UpdateRequest,
 } from "@shared/types";
 
-// ── Perplexity client ────────────────────────────────────────────────────────
+// ── AI Clients ───────────────────────────────────────────────────────────────
+// Dual-AI pipeline:
+//   Perplexity — web research, real-time item data, wiki crawling
+//   Claude     — JSON structuring, extended thinking, synthesis validation
 const pplx = new Perplexity({
   apiKey: process.env.PERPLEXITY_API_KEY ?? "",
 });
+const claude = new Anthropic({
+  apiKey: process.env.CLAUDE_API_KEY ?? "",
+});
 
-// Model selection:
-// sonar-pro           — 200K context, built-in web search, best for factual generation
-// sonar-reasoning-pro — 128K context, Chain-of-Thought reasoning (replaces Claude extended thinking)
-// sonar-deep-research — runs 20-40 internal searches; best for exhaustive item databases
-const SONAR_PRO = "sonar-pro";
-const SONAR_REASONING = "sonar-reasoning-pro";
+// Perplexity models
+const SONAR_PRO = "sonar-pro";           // 200K ctx, live web search
+const SONAR_REASONING = "sonar-reasoning-pro"; // CoT, used only as fallback
+const CLAUDE_MODEL = "claude-sonnet-4-6"; // JSON structuring + extended thinking
 
 // ── Learn progress broadcaster ───────────────────────────────────────────────
 // Emits {gameKey, stage, detail, done} events that the SSE endpoint forwards
@@ -64,6 +69,39 @@ function extractText(response: PplxResponse): string {
       .join("");
   }
   return "";
+}
+
+// ── Claude JSON generator — takes research text + prompt → structured JSON ──
+// Claude never does web search (no sonar); it only structures the data it receives.
+// max_tokens: 8000 minimum per spec.
+async function claudeJson<T>(
+  systemPrompt: string,
+  userPrompt: string,
+  extendedThinking = false
+): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const params: any = {
+      model: CLAUDE_MODEL,
+      max_tokens: 8000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    };
+    if (extendedThinking) {
+      params.thinking = { type: "enabled", budget_tokens: 5000 };
+      params.max_tokens = 16000;
+    }
+    const msg = await claude.messages.create(params);
+    const text = msg.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { type: "text"; text: string }).text)
+      .join("");
+    const parsed = parseJsonResponse<T>(text);
+    if (parsed.ok) return parsed;
+    return { ok: false, error: parsed.error };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 // ── JSON Schema definitions for structured output ───────────────────────────
@@ -389,29 +427,52 @@ Generate JSON with this exact structure:
 Include phases 1, 2, and 3 only (Early Game, Core Weapon, Key Accessories).
 Be specific with item locations, upgrade paths, and tips. Use web search to verify current patch accuracy. No placeholder text.`;
 
-      const response = await pplx.chat.completions.create({
-        model: SONAR_PRO,
-        stream: false as const,
-        max_tokens: 8000,
-        messages: [
-          { role: "system", content: systemContent },
-          { role: "user", content: userContent },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            schema: STEP1_SCHEMA,
-          },
-        },
-      });
+      // ── Phase A: Perplexity researches real item data ─────────────────────
+      // sonar-pro does the web search; returns raw text with confirmed item names.
+      // No JSON schema here — we want raw research prose, not structured output.
+      let researchContext = "";
+      try {
+        const researchResp = await pplx.chat.completions.create({
+          model: SONAR_PRO,
+          stream: false as const,
+          max_tokens: 4000,
+          messages: [
+            {
+              role: "user",
+              content: `Search the web for "${body.gameName} ${body.buildDescription} build guide" and "${body.gameName} weapons wiki" and "${body.gameName} items locations".
 
-      const rawText = extractText(response);
-      const parsed = parseJsonResponse<Partial<Build>>(rawText);
+List the REAL confirmed items for a ${body.buildDescription} build in ${body.gameName}:
+- Weapons (name, AP, location, upgrade path)
+- Armor sets (name, defense values, location)
+- Accessories/rings (name, effect, location)
+- Spells if relevant (name, damage, location)
+- Stat requirements and progression (levels 1→endgame)
+
+Only include items you found confirmed in search results. Exact in-game names only.`,
+            },
+          ],
+        });
+        researchContext = extractText(researchResp as PplxResponse);
+      } catch {
+        // Non-fatal — Claude proceeds with knowledge block alone
+        researchContext = "(Web research unavailable — use knowledge cache and game expertise)";
+      }
+
+      // ── Phase B: Claude structures the JSON from research ─────────────────
+      // Claude never does web search — it only structures the research Perplexity returned.
+      const parsed = await claudeJson<Partial<Build>>(
+        systemContent,
+        `${userContent}
+
+PERPLEXITY RESEARCH (confirmed real items from web search — use these as ground truth):
+${researchContext.substring(0, 6000)}`,
+        false
+      );
 
       if (!parsed.ok) {
         return res.status(422).json({
           error: `Failed to parse AI response: ${parsed.error}`,
-          raw: rawText.substring(0, 500),
+          raw: "",
         });
       }
 
@@ -492,30 +553,17 @@ Generate JSON:
 
 Be detailed about late-game item locations and NG+ strategy changes. No placeholder text.`;
 
-      const response = await pplx.chat.completions.create({
-        model: SONAR_REASONING,
-        stream: false as const,
-        max_tokens: 8000,
-        messages: [
-          { role: "system", content: systemContent },
-          { role: "user", content: userContent },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            schema: STEP2_SCHEMA,
-          },
-        },
-      });
-
-      const rawText = extractText(response);
-      // Note: <think> blocks are stripped inside parseJsonResponse via stripThinking()
-      const parsed = parseJsonResponse<{ phases_4_to_7: Build["phases"] }>(rawText);
+      // Claude with extended thinking — best for complex multi-phase planning
+      const parsed = await claudeJson<{ phases_4_to_7: Build["phases"] }>(
+        systemContent,
+        userContent,
+        true // extended thinking: budget_tokens 5000
+      );
 
       if (!parsed.ok) {
         return res.status(422).json({
           error: `Step 2 parse failed: ${parsed.error}`,
-          raw: rawText.substring(0, 500),
+          raw: "",
         });
       }
 
@@ -590,30 +638,13 @@ Generate JSON:
 
 Generate 2 sim, 2 oth, 5 ref entries.`;
 
-      const response = await pplx.chat.completions.create({
-        model: SONAR_PRO,
-        stream: false as const,
-        max_tokens: 8000,
-        messages: [
-          { role: "system", content: systemContent },
-          { role: "user", content: userContent },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            schema: STEP3_SCHEMA,
-          },
-        },
-      });
+      // Claude generates sim/oth/ref — no web search needed, build context is sufficient
+      const parsed = await claudeJson<{ sim: Build["sim"]; oth: Build["oth"]; ref: Build["ref"] }>(
+        systemContent,
+        userContent,
+        false
+      );
 
-      const rawText = extractText(response);
-      const parsed = parseJsonResponse<{
-        sim: Build["sim"];
-        oth: Build["oth"];
-        ref: Build["ref"];
-      }>(rawText);
-
-      // Graceful fallback: if step3 fails, return empty arrays
       if (!parsed.ok) {
         return res.json({ ok: true, sim: [], oth: [], ref: [] });
       }
@@ -625,7 +656,6 @@ Generate 2 sim, 2 oth, 5 ref entries.`;
         ref: parsed.value.ref ?? [],
       });
     } catch {
-      // Graceful fallback — step3 is non-critical
       res.json({ ok: true, sim: [], oth: [], ref: [] });
     }
   });
@@ -1012,14 +1042,19 @@ Tasks:
 
 Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(", ")}`;
 
-          const synthResp = await pplx.chat.completions.create({
-            model: SONAR_REASONING,
-            stream: false as const,
+          // Claude synthesis — better classification validation than sonar-reasoning-pro.
+          // Returns plain text lines (not JSON), so we call Claude directly.
+          const claudeMsg = await claude.messages.create({
+            model: CLAUDE_MODEL,
             max_tokens: 12000,
+            system: "You are a database validator. Output ONLY cleaned item lines, one per line. No JSON, no markdown, no commentary.",
             messages: [{ role: "user", content: synthPrompt }],
           });
-          const synthText = extractText(synthResp as PplxResponse);
-          const synthFacts = parseLearnLines(synthText, gameKey, gameName);
+          const claudeText = claudeMsg.content
+            .filter((b) => b.type === "text")
+            .map((b) => (b as { type: "text"; text: string }).text)
+            .join("");
+          const synthFacts = parseLearnLines(claudeText, gameKey, gameName);
           if (synthFacts.length >= allFacts.length * 0.35) {
             finalFacts = synthFacts;
           }
