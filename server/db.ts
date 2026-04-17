@@ -51,33 +51,46 @@ export function saveToDisk(): void {
 }
 
 /**
- * Locate the sql.js package directory at runtime.
- * Priority: process.resourcesPath (Electron) > __dirname > node_modules.
+ * Locate sql-wasm.wasm and the correct CJS loader at runtime.
+ *
+ * build.ts copies sql-wasm.js as sql-wasm.cjs so Node never hits
+ * ERR_REQUIRE_ESM (package.json has "type":"module" which makes .js = ESM).
+ *
+ * Returns { wasmPath, jsPath } with absolute paths to both files.
  */
-function findSqlJsDir(): string {
-  // Candidate directories that might contain sql.js dist files
-  const candidates: string[] = [
-    // Packaged Electron: sql.js unpacked from asar lives here
+function findSqlJsFiles(): { wasmPath: string; jsPath: string } {
+  // Candidate directories, in priority order:
+  const dirs: string[] = [
+    // 1. Packaged Electron: asarUnpack lands files here
     ...(process.resourcesPath
       ? [path.join(process.resourcesPath, "app.asar.unpacked", "node_modules", "sql.js", "dist")]
       : []),
-    // Next to the server bundle (dist/) — populated by build script copyFile
-    path.join(__dirname, ".."), // dist/ parent in case __dirname is dist/server
+    // 2. Next to index.cjs (dist/) — build script copies them here
     __dirname,
-    // Standard node_modules resolution
+    // 3. Dev: node_modules
     path.join(process.cwd(), "node_modules", "sql.js", "dist"),
   ];
 
-  for (const dir of candidates) {
+  for (const dir of dirs) {
     const wasmPath = path.join(dir, "sql-wasm.wasm");
-    const jsPath = path.join(dir, "sql-wasm.js");
-    if (fs.existsSync(wasmPath) && fs.existsSync(jsPath)) return dir;
+    // In production the JS was renamed to .cjs to avoid ERR_REQUIRE_ESM;
+    // in dev (tsx) the original .js is used directly.
+    const cjsPath = path.join(dir, "sql-wasm.cjs");
+    const jsPath  = path.join(dir, "sql-wasm.js");
+    const loaderPath = fs.existsSync(cjsPath) ? cjsPath : jsPath;
+    if (fs.existsSync(wasmPath) && fs.existsSync(loaderPath)) {
+      return { wasmPath, jsPath: loaderPath };
+    }
   }
 
-  // Last resort: let Node resolve it normally
+  // Last resort: resolve from node_modules normally (dev only)
   try {
     const pkg = require.resolve("sql.js");
-    return path.dirname(pkg);
+    const dir = path.dirname(pkg);
+    return {
+      wasmPath: path.join(dir, "sql-wasm.wasm"),
+      jsPath:   pkg,
+    };
   } catch {
     throw new Error("Cannot locate sql.js — run npm install");
   }
@@ -90,9 +103,7 @@ function findSqlJsDir(): string {
 export async function initDb(): Promise<void> {
   if (_db) return; // already initialised
 
-  const sqlJsDir = findSqlJsDir();
-  const wasmPath = path.join(sqlJsDir, "sql-wasm.wasm");
-  const jsPath = path.join(sqlJsDir, "sql-wasm.js");
+  const { wasmPath, jsPath } = findSqlJsFiles();
 
   // Dynamic require — bypasses esbuild's static resolver entirely.
   // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -65,7 +65,9 @@ async function buildAll(electron = false) {
   });
 
   // Copy sql.js dist files next to index.cjs so db.ts can find them via
-  // __dirname. This covers both plain Node production and dev fallback.
+  // __dirname. Rename sql-wasm.js → sql-wasm.cjs so Node never treats it
+  // as an ES module (package.json has "type":"module" which makes .js = ESM,
+  // causing ERR_REQUIRE_ESM when require()-ing it from index.cjs).
   console.log("copying sql.js dist files to dist/...");
   const sqlJsSrc = path.join("node_modules", "sql.js", "dist");
   await copyFile(
@@ -74,7 +76,7 @@ async function buildAll(electron = false) {
   );
   await copyFile(
     path.join(sqlJsSrc, "sql-wasm.js"),
-    path.join("dist", "sql-wasm.js")
+    path.join("dist", "sql-wasm.cjs")  // .cjs forces CommonJS regardless of "type":"module"
   );
 
   if (electron) {

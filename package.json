@@ -34,7 +34,7 @@
     ],
     "asarUnpack": [
       "dist/sql-wasm.wasm",
-      "dist/sql-wasm.js"
+      "dist/sql-wasm.cjs"
     ],
     "win": {
       "target": [
