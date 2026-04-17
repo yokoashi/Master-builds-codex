@@ -52,7 +52,7 @@
     },
     "asar": true,
     "asarUnpack": [
-      "dist/sql-wasm.wasm"
+      "node_modules/sql.js/**/*"
     ],
     "npmRebuild": false
   },

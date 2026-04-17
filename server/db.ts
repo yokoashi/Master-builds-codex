@@ -48,16 +48,24 @@ export function saveToDisk(): void {
 export async function initDb(): Promise<void> {
   if (_db) return; // already initialised
 
-  // sql.js needs the WASM binary path.
-  // In production (esbuild bundle): sql-wasm.wasm is copied next to index.cjs
-  // → use __dirname which resolves to the dist/ directory.
-  // In dev (tsx): fall back to node_modules/sql.js/dist/sql-wasm.wasm.
-  const prodWasm = path.join(__dirname, "sql-wasm.wasm");
-  const devWasm = path.join(
-    path.dirname(require.resolve("sql.js")),
-    "sql-wasm.wasm"
-  );
-  const wasmPath = fs.existsSync(prodWasm) ? prodWasm : devWasm;
+  // Locate sql-wasm.wasm. We try three locations in order:
+  //   1. Next to this bundle's output (dist/sql-wasm.wasm) — production
+  //   2. sql.js package dist/ folder — dev (tsx) and fallback
+  //   3. Electron asar-unpacked path — packaged Electron
+  const candidates = [
+    path.join(__dirname, "sql-wasm.wasm"),
+    path.join(__dirname, "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
+    // Resolve from sql.js package root → dist/
+    (() => {
+      try {
+        // require.resolve gives us the package main (dist/sql-wasm.js)
+        const pkgMain = require.resolve("sql.js");
+        return path.join(path.dirname(pkgMain), "sql-wasm.wasm");
+      } catch { return ""; }
+    })(),
+  ].filter(Boolean);
+
+  const wasmPath = candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
 
   const SQL = await initSqlJs({
     locateFile: () => wasmPath,
