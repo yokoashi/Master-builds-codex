@@ -13,6 +13,7 @@ import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 import KnowledgeViewer from "@/components/KnowledgeViewer";
 import LearnProgress from "@/components/LearnProgress";
+import ThemePicker from "@/components/ThemePicker";
 
 const TABS = ["Your Build", "Materials", "Similar", "Other OP", "Quick Ref"] as const;
 type Tab = typeof TABS[number];
@@ -226,6 +227,8 @@ export default function CodexPage() {
           )}
         </div>
         <div className="flex items-center gap-3 text-xs" style={{ color: "var(--color-dim2)" }}>
+          <ThemePicker />
+          <span style={{ color: "#2e2418" }}>│</span>
           {["File", "Edit", "View", "Window", "Help"].map((m) => (
             <span key={m} className="hover:text-white/60 cursor-default transition-colors px-0.5">{m}</span>
           ))}

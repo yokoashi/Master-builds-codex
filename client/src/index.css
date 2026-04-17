@@ -245,3 +245,128 @@ button { cursor: pointer; }
 .panel-slide-in {
   animation: slideInRight 0.22s cubic-bezier(0.2, 0.8, 0.4, 1);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   THEMES — applied via data-theme="<name>" on <html>
+   Default (no attribute) = Ashen (dark amber/soot — existing look)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ashen (default — already set in :root, alias here for clarity) ───────── */
+[data-theme="ashen"] {
+  --color-bg:      #0d0b08;
+  --color-card:    #171310;
+  --color-card-hi: #1f1a14;
+  --color-card-2:  #251f17;
+  --color-text:    #d8cfba;
+  --color-dim:     #7a7060;
+  --color-dim2:    #5a5040;
+  --color-bright:  #f5ede0;
+  --color-crimson: #d64545;
+  --color-gold:    #e8c05a;
+  --color-purple:  #b370d8;
+}
+
+/* ── Obsidian — pure black, ice-blue accents ──────────────────────────────── */
+[data-theme="obsidian"] {
+  --color-bg:      #080808;
+  --color-card:    #111111;
+  --color-card-hi: #181818;
+  --color-card-2:  #202020;
+  --color-text:    #c8d8e8;
+  --color-dim:     #5a6a7a;
+  --color-dim2:    #3a4a58;
+  --color-bright:  #e8f4ff;
+  --color-crimson: #38b4e8;
+  --color-gold:    #88ccee;
+  --color-purple:  #6898d8;
+}
+
+/* ── Blood Moon — deep red, maroon shadows ────────────────────────────────── */
+[data-theme="bloodmoon"] {
+  --color-bg:      #0d0505;
+  --color-card:    #180a0a;
+  --color-card-hi: #200e0e;
+  --color-card-2:  #2a1010;
+  --color-text:    #e8c8c0;
+  --color-dim:     #7a4040;
+  --color-dim2:    #5a2828;
+  --color-bright:  #ffe8e0;
+  --color-crimson: #ff4444;
+  --color-gold:    #e87050;
+  --color-purple:  #d84878;
+}
+
+/* ── Moonstone — soft dark navy, silver + teal ────────────────────────────── */
+[data-theme="moonstone"] {
+  --color-bg:      #080c14;
+  --color-card:    #0e1520;
+  --color-card-hi: #141e2c;
+  --color-card-2:  #1a2538;
+  --color-text:    #c8d4e0;
+  --color-dim:     #5a6878;
+  --color-dim2:    #3a4858;
+  --color-bright:  #e8f0f8;
+  --color-crimson: #38d4c8;
+  --color-gold:    #70a8d8;
+  --color-purple:  #8878d8;
+}
+
+/* ── Cursed Gold — dark olive, corrupted amber ────────────────────────────── */
+[data-theme="cursedgold"] {
+  --color-bg:      #0c0b04;
+  --color-card:    #161408;
+  --color-card-hi: #1e1c0c;
+  --color-card-2:  #272410;
+  --color-text:    #e0d898;
+  --color-dim:     #787040;
+  --color-dim2:    #585028;
+  --color-bright:  #f8f0b0;
+  --color-crimson: #d4a820;
+  --color-gold:    #f0c830;
+  --color-purple:  #a88820;
+}
+
+/* ── Rot — sickly green, plague aesthetic ─────────────────────────────────── */
+[data-theme="rot"] {
+  --color-bg:      #070c05;
+  --color-card:    #0e1609;
+  --color-card-hi: #141e0e;
+  --color-card-2:  #1a2812;
+  --color-text:    #b8d0a0;
+  --color-dim:     #507040;
+  --color-dim2:    #385028;
+  --color-bright:  #d8f0b8;
+  --color-crimson: #78d840;
+  --color-gold:    #a8e860;
+  --color-purple:  #58c870;
+}
+
+/* ── Frost — icy grey-white, pale blue chrome ─────────────────────────────── */
+[data-theme="frost"] {
+  --color-bg:      #060810;
+  --color-card:    #0e1018;
+  --color-card-hi: #141820;
+  --color-card-2:  #1a2030;
+  --color-text:    #c0d0e8;
+  --color-dim:     #5870a0;
+  --color-dim2:    #384870;
+  --color-bright:  #e0eeff;
+  --color-crimson: #60a8f8;
+  --color-gold:    #a0c8f8;
+  --color-purple:  #8898e8;
+}
+
+/* ── Holy — warm white parchment, divine gold ─────────────────────────────── */
+[data-theme="holy"] {
+  --color-bg:      #0e0c06;
+  --color-card:    #181508;
+  --color-card-hi: #201c0c;
+  --color-card-2:  #2a2412;
+  --color-text:    #e8e0c0;
+  --color-dim:     #888060;
+  --color-dim2:    #605840;
+  --color-bright:  #fff8e8;
+  --color-crimson: #f0c060;
+  --color-gold:    #f8d870;
+  --color-purple:  #e0a820;
+}
