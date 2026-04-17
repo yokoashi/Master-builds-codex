@@ -1,10 +1,11 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, copyFile } from "fs/promises";
 import path from "path";
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times
+// Server deps to bundle — reduces openat(2) syscalls for faster cold start.
+// sql.js is bundled (WASM is copied separately below).
+// drizzle-orm / drizzle-zod still needed for schema type declarations.
 const allowlist = [
   "@google/generative-ai",
   "axios",
@@ -23,6 +24,7 @@ const allowlist = [
   "openai",
   "passport",
   "passport-local",
+  "sql.js",
   "stripe",
   "uuid",
   "ws",
@@ -59,10 +61,17 @@ async function buildAll(electron = false) {
     logLevel: "info",
   });
 
+  // Copy the sql.js WASM binary next to the server bundle so it can be
+  // located at runtime via require.resolve('sql.js') → adjacent wasm path.
+  console.log("copying sql-wasm.wasm...");
+  await copyFile(
+    path.join("node_modules", "sql.js", "dist", "sql-wasm.wasm"),
+    path.join("dist", "sql-wasm.wasm")
+  );
+
   if (electron) {
     console.log("building electron main + preload...");
     // Main process — CJS, targets Electron's Node version, bundles nothing
-    // (electron itself is external by nature in an electron-builder package)
     await esbuild({
       entryPoints: ["electron/main.ts"],
       platform: "node",
