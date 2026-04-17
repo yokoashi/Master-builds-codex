@@ -8,6 +8,7 @@ import path from "path";
 // runtime so esbuild never needs to resolve it at build time.
 // drizzle-orm / drizzle-zod still needed for schema type declarations.
 const allowlist = [
+  "@anthropic-ai/sdk",
   "@google/generative-ai",
   "axios",
   "cors",
