@@ -573,7 +573,8 @@ export default function App(){
   const [wikiUrls,setWikiUrls]=useState(""); // wiki import URLs (one per line)
   const [wikiImporting,setWikiImporting]=useState(false); // wiki fetch in progress
   const [learning,setLearning]=useState(false); // AI Learn crawl in progress
-  const [permCache,setPermCache]=useState({}); // permanent item database — manually curated, never auto-cleared
+  const [permCache,setPermCache]=useState({});
+  const [gameProfiles,setGameProfiles]=useState({}); // per-game researched knowledge profiles
   const [showPermViewer,setShowPermViewer]=useState(false); // toggle perm cache viewer panel
   const [editingTempFact,setEditingTempFact]=useState(null); // {orig:string,text:string} — inline edit in working cache
   const [editingPermFact,setEditingPermFact]=useState(null); // {orig:string,text:string} — inline edit in perm cache
@@ -620,6 +621,10 @@ export default function App(){
       if(rawP){const p=JSON.parse(rawP);if(p&&typeof p==="object")setPermCache(p);}
     }catch(e){}
     try{
+      const rawGP=localStorage.getItem("codex_gameprofiles");
+      if(rawGP){const gp=JSON.parse(rawGP);if(gp&&typeof gp==="object")setGameProfiles(gp);}
+    }catch(e){}
+    try{
       const savedKeys=localStorage.getItem("codex_apikeys");
       const legacyKey=localStorage.getItem("codex_apikey");
       if(savedKeys){
@@ -662,6 +667,12 @@ export default function App(){
     if(!storageLoaded)return;
     try{localStorage.setItem("codex_perm",JSON.stringify(permCache));}catch(e){}
   },[storageLoaded,permCache]);
+
+  // Save game profiles
+  useEffect(()=>{
+    if(!storageLoaded)return;
+    try{localStorage.setItem("codex_gameprofiles",JSON.stringify(gameProfiles));}catch(e){}
+  },[storageLoaded,gameProfiles]);
 
   // Persist multi-AI toggle
   useEffect(()=>{try{localStorage.setItem("codex_multiAI",multiAI);}catch(_){}
@@ -927,9 +938,34 @@ export default function App(){
   };
 
   const buildKnowledgeBlock=(gameKey)=>{
+    const profile=gameProfiles[gameKey];
     const perm=permCache[gameKey];
     const k=knowledgeCache[gameKey];
     let block="";
+    // Game knowledge profile — injected first, highest priority
+    // Gives AI foundational knowledge about the game's stat system, mechanics, and meta
+    if(profile&&profile.summary){
+      const gn=(profile.gameName||gameKey).toUpperCase();
+      const ageDays=profile.lastUpdated?Math.round((Date.now()-profile.lastUpdated)/86400000):null;
+      block+=`\n\nGAME KNOWLEDGE PROFILE FOR ${gn} (research-verified${ageDays!=null?`, ${ageDays}d ago`:""}):\n`;
+      block+=`${profile.summary}\n`;
+      block+=`Progression: ${profile.levelTerm||"Level"} system, max ${profile.levelMax||"unknown"}. `;
+      block+=profile.hasNGPlus?"Has New Game Plus.\n":"No New Game Plus.\n";
+      if(profile.stats?.length){
+        block+=`Stats: ${profile.stats.map(s=>`${s.key}${s.softCap?` (soft cap ${s.softCap})`:""}`).join(", ")}. Stat max: ${profile.statMax||99}.\n`;
+      }
+      if(profile.statDescriptions&&Object.keys(profile.statDescriptions).length){
+        block+=`Stat roles: ${Object.entries(profile.statDescriptions).map(([k,v])=>`${k}=${v}`).join("; ")}\n`;
+      }
+      if(profile.weaponTypes?.length)block+=`Weapon types: ${profile.weaponTypes.join(", ")}\n`;
+      if(profile.spellSystem)block+=`Spells/Abilities: ${profile.spellSystem}\n`;
+      if(profile.attunements?.length)block+=`Attunements/Schools: ${profile.attunements.join(", ")}\n`;
+      if(profile.upgradeSystem)block+=`Upgrade system: ${profile.upgradeSystem}\n`;
+      if(profile.startingClasses?.length)block+=`Starting options: ${profile.startingClasses.join(", ")}\n`;
+      if(profile.uniqueMechanics?.length)block+=`Key mechanics: ${profile.uniqueMechanics.join("; ")}\n`;
+      if(profile.endgame)block+=`Endgame: ${profile.endgame}\n`;
+      if(profile.metaNotes)block+=`Current meta: ${profile.metaNotes}\n`;
+    }
     // Perm cache comes first — highest confidence, no caveats
     if(perm&&perm.facts&&perm.facts.length>0){
       block+=`\n\nVERIFIED ITEM DATABASE FOR ${(perm.name||"THIS GAME").toUpperCase()} (confirmed accurate — use freely):\n${perm.facts.slice(-200).join("\n")}\n`;
@@ -1069,6 +1105,127 @@ export default function App(){
     throw new Error(`Couldn't extract JSON. Preview: "${preview}..."`);
   };
 
+  // ── Game Research Pipeline ─────────────────────────────────────────────────
+  // Builds a comprehensive knowledge profile for any game (custom or not).
+  // Flow: Perplexity sonar-deep-research (broad multi-source research) →
+  //       Claude Sonnet (structure into JSON profile) →
+  //       Perplexity sonar-reasoning-pro (verify key facts, apply corrections)
+  // Result stored in gameProfiles[profileKey] and persisted to localStorage.
+  const runGameResearch=async(gameName,profileKey,onStatus)=>{
+    const hasPplx=!!(apiKeys.perplexity||"").trim();
+    const hasClaude=!!(apiKeys.claude||"").trim();
+    if(!hasPplx&&!hasClaude)return null;
+    let rawResearch="";
+
+    // ── Phase 1: Deep research ─────────────────────────────────────────────
+    const researchProv=hasPplx?"perplexity":"claude";
+    onStatus?.(`${PROVIDERS[researchProv].icon} ${PROVIDERS[researchProv].label} sonar-deep-research — researching ${gameName} mechanics & systems...`);
+    try{
+      const rPrompt=`Do comprehensive research on the game "${gameName}" for a build guide tool. Cover ALL of the following:
+
+1. GAME OVERVIEW: Platform, genre, setting. What kind of game is it?
+2. PROGRESSION SYSTEM: Exact name for progression levels (e.g. "Power", "Level", "Soul Level"). Min and max values. What currency/mechanic drives progression?
+3. STAT SYSTEM: List EVERY stat with its exact in-game abbreviation and full name. What does each stat scale/unlock? What are the soft caps and hard caps for each?
+4. WEAPON TYPES: Every weapon category that exists in the game.
+5. ARMOR TYPES: Every armor category.
+6. ACCESSORIES: Rings, amulets, talismans, trinkets — what slot types and how many?
+7. SPELL/ABILITY SYSTEM: Do spells exist? What are they called (Spells, Mantras, Incantations, etc.)? How are they learned/unlocked? What schools or attunements exist?
+8. UPGRADE SYSTEM: Can weapons/armor be upgraded? What materials? What upgrade paths?
+9. STARTING OPTIONS: All starting classes, origins, or character creation options.
+10. UNIQUE MECHANICS: What makes this game special/different? (e.g. permadeath, depth system, oath system, attunements, resonance, etc.)
+11. NG+ / ENDGAME: Does this game have New Game Plus? What constitutes endgame? Final bosses? Max content?
+12. CURRENT META: Strongest builds, best weapons, dominant strategies as of today.
+
+Search multiple sources including wikis, Reddit, YouTube guides, and community resources. Be exhaustive and specific.`;
+      rawResearch=await apiCall(rPrompt,true,{prov:researchProv,rawText:true,maxTokens:8000,
+        pplxModel:researchProv==="perplexity"?"sonar-deep-research":undefined})||"";
+    }catch(e){/* non-fatal */}
+
+    if(!rawResearch||rawResearch.length<100)return null;
+
+    // ── Phase 2: Claude structures research into JSON profile ──────────────
+    if(!hasClaude)return null;
+    onStatus?.(`🟠 Claude — building structured game knowledge profile...`);
+    let profile=null;
+    try{
+      const structurePrompt=`You have research data about "${gameName}". Structure it into a precise game knowledge profile.
+
+Output a single JSON object with ALL of these fields:
+{
+  "gameName": "${gameName}",
+  "platform": "platform name (e.g. PC, Roblox, PS5, etc.)",
+  "summary": "3-4 sentence overview: what the game is, its combat system, and what makes it unique",
+  "levelTerm": "exact term this game uses for progression levels — e.g. 'Power', 'Level', 'Soul Level', 'Resonance'",
+  "levelMin": 1,
+  "levelMax": N,
+  "statMax": N,
+  "hasNGPlus": true or false,
+  "stats": [{"key":"SHORT","name":"Full Name","description":"what it scales/affects","softCap":N,"hardCap":N}],
+  "statDescriptions": {"SHORT": "concise role description"},
+  "weaponTypes": ["type1","type2",...],
+  "armorTypes": ["type1","type2",...],
+  "accessorySlots": N,
+  "spellSystem": "description of spells/abilities system — name, how learned, requirements — or null if no spells",
+  "attunements": ["school1","school2",...] or [],
+  "upgradeSystem": "description of upgrade mechanics — materials, paths, max upgrade level — or 'No upgrade system'",
+  "startingClasses": ["class1","class2",...],
+  "uniqueMechanics": ["Mechanic name: description","..."],
+  "endgame": "description of endgame content and what the max build looks like",
+  "metaNotes": "current meta — strongest builds, best weapons, dominant strategies",
+  "buildTips": ["tip1","tip2","tip3"]
+}
+
+Research data:
+${rawResearch.slice(0,6000)}`;
+      profile=await apiCall(structurePrompt,false,{prov:"claude",maxTokens:3000});
+    }catch(e){return null;}
+    if(!profile||typeof profile!=="object")return null;
+
+    // ── Phase 3: Perplexity sonar-reasoning-pro verifies key facts ─────────
+    if(hasPplx){
+      onStatus?.(`🔵 Perplexity sonar-reasoning-pro — verifying game facts...`);
+      try{
+        const verifyPrompt=`Verify these key facts about "${gameName}" using web search. Reason carefully before answering.
+
+Claims to verify:
+- hasNGPlus: ${profile.hasNGPlus} — does this game actually have New Game Plus?
+- levelTerm: "${profile.levelTerm}" — is this the correct term this game uses for progression?
+- levelMax: ${profile.levelMax} — is this the actual max progression level?
+- statKeys: [${(profile.stats||[]).map(s=>s.key).join(", ")}] — are these the real stat abbreviations?
+- Has upgrade system: ${profile.upgradeSystem&&profile.upgradeSystem!=="No upgrade system"?"yes":"no"}
+
+Return ONLY this JSON:
+{
+  "hasNGPlus": true or false,
+  "levelTerm": "confirmed or corrected term",
+  "levelMax": N,
+  "statKeys": ["confirmed or corrected stat abbreviations"],
+  "upgradeSystemExists": true or false,
+  "corrections": "any other important corrections as a string, or null"
+}`;
+        const verified=await apiCall(verifyPrompt,true,{prov:"perplexity",maxTokens:800,pplxModel:"sonar-reasoning-pro"});
+        if(verified&&typeof verified==="object"){
+          // Apply verified corrections
+          if(verified.hasNGPlus!==undefined)profile.hasNGPlus=verified.hasNGPlus;
+          if(verified.levelTerm)profile.levelTerm=verified.levelTerm;
+          if(typeof verified.levelMax==="number")profile.levelMax=verified.levelMax;
+          if(Array.isArray(verified.statKeys)&&verified.statKeys.length>0){
+            // Re-align stats array keys with verified abbreviations where possible
+            const vKeys=verified.statKeys;
+            if(profile.stats?.length&&vKeys.length===profile.stats.length){
+              profile.stats=profile.stats.map((s,i)=>({...s,key:vKeys[i]||s.key}));
+            }
+          }
+          if(verified.corrections)profile.verificationNotes=verified.corrections;
+        }
+      }catch(e){/* non-fatal — use unverified profile */}
+    }
+
+    const final={...profile,lastUpdated:Date.now(),researchedBy:hasPplx&&hasClaude?"perplexity+claude":hasClaude?"claude":"perplexity"};
+    setGameProfiles(prev=>({...prev,[profileKey]:final}));
+    return final;
+  };
+
   const handleAddBuild=async()=>{
     if(addMode==="ai"&&!addText.trim()){setAddError("Describe the build you want");return;}
     if(addMode==="semi"){
@@ -1084,10 +1241,21 @@ export default function App(){
     const gameName=useCustomGame?addCustomGameName.trim():allGames[addTargetGame].name;
     const existingStats=useCustomGame?null:Object.keys(Object.values(allGames[addTargetGame].builds)[0].ph[0].stats);
     const existingStatMax=useCustomGame?99:allGames[addTargetGame].statMax;
-    let sampleStats=existingStats||["STAT_KEY_1","STAT_KEY_2","STAT_KEY_3","STAT_KEY_4"];
-    let statMax=existingStatMax;
-    let statKeysStr=useCustomGame?`use the standard stats for ${gameName} (the common short codes the community uses, e.g. VIG, END, STR, DEX, INT, FTH)`:sampleStats.join(", ");
-    let statObjStr=useCustomGame?`"STAT_CODE":N,"STAT_CODE":N`:sampleStats.map(s=>`"${s}":N`).join(",");
+    // For custom games: pull stat system from profile (already researched + verified)
+    // so the AI doesn't have to guess stat abbreviations or caps from scratch
+    const profileKey=useCustomGame?addCustomGameName.trim().toLowerCase().replace(/\s+/g,"_"):null;
+    const earlyProfile=profileKey?gameProfiles[profileKey]:null;
+    const profileStats=earlyProfile?.stats?.map(s=>s.key).filter(Boolean)||[];
+    let sampleStats=existingStats||(profileStats.length?profileStats:["STAT_KEY_1","STAT_KEY_2","STAT_KEY_3","STAT_KEY_4"]);
+    let statMax=existingStatMax||(earlyProfile?.statMax)||99;
+    let statKeysStr=useCustomGame
+      ?(profileStats.length
+        ?profileStats.join(", ")
+        :`use the standard stats for ${gameName} (the common short codes the community uses, e.g. VIG, END, STR, DEX, INT, FTH)`)
+      :sampleStats.join(", ");
+    let statObjStr=useCustomGame
+      ?(profileStats.length?profileStats.map(s=>`"${s}":N`).join(","):`"STAT_CODE":N,"STAT_CODE":N`)
+      :sampleStats.map(s=>`"${s}":N`).join(",");
     const urlRef=addUrl.trim()?`\n\nPRIMARY REFERENCE URL: ${addUrl.trim()} — you MUST use web search to read this reference and pull accurate item names, locations, and stat recommendations from it.`:"\n\nUse web search to verify item names, locations, and current stat recommendations from reputable wikis (Fextralife, official wikis).";
     let userConstraints;
     if(addMode==="ai"){userConstraints=`USER REQUEST: ${addText}`;}
@@ -1109,9 +1277,27 @@ export default function App(){
 
     try{
       const cacheKey=useCustomGame?addCustomGameName.trim().toLowerCase().replace(/\s+/g,"_"):addTargetGame;
-      const knowledgeBlock=buildKnowledgeBlock(cacheKey);
       const cacheSize=knowledgeCache[cacheKey]?.facts?.length||0;
       const useSearchStep1=addUrl.trim().length>0||cacheSize<20||useCustomGame;
+
+      // ── Game research (custom games only) ──────────────────────────────────
+      // Runs once per game: builds a comprehensive knowledge profile covering stats,
+      // mechanics, weapon types, spell system, NG+, and current meta.
+      // Profile is stored in gameProfiles[cacheKey] and persists across sessions.
+      // Subsequent builds for the same game reuse the profile (re-research only if
+      // profile is stale: >7 days old, or user explicitly re-researches).
+      const hadProfile=useCustomGame&&!!gameProfiles[cacheKey]&&
+        (Date.now()-gameProfiles[cacheKey].lastUpdated)<7*24*3600*1000;
+      if(useCustomGame&&!hadProfile){
+        setAddStep(`🔵 Researching "${gameName}" — building game knowledge profile...`);
+        setGenInfo({prov:"perplexity",label:"game research (new game)",step:0,total:8});
+        try{
+          await runGameResearch(gameName,cacheKey,(msg)=>{setAddStep(msg);});
+        }catch(e){/* non-fatal — continue without profile */}
+      }
+
+      // Rebuild knowledge block AFTER potential profile creation
+      const knowledgeBlock=buildKnowledgeBlock(cacheKey);
 
       // ── Provider routing ────────────────────────────────────────────────────
       // Implements Perplexity's recommended dual-provider pattern:
@@ -1134,7 +1320,8 @@ export default function App(){
       // Continuation and variants: Claude in dual mode, otherwise follow selection
       const contProv=singleProvMode?provCore:dualMode?"claude":(provCont2||(["perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore));
       const variantsProv=singleProvMode?provCore:dualMode?"claude":(provVars2||(["claude","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore));
-      const totalSteps=dualMode?5:4; // dual mode has an extra deep-research step label
+      // totalSteps for UI progress: +3 if game research ran (hadProfile was false)
+      const totalSteps=(dualMode?5:4)+(useCustomGame&&!hadProfile?3:0);
 
       // ── Step 0: Web research — short, targeted, non-fatal ───────────────────
       // Only runs if a search-capable provider is available AND different from main
@@ -1167,7 +1354,13 @@ Search thoroughly across multiple sources. Include specific numbers.`;
       const step1Label=dualMode?`generating phases 1–3 from Perplexity research`:useSearchStep1?(useCustomGame?`researching ${gameName} + phases 1–3`:"researching + phases 1–3"):`phases 1–3 (${cacheSize} cached facts)`;
       setAddStep(`${PROVIDERS[jsonProv].icon} ${PROVIDERS[jsonProv].label} — ${step1Label}...`);
       setGenInfo({prov:jsonProv,label:dualMode?"JSON generation (Step 2/5)":step1Label,step:1,total:totalSteps});
-      const customGameMetaSchema=useCustomGame?`"game_meta":{"icon":"single emoji for this game","stat_keys":["STAT1","STAT2","STAT3","STAT4","STAT5","STAT6"],"stat_max":99,"has_ng_plus":true,"level_term":"how this game calls progression levels — e.g. Level, Power, Soul Level, Resonance, etc.","notes":"1-2 sentence note on the game's stat system"},\n`:"";
+      // If the game profile already has verified stats, skip game_meta detection in Step 1 —
+      // use the profile's confirmed values directly instead of asking the AI to guess.
+      const profileForStep1=useCustomGame?gameProfiles[cacheKey]:null;
+      const profileHasStats=profileForStep1?.stats?.length>0;
+      const customGameMetaSchema=useCustomGame&&!profileHasStats
+        ?`"game_meta":{"icon":"single emoji for this game","stat_keys":["STAT1","STAT2","STAT3","STAT4","STAT5","STAT6"],"stat_max":99,"has_ng_plus":true,"level_term":"how this game calls progression levels — e.g. Level, Power, Soul Level, Resonance, etc.","notes":"1-2 sentence note on the game's stat system"},\n`
+        :"";
       // Contamination guard: when generating for a custom/unfamiliar game, explicitly
       // prevent the AI from pulling items from other games it knows well (LotF, Dark Souls, etc.)
       const customGameGuard=useCustomGame?`\n\nCRITICAL — GAME IDENTITY: This build is for "${gameName}" ONLY. Do NOT use any items, weapons, spells, rings, or mechanics from other games (e.g. Lords of the Fallen, Dark Souls, Elden Ring, Lies of P, or ANY other soulslike). If an item name sounds familiar from another game, verify it actually exists in "${gameName}" before including it. When uncertain, use web search to confirm.\n`:"";
@@ -1214,15 +1407,22 @@ ${userConstraints}`;
       const step1=await apiCall(p1,dualMode?false:useSearchStep1,{prov:jsonProv,maxTokens:8000});
       if(!step1.label||!step1.ph||!Array.isArray(step1.ph))throw new Error("Invalid build metadata");
       let resolvedStatKeysStr=statKeysStr,resolvedStatObjStr=statObjStr,customGameMeta=null;
-      let hasNGPlus=true; // default true for known pre-defined games
+      let hasNGPlus=true;
       let levelTerm="Lv";
       if(useCustomGame){
+        // Priority: verified game profile > game_meta from Step 1 > stat keys from phase stats
+        const prof=gameProfiles[cacheKey];
         customGameMeta=step1.game_meta||{};
-        const keys=customGameMeta.stat_keys||Object.keys(step1.ph[0]?.stats||{});
-        if(keys.length>0){sampleStats=keys;resolvedStatKeysStr=keys.join(", ");resolvedStatObjStr=keys.map(s=>`"${s}":N`).join(",");statMax=customGameMeta.stat_max||99;}
-        // Detect if game has NG+ — default to true if not specified, false only if explicitly false
-        hasNGPlus=customGameMeta.has_ng_plus!==false;
-        levelTerm=customGameMeta.level_term||"Lv";
+        // Prefer profile stats (research-verified) over AI-detected game_meta
+        const profKeys=prof?.stats?.map(s=>s.key).filter(Boolean)||[];
+        const metaKeys=customGameMeta.stat_keys||[];
+        const phaseKeys=Object.keys(step1.ph?.[0]?.stats||{});
+        const keys=profKeys.length?profKeys:(metaKeys.length?metaKeys:phaseKeys);
+        if(keys.length>0){sampleStats=keys;resolvedStatKeysStr=keys.join(", ");resolvedStatObjStr=keys.map(s=>`"${s}":N`).join(",");}
+        statMax=prof?.statMax||customGameMeta.stat_max||99;
+        // Profile has_ng_plus (verified) beats game_meta (AI guess)
+        hasNGPlus=prof?prof.hasNGPlus!==false:customGameMeta.has_ng_plus!==false;
+        levelTerm=prof?.levelTerm||customGameMeta.level_term||"Lv";
       }
 
       const p2phase7label=hasNGPlus?"phases 4–7 + NG+":"phases 4–7 (no NG+)";
