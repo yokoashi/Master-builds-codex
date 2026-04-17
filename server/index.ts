@@ -10,7 +10,8 @@ import { SEED_KNOWLEDGE } from "@shared/seed-knowledge";
 
 // Run migrations on startup
 function runMigrations() {
-  const dbPath = path.join(process.cwd(), "dev.db");
+  // Use the same DB_PATH that db.ts uses so both point at the same file.
+  const dbPath = process.env.DB_PATH ?? path.join(process.cwd(), "dev.db");
   const sqlite = new Database(dbPath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.exec(`

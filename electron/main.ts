@@ -47,11 +47,19 @@ let serverProcess: ChildProcess | null = null;
 // ── Start Express server ─────────────────────────────────────────────────────
 function startServer(apiKey: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // DB lives next to the exe so user data persists across updates.
+    // We must pass this explicitly — process.cwd() inside the spawned
+    // Node process is unpredictable in a packaged Electron app.
+    const dbPath = isPackaged
+      ? path.join(path.dirname(app.getPath("exe")), "codex.db")
+      : path.join(process.cwd(), "dev.db");
+
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       NODE_ENV: "production",
       PORT: String(SERVER_PORT),
       PERPLEXITY_API_KEY: apiKey,
+      DB_PATH: dbPath,
     };
 
     serverProcess = spawn("node", [SERVER_ENTRY], { env, stdio: "pipe" });
