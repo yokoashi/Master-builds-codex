@@ -1,11 +1,11 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
-import path from "path";
+import { rm, readFile, copyFile } from "fs/promises";
 
 // Server deps to bundle — reduces openat(2) syscalls for faster cold start.
-// sql.js MUST stay external: it ships a WASM binary that esbuild cannot inline.
-// electron-builder will pick it up from node_modules at package time.
+// sql.js IS in the allowlist: esbuild bundles the JS portion just fine.
+// The .wasm binary is NOT a static import so esbuild won't see it — we
+// copy it manually into dist/ after the bundle step.
 // drizzle-orm / drizzle-zod still needed for schema type declarations.
 const allowlist = [
   "@google/generative-ai",
@@ -25,7 +25,7 @@ const allowlist = [
   "openai",
   "passport",
   "passport-local",
-  // sql.js intentionally NOT here — must be external
+  "sql.js",
   "stripe",
   "uuid",
   "ws",
@@ -62,9 +62,14 @@ async function buildAll(electron = false) {
     logLevel: "info",
   });
 
-  // sql.js is kept external (not bundled) so esbuild never touches the WASM.
-  // electron-builder will pick up node_modules/sql.js via asarUnpack.
-  // No manual WASM copy needed.
+  // sql.js loads WASM dynamically via locateFile() — esbuild never sees the
+  // .wasm import so it won't emit it automatically. Copy it next to index.cjs
+  // so __dirname/sql-wasm.wasm resolves correctly at runtime.
+  console.log("copying sql-wasm.wasm to dist/...");
+  await copyFile(
+    "node_modules/sql.js/dist/sql-wasm.wasm",
+    "dist/sql-wasm.wasm"
+  );
 
   if (electron) {
     console.log("building electron main + preload...");

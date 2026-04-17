@@ -30,6 +30,10 @@
       {
         "from": "dist",
         "to": "app/dist"
+      },
+      {
+        "from": "dist/sql-wasm.wasm",
+        "to": "sql-wasm.wasm"
       }
     ],
     "win": {
@@ -51,9 +55,6 @@
       "shortcutName": "Master Build Codex"
     },
     "asar": true,
-    "asarUnpack": [
-      "node_modules/sql.js/**/*"
-    ],
     "npmRebuild": false
   },
   "dependencies": {

@@ -16,6 +16,9 @@ import initSqlJs, { type Database } from "sql.js";
 import fs from "fs";
 import path from "path";
 
+// process.resourcesPath is injected by Electron (undefined in plain Node).
+declare const process: NodeJS.Process & { resourcesPath?: string };
+
 // ── DB file path (injected by Electron, falls back to cwd for dev) ──────────
 const DB_PATH = process.env.DB_PATH ?? path.join(process.cwd(), "dev.db");
 
@@ -48,27 +51,30 @@ export function saveToDisk(): void {
 export async function initDb(): Promise<void> {
   if (_db) return; // already initialised
 
-  // Locate sql-wasm.wasm. We try three locations in order:
-  //   1. Next to this bundle's output (dist/sql-wasm.wasm) — production
-  //   2. sql.js package dist/ folder — dev (tsx) and fallback
-  //   3. Electron asar-unpacked path — packaged Electron
-  const candidates = [
-    path.join(__dirname, "sql-wasm.wasm"),
-    path.join(__dirname, "node_modules", "sql.js", "dist", "sql-wasm.wasm"),
-    // Resolve from sql.js package root → dist/
-    (() => {
-      try {
-        // require.resolve gives us the package main (dist/sql-wasm.js)
-        const pkgMain = require.resolve("sql.js");
-        return path.join(path.dirname(pkgMain), "sql-wasm.wasm");
-      } catch { return ""; }
-    })(),
-  ].filter(Boolean);
-
-  const wasmPath = candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
-
+  // locateFile is called by sql.js with just the filename (e.g. "sql-wasm.wasm").
+  // We try candidate paths in priority order:
+  //   1. process.resourcesPath  — Electron extraResources (packaged app)
+  //   2. __dirname              — next to index.cjs in dist/ (any Node env)
+  //   3. require.resolve        — node_modules/sql.js/dist/ (dev / tsx)
   const SQL = await initSqlJs({
-    locateFile: () => wasmPath,
+    locateFile: (filename: string) => {
+      const candidates = [
+        // Packaged Electron: extraResources land in resources/ next to asar
+        process.resourcesPath
+          ? path.join(process.resourcesPath, filename)
+          : "",
+        // Production bundle: copied into dist/ by build script
+        path.join(__dirname, filename),
+        // Dev (tsx): resolve from sql.js package
+        (() => {
+          try {
+            return path.join(path.dirname(require.resolve("sql.js")), filename);
+          } catch { return ""; }
+        })(),
+      ].filter(Boolean);
+
+      return candidates.find((p) => fs.existsSync(p)) ?? candidates[1];
+    },
   });
 
   if (fs.existsSync(DB_PATH)) {
@@ -78,6 +84,6 @@ export async function initDb(): Promise<void> {
     _db = new SQL.Database();
   }
 
-  // WAL mode is not applicable to sql.js (in-memory), but foreign keys are
+  // Foreign key enforcement
   _db.run("PRAGMA foreign_keys = ON;");
 }
