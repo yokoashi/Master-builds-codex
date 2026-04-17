@@ -4,15 +4,12 @@ import { cn, hexToRgba, statGain } from "@/lib/utils";
 import ItemCard from "./ItemCard";
 import StatBar from "./StatBar";
 
-// ── Error boundary so a bad build never blacks out the whole page ─────────────
 class BuildErrorBoundary extends Component<
   { children: React.ReactNode; accent: string; buildKey: string },
   { error: string | null }
 > {
   state = { error: null };
   static getDerivedStateFromError(e: Error) { return { error: e.message }; }
-  // Reset error state when the build changes so switching to a different
-  // build doesn't keep showing the previous build's error screen.
   componentDidUpdate(prevProps: { buildKey: string }) {
     if (prevProps.buildKey !== this.props.buildKey && this.state.error) {
       this.setState({ error: null });
@@ -24,7 +21,7 @@ class BuildErrorBoundary extends Component<
         <div className="rounded-lg p-6 text-sm" style={{ background: "var(--color-card)", border: `1px solid ${hexToRgba(this.props.accent, 0.3)}` }}>
           <p style={{ color: "var(--color-crimson)" }} className="font-semibold mb-2">⚠ Build display error</p>
           <p style={{ color: "var(--color-dim)" }}>{this.state.error}</p>
-          <p className="mt-3" style={{ color: "var(--color-dim)" }}>This build may have been generated with an older schema. Try deleting and regenerating it.</p>
+          <p className="mt-3 text-xs" style={{ color: "var(--color-dim)" }}>Try deleting and regenerating this build.</p>
         </div>
       );
     }
@@ -32,29 +29,15 @@ class BuildErrorBoundary extends Component<
   }
 }
 
-interface Props {
-  build: Build;
-  game: Game;
-  onDelete: () => void;
-}
+interface Props { build: Build; game: Game; onDelete: () => void; }
 
-const PHASE_NAMES = [
-  "Early Game",
-  "Core Weapon",
-  "Key Accessories",
-  "Unlock Spells",
-  "Mid-to-Late",
-  "Endgame",
-  "NG+",
-];
+const PHASE_NAMES = ["Early Game", "Core Weapon", "Key Accessories", "Unlock Spells", "Mid-to-Late", "Endgame", "NG+"];
 
 function BuildTabInner({ build, game, onDelete }: Props) {
   const [activePhase, setActivePhase] = useState(0);
   const [activeNg, setActiveNg] = useState(0);
   const [activeLoadout, setActiveLoadout] = useState(0);
 
-  // Reset all tab/index state when the user switches to a different build
-  // so phase 5 of build A doesn't bleed into a 3-phase build B, etc.
   useEffect(() => {
     setActivePhase(0);
     setActiveNg(0);
@@ -64,42 +47,40 @@ function BuildTabInner({ build, game, onDelete }: Props) {
   const accent = build.accent;
   const accentBg = hexToRgba(accent, 0.1);
   const accentBorder = hexToRgba(accent, 0.35);
+  const accentGlow = hexToRgba(accent, 0.2);
 
-  // Guard: clamp activePhase to valid range (handles builds with < 7 phases)
   const safePhaseIdx = Math.min(activePhase, (build.phases?.length ?? 1) - 1);
   const phase: Phase = build.phases[safePhaseIdx];
-  // Guard: clamp activeLoadout so switching from a 2-loadout build to a 1-loadout
-  // build doesn't cause build.loadouts![activeLoadout] to throw.
   const safeLoadoutIdx = Math.min(activeLoadout, (build.loadouts?.length ?? 1) - 1);
   const prevPhase: Phase | undefined = build.phases[safePhaseIdx - 1];
 
-  const displayStats =
-    safePhaseIdx === 6 && phase.ngCycles
-      ? phase.ngCycles[activeNg]?.stats ?? phase.stats
-      : phase.stats;
-
-  const ngNotes =
-    safePhaseIdx === 6 && phase.ngCycles
-      ? phase.ngCycles[activeNg]?.notes ?? null
-      : null;
+  const displayStats = safePhaseIdx === 6 && phase.ngCycles
+    ? phase.ngCycles[activeNg]?.stats ?? phase.stats
+    : phase.stats;
+  const ngNotes = safePhaseIdx === 6 && phase.ngCycles
+    ? phase.ngCycles[activeNg]?.notes ?? null
+    : null;
 
   const statEntries = Object.entries(displayStats);
   const totalStats = Object.values(displayStats).reduce((a, b) => a + b, 0);
 
   return (
-    <div>
-      {/* ── Hero Card ────────────────────────────────────────────────────── */}
+    <div className="animate-fade-in">
+      {/* ── Hero Card ─────────────────────────────────────────────────────── */}
       <div
-        className="relative rounded-lg p-5 mb-6"
-        style={{ background: "var(--color-card)", border: `1px solid ${accentBorder}` }}
+        className="relative rounded-xl p-5 mb-5"
+        style={{
+          background: `linear-gradient(135deg, ${hexToRgba(accent, 0.12)} 0%, var(--color-card) 55%)`,
+          border: `1px solid ${accentBorder}`,
+          boxShadow: `0 0 32px ${hexToRgba(accent, 0.07)}, inset 0 1px 0 ${hexToRgba(accent, 0.15)}`,
+        }}
         data-testid="build-hero-card"
       >
-        {/* Delete button */}
         <button
           onClick={onDelete}
           data-testid="btn-delete-build"
-          className="absolute top-3 right-3 px-2 py-1 rounded text-xs transition-all hover:border-red-500 hover:text-red-400"
-          style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+          className="absolute top-3 right-3 w-6 h-6 rounded flex items-center justify-center text-xs transition-all hover:border-red-500/60 hover:text-red-400"
+          style={{ border: "1px solid #3a3028", color: "var(--color-dim2)" }}
           aria-label="Delete this build"
         >
           ✕
@@ -107,42 +88,42 @@ function BuildTabInner({ build, game, onDelete }: Props) {
 
         <div className="flex items-start gap-4 pr-8">
           <div
-            className="text-3xl w-12 h-12 rounded flex items-center justify-center flex-shrink-0"
-            style={{ background: accentBg, border: `1px solid ${accentBorder}` }}
+            className="text-2xl w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{
+              background: `radial-gradient(circle, ${hexToRgba(accent, 0.25)} 0%, ${hexToRgba(accent, 0.06)} 100%)`,
+              border: `1px solid ${accentBorder}`,
+              boxShadow: `0 0 16px ${hexToRgba(accent, 0.2)}`,
+            }}
           >
             {build.icon}
           </div>
           <div className="flex-1 min-w-0">
             <h2
-              className="text-xl font-bold mb-0.5"
-              style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
+              className="text-lg font-bold mb-0.5 shimmer-text"
+              style={{ fontFamily: "var(--font-display)" }}
               data-testid="build-label"
             >
               {build.label}
             </h2>
-            <p className="text-sm font-medium mb-2" style={{ color: accent }}>
+            <p className="text-sm font-medium mb-1.5" style={{ color: accent, opacity: 0.9 }}>
               {build.sub}
             </p>
-            <p className="text-sm mb-3" style={{ color: "var(--color-dim)" }}>
+            <p className="text-xs mb-3 leading-relaxed" style={{ color: "var(--color-dim)" }}>
               {build.playstyle}
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               {build.cls && <Chip label={`Class: ${build.cls}`} accent={accent} />}
-              {(build.caps ?? []).map((c) => (
-                <Chip key={c} label={c} accent={accent} />
-              ))}
-              {(build.weaponReq ?? []).map((r) => (
-                <Chip key={r} label={`Req: ${r}`} accent={accent} dim />
-              ))}
+              {(build.caps ?? []).map((c) => <Chip key={c} label={c} accent={accent} />)}
+              {(build.weaponReq ?? []).map((r) => <Chip key={r} label={`Req: ${r}`} accent={accent} dim />)}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Phase Buttons ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Build phases">
+      {/* ── Phase Buttons ────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Build phases">
         {PHASE_NAMES.map((name, i) => {
-          const ph = build.phases[i]; // may be undefined for short builds
+          const ph = build.phases[i];
           const isActive = safePhaseIdx === i;
           return (
             <div key={i} className="flex items-center gap-1">
@@ -153,40 +134,38 @@ function BuildTabInner({ build, game, onDelete }: Props) {
                 data-testid={`phase-btn-${i}`}
                 onClick={() => { setActivePhase(i); setActiveNg(0); }}
                 disabled={!ph}
-                className={cn(
-                  "px-3 py-1.5 rounded text-xs font-medium transition-all",
-                  isActive ? "phase-btn-active" : "hover:bg-white/5",
-                  !ph ? "opacity-30 cursor-not-allowed" : ""
-                )}
+                className={cn("px-2.5 py-1.5 rounded text-xs font-medium transition-all", !ph ? "opacity-25 cursor-not-allowed" : "")}
                 style={
                   isActive
-                    ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent }
-                    : { border: "1px solid #2a2318", color: "var(--color-dim)" }
+                    ? {
+                        background: `linear-gradient(135deg, ${accentBg}, ${hexToRgba(accent, 0.05)})`,
+                        border: `1px solid ${accentBorder}`,
+                        color: accent,
+                        boxShadow: `0 0 10px ${hexToRgba(accent, 0.2)}`,
+                      }
+                    : { border: "1px solid #2a2218", color: "var(--color-dim)", background: "transparent" }
                 }
               >
-                {name}
+                {i + 1}. {name}
               </button>
             </div>
           );
         })}
       </div>
 
-      {/* ── NG+ Cycle Buttons ─────────────────────────────────────────────── */}
+      {/* ── NG+ Cycle Buttons ────────────────────────────────────────────── */}
       {activePhase === 6 && phase.ngCycles && phase.ngCycles.length > 0 && (
-        <div className="flex gap-2 mb-4" aria-label="NG+ cycles">
+        <div className="flex gap-1.5 mb-4" aria-label="NG+ cycles">
           {phase.ngCycles.map((cycle: NgCycle, i: number) => (
             <button
               key={i}
               data-testid={`ng-cycle-btn-${i}`}
               onClick={() => setActiveNg(i)}
-              className={cn(
-                "px-3 py-1 rounded text-xs font-medium transition-all",
-                activeNg === i ? "phase-btn-active" : "hover:bg-white/5"
-              )}
+              className="px-2.5 py-1 rounded text-xs font-medium transition-all"
               style={
                 activeNg === i
                   ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent }
-                  : { border: "1px solid #2a2318", color: "var(--color-dim)" }
+                  : { border: "1px solid #2a2218", color: "var(--color-dim)" }
               }
             >
               {cycle.label}
@@ -195,38 +174,35 @@ function BuildTabInner({ build, game, onDelete }: Props) {
         </div>
       )}
 
-      {/* ── Phase Note ────────────────────────────────────────────────────── */}
+      {/* ── Phase Note ───────────────────────────────────────────────────── */}
       <div
-        className="mb-4 px-3 py-2 rounded text-sm"
-        style={{ background: "var(--color-card)", border: `1px solid #2a2318` }}
+        className="mb-5 px-4 py-2.5 rounded-lg text-xs leading-relaxed flex items-start gap-2"
+        style={{
+          background: `linear-gradient(90deg, ${hexToRgba(accent, 0.08)} 0%, var(--color-card) 100%)`,
+          border: `1px solid ${hexToRgba(accent, 0.15)}`,
+          borderLeft: `3px solid ${accentBorder}`,
+        }}
         data-testid="phase-note"
       >
-        <span style={{ color: accent }}>▸ </span>
-        <span style={{ color: "var(--color-text)" }}>
-          {ngNotes ?? phase.sn}
-        </span>
+        <span style={{ color: accent, marginTop: 1 }}>▸</span>
+        <span style={{ color: "var(--color-text)" }}>{ngNotes ?? phase.sn}</span>
       </div>
 
-      {/* ── Loadout Selector ──────────────────────────────────────────────── */}
+      {/* ── Loadout Selector ─────────────────────────────────────────────── */}
       {build.loadouts && build.loadouts.length > 0 && (
-        <div className="mb-4">
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>
-            Loadout
-          </p>
-          <div className="flex flex-wrap gap-2 mb-3">
+        <div className="mb-5">
+          <SectionLabel>Loadout</SectionLabel>
+          <div className="flex flex-wrap gap-1.5 mb-3 mt-2">
             {build.loadouts.map((l, i) => (
               <button
                 key={l.id}
                 data-testid={`loadout-btn-${l.id}`}
                 onClick={() => setActiveLoadout(i)}
-                className={cn(
-                  "px-3 py-1.5 rounded text-xs font-medium transition-all",
-                  safeLoadoutIdx === i ? "phase-btn-active" : "hover:bg-white/5"
-                )}
+                className="px-3 py-1.5 rounded text-xs font-medium transition-all"
                 style={
                   safeLoadoutIdx === i
                     ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent }
-                    : { border: "1px solid #2a2318", color: "var(--color-dim)" }
+                    : { border: "1px solid #2a2218", color: "var(--color-dim)" }
                 }
               >
                 {l.label}
@@ -236,29 +212,21 @@ function BuildTabInner({ build, game, onDelete }: Props) {
           {(() => {
             const l = build.loadouts![safeLoadoutIdx];
             return (
-              <div
-                className="grid grid-cols-2 gap-3 p-3 rounded text-xs"
-                style={{ background: "var(--color-card)", border: `1px solid #2a2318` }}
-              >
-                <div>
-                  <span style={{ color: "var(--color-dim)" }}>Weapon Wt:</span>{" "}
-                  <span style={{ color: "var(--color-text)" }}>{l.weaponWt}</span>
+              <div className="rounded-lg p-3 text-xs" style={{ background: "var(--color-card-hi)", border: "1px solid #2a2218" }}>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <Kv label="Weapon Wt" value={String(l.weaponWt)} />
+                  <Kv label="End Req" value={String(l.endReq)} />
+                  <div className="col-span-2"><Kv label="Armor" value={l.armor} /></div>
                 </div>
-                <div>
-                  <span style={{ color: "var(--color-dim)" }}>End Req:</span>{" "}
-                  <span style={{ color: "var(--color-text)" }}>{l.endReq}</span>
-                </div>
-                <div className="col-span-2">
-                  <span style={{ color: "var(--color-dim)" }}>Armor:</span>{" "}
-                  <span style={{ color: "var(--color-text)" }}>{l.armor}</span>
-                </div>
-                <div>
-                  <p style={{ color: "var(--color-green)" }} className="font-medium mb-1">Pros</p>
-                  {l.pros.map((p) => <p key={p} style={{ color: "var(--color-dim)" }}>+ {p}</p>)}
-                </div>
-                <div>
-                  <p style={{ color: "var(--color-crimson)" }} className="font-medium mb-1">Cons</p>
-                  {l.cons.map((c) => <p key={c} style={{ color: "var(--color-dim)" }}>- {c}</p>)}
+                <div className="grid grid-cols-2 gap-2 mt-2 pt-2" style={{ borderTop: "1px solid #2a2218" }}>
+                  <div>
+                    <p className="font-semibold mb-1" style={{ color: "var(--color-green)" }}>Pros</p>
+                    {l.pros.map((p) => <p key={p} className="leading-snug" style={{ color: "var(--color-dim)" }}>+ {p}</p>)}
+                  </div>
+                  <div>
+                    <p className="font-semibold mb-1" style={{ color: "var(--color-crimson)" }}>Cons</p>
+                    {l.cons.map((c) => <p key={c} className="leading-snug" style={{ color: "var(--color-dim)" }}>− {c}</p>)}
+                  </div>
                 </div>
               </div>
             );
@@ -268,44 +236,43 @@ function BuildTabInner({ build, game, onDelete }: Props) {
 
       {/* ── Stat Bars ─────────────────────────────────────────────────────── */}
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>
-            Stats
-          </p>
-          <span className="text-xs" style={{ color: "var(--color-dim)" }}>
-            Total: {totalStats} / {game.endgameBudget}
+        <div className="flex items-center justify-between mb-2.5">
+          <SectionLabel>Stats</SectionLabel>
+          <span className="text-xs font-mono" style={{ color: "var(--color-dim)" }}>
+            {totalStats} <span style={{ color: "var(--color-dim2)" }}>/ {game.endgameBudget}</span>
           </span>
         </div>
-        <div className="grid grid-cols-1 gap-1.5">
-          {statEntries.map(([stat, val]) => (
-            // Key includes build key + phase index so StatBar remounts on phase
-            // switch and the fill animation replays from 0 each time.
-            <StatBar
-              key={`${build.key}-${safePhaseIdx}-${stat}`}
-              stat={stat}
-              value={val}
-              prevValue={prevPhase?.stats[stat]}
-              max={game.statMax}
-              softCap={game.softCaps[stat] ?? null}
-              accent={accent}
-            />
-          ))}
+        <div
+          className="rounded-lg p-3"
+          style={{ background: "var(--color-card)", border: "1px solid #242018" }}
+        >
+          <div className="grid grid-cols-1 gap-2">
+            {statEntries.map(([stat, val]) => (
+              <StatBar
+                key={`${build.key}-${safePhaseIdx}-${stat}`}
+                stat={stat}
+                value={val}
+                prevValue={prevPhase?.stats[stat]}
+                max={game.statMax}
+                softCap={game.softCaps[stat] ?? null}
+                accent={accent}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
       {/* ── Items ─────────────────────────────────────────────────────────── */}
       {[
-        { label: "Weapons", items: phase.weapons },
-        { label: "Armor", items: phase.armor },
-        { label: "Accessories / Rings", items: phase.acc },
-        { label: "Spells / Buffs", items: phase.spells },
-      ].map(({ label, items }) =>
+        { label: "Weapons", icon: "⚔", items: phase.weapons },
+        { label: "Armor", icon: "🛡", items: phase.armor },
+        { label: "Accessories / Rings", icon: "◈", items: phase.acc },
+        { label: "Spells / Buffs", icon: "✦", items: phase.spells },
+      ].map(({ label, icon, items }) =>
         items && items.length > 0 ? (
           <div key={label} className="mb-4">
-            <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>
-              {label}
-            </p>
-            <div className="space-y-2">
+            <SectionLabel icon={icon}>{label}</SectionLabel>
+            <div className="space-y-1.5 mt-2">
               {items.map((item: Item, i: number) => (
                 <ItemCard key={i} item={item} accent={accent} />
               ))}
@@ -316,21 +283,24 @@ function BuildTabInner({ build, game, onDelete }: Props) {
 
       {/* ── Damage Summary ────────────────────────────────────────────────── */}
       <div
-        className="rounded-lg p-4 mt-4"
-        style={{ background: "var(--color-card)", border: `1px solid ${accentBorder}` }}
+        className="rounded-xl p-4 mt-2"
+        style={{
+          background: `linear-gradient(135deg, ${hexToRgba(accent, 0.08)} 0%, var(--color-card) 60%)`,
+          border: `1px solid ${accentBorder}`,
+        }}
         data-testid="damage-summary"
       >
-        <p className="text-xs uppercase tracking-widest mb-3" style={{ color: "var(--color-dim)" }}>
-          Damage Estimate
-        </p>
-        <div className="grid grid-cols-3 gap-4 mb-2">
+        <SectionLabel>Damage Estimate</SectionLabel>
+        <div className="grid grid-cols-3 gap-4 mt-3 mb-2">
           <DmgStat label="1H / PvE" value={phase.dmg?.ps ?? 0} accent={accent} />
           <DmgStat label="2H / Swap" value={phase.dmg?.sp ?? 0} accent={accent} />
           <DmgStat label="Backstab" value={phase.dmg?.bs ?? 0} accent={accent} />
         </div>
-        <p className="text-xs mt-2" style={{ color: "var(--color-dim)" }}>
-          {phase.dmg?.n ?? ""}
-        </p>
+        {phase.dmg?.n && (
+          <p className="text-xs mt-3 pt-2.5 leading-relaxed" style={{ borderTop: "1px solid #2a2218", color: "var(--color-dim)" }}>
+            {phase.dmg.n}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -338,7 +308,6 @@ function BuildTabInner({ build, game, onDelete }: Props) {
 
 export default function BuildTab(props: Props) {
   return (
-    // Pass buildKey so the error boundary can reset when the build changes
     <BuildErrorBoundary accent={props.build.accent ?? "#d64545"} buildKey={props.build.key}>
       <BuildTabInner {...props} />
     </BuildErrorBoundary>
@@ -351,7 +320,7 @@ function Chip({ label, accent, dim }: { label: string; accent: string; dim?: boo
       className="px-2 py-0.5 rounded text-xs"
       style={{
         background: dim ? "transparent" : hexToRgba(accent, 0.1),
-        border: `1px solid ${hexToRgba(accent, dim ? 0.2 : 0.3)}`,
+        border: `1px solid ${hexToRgba(accent, dim ? 0.18 : 0.3)}`,
         color: dim ? "var(--color-dim)" : accent,
       }}
     >
@@ -360,28 +329,50 @@ function Chip({ label, accent, dim }: { label: string; accent: string; dim?: boo
   );
 }
 
+function Kv({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span style={{ color: "var(--color-dim)" }}>{label}: </span>
+      <span style={{ color: "var(--color-text)" }}>{value}</span>
+    </div>
+  );
+}
+
+function SectionLabel({ children, icon }: { children: React.ReactNode; icon?: string }) {
+  return (
+    <div className="section-label">
+      {icon && <span style={{ opacity: 0.5 }}>{icon}</span>}
+      {children}
+    </div>
+  );
+}
+
 function DmgStat({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
     <div className="text-center">
-      <p className="text-lg font-bold font-display" style={{ color: accent }}>
+      <p
+        className="text-xl font-bold"
+        style={{
+          fontFamily: "var(--font-display)",
+          color: value > 0 ? accent : "var(--color-dim2)",
+          textShadow: value > 0 ? `0 0 20px ${hexToRgba(accent, 0.4)}` : "none",
+        }}
+      >
         {value > 0 ? value.toLocaleString() : "—"}
       </p>
-      <p className="text-xs" style={{ color: "var(--color-dim)" }}>{label}</p>
+      <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>{label}</p>
     </div>
   );
 }
 
 function PhaseGain({ prev, curr, accent }: { prev: Phase; curr: Phase; accent: string }) {
-  const gains = Object.entries(curr.stats)
-    .map(([stat, val]) => {
-      const diff = val - (prev.stats[stat] ?? 0);
-      return diff;
-    })
-    .filter((d) => d > 0);
-  const totalGain = gains.reduce((a, b) => a + b, 0);
+  const totalGain = Object.entries(curr.stats)
+    .map(([s, v]) => v - (prev.stats[s] ?? 0))
+    .filter((d) => d > 0)
+    .reduce((a, b) => a + b, 0);
   if (totalGain === 0) return null;
   return (
-    <span className="text-xs font-medium" style={{ color: accent, opacity: 0.7 }}>
+    <span className="text-xs font-semibold" style={{ color: accent, opacity: 0.6 }}>
       +{totalGain}
     </span>
   );

@@ -934,15 +934,21 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
           `Batch ${batchNum}/${totalBatches}`,
           batch.map((c) => c.name).join(" · ")
         );
+        const LEARN_TIMEOUT_MS = 300_000; // 5 min per category
         const results = await Promise.allSettled(
-          batch.map((cat) =>
-            pplx.chat.completions.create({
-              model: SONAR_DEEP,
-              stream: false as const,
-              max_tokens: 8000,
-              messages: [{ role: "user", content: cat.prompt }],
-            })
-          )
+          batch.map((cat) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), LEARN_TIMEOUT_MS);
+            return pplx.chat.completions.create(
+              {
+                model: SONAR_DEEP,
+                stream: false as const,
+                max_tokens: 8000,
+                messages: [{ role: "user", content: cat.prompt }],
+              },
+              { signal: controller.signal }
+            ).finally(() => clearTimeout(timer));
+          })
         );
         for (let j = 0; j < results.length; j++) {
           const r = results[j];
@@ -962,32 +968,49 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
       }
 
       emit("Synthesis pass", `Deduplicating & validating ${allFacts.length} facts...`);
-      // Synthesis pass: sonar-reasoning-pro deduplicates and validates
+      // Synthesis pass: sonar-reasoning-pro validates classification and deduplicates.
+      // Send per-category summaries (not raw lines) to stay within token budget while
+      // giving the model full coverage visibility across all 18 categories.
       let finalFacts = allFacts;
       if (allFacts.length > 0) {
         try {
-          const rawLines = allFacts.map((f) => f.raw).join("\n").slice(0, 40000);
-          const synthPrompt = `You are validating a ${gameName} item database. 18 categories were searched. Here is the raw data.
+          // Group facts by type for summary
+          const byType: Record<string, string[]> = {};
+          for (const f of allFacts) {
+            (byType[f.type] ??= []).push(f.name);
+          }
+          const categorySummary = Object.entries(byType)
+            .map(([type, names]) => {
+              const sample = names.slice(0, 8).join(", ");
+              return `${type} (${names.length} items): ${sample}${names.length > 8 ? "..." : ""}`;
+            })
+            .join("\n");
+
+          // Send a manageable sample of raw lines (3000 items max) for dedup check
+          const sampleLines = allFacts.slice(0, 3000).map((f) => f.raw).join("\n");
+
+          const synthPrompt = `You are validating a ${gameName} item database. 18 categories were searched, producing ${allFacts.length} facts.
+
+COVERAGE SUMMARY:
+${categorySummary}
+
+SAMPLE LINES (first 3000 of ${allFacts.length}):
+${sampleLines}
 
 Tasks:
-1. REMOVE duplicates (same item twice — keep version with more numbers)
-2. REMOVE lines with vague placeholders like "AP: ~N" or "damage: varies"
-3. VERIFY and ENFORCE prefixes exactly:
-   WEAPON: / SHIELD: / CATALYST: / ARMOR: / RING\/ACC: / SPELL: / BUFF: / BUILD: / ITEM: / MECHANIC: / GEM: / UPGRADE: / MAP: / LORE:
-   - Shields MUST stay SHIELD: (not WEAPON:)
-   - Casting tools MUST stay CATALYST: (not WEAPON:)
-   - Support spells MUST stay BUFF: (not SPELL:)
-   - Ashes of War / infusion gems MUST be GEM: (not WEAPON: or MECHANIC:)
-   - Smithing stones / upgrade mats MUST be UPGRADE: (not ITEM:)
-   - Areas / dungeons MUST be MAP: (not MECHANIC: or LORE:)
-   - NPC questlines / story events MUST be LORE: (not MECHANIC:)
-4. ADD missing fields where possible: AP table, scaling table, status buildup, all 5 armor def stats
-5. Output ONLY cleaned item lines, one per line. No commentary.
+1. REMOVE exact duplicates from the sample (same item name + same type — keep version with more numeric data)
+2. REMOVE vague placeholders like "AP: ~N" or "damage: varies"
+3. FIX misclassified prefixes:
+   - Shields MUST be SHIELD: (not WEAPON:)
+   - Casting tools MUST be CATALYST: (not WEAPON:)
+   - Support spells MUST be BUFF: (not SPELL:)
+   - Ashes of War MUST be GEM: (not WEAPON: or MECHANIC:)
+   - Upgrade mats MUST be UPGRADE: (not ITEM:)
+   - Areas/dungeons MUST be MAP: (not MECHANIC:)
+   - NPC questlines MUST be LORE: (not MECHANIC:)
+4. Output ONLY cleaned item lines, one per line. No commentary.
 
-Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(", ")}
-
-Raw data:
-${rawLines}`;
+Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(", ")}`;
 
           const synthResp = await pplx.chat.completions.create({
             model: SONAR_REASONING,

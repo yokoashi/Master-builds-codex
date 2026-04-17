@@ -180,7 +180,9 @@ export function parseJsonResponse<T = unknown>(raw: string): ParseResult<T> {
 }
 
 // ── Tests (run with: npx tsx server/parse-json.ts) ───────────────────────────
-if (import.meta.url === `file://${process.argv[1]}`) {
+let isMain = false;
+try { isMain = import.meta.url === `file://${process.argv[1]}`; } catch { /* bundled — not main */ }
+if (isMain) {
   const tests: Array<{ name: string; input: string; expectOk: boolean }> = [
     {
       name: "Clean JSON",

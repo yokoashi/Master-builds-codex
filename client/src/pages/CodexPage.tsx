@@ -197,41 +197,37 @@ export default function CodexPage() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: "var(--color-bg)", color: "var(--color-text)" }}>
-      {/* ── Menu Bar ──────────────────────────────────────────────────────────── */}
+      {/* ── Title Bar / Menu Bar ─────────────────────────────────────────────── */}
       <div
-        className="flex items-center justify-between px-4 py-0.5 text-xs flex-shrink-0 select-none"
+        className="flex items-center justify-between flex-shrink-0 select-none"
         style={{
-          background: "var(--color-card)",
-          borderBottom: "1px solid #2a2318",
-          minHeight: 28,
+          background: "linear-gradient(180deg, #1c1710 0%, var(--color-card) 100%)",
+          borderBottom: "1px solid #2e2418",
+          minHeight: 30,
+          paddingLeft: 12,
+          paddingRight: 16,
         }}
       >
-        <div className="flex items-center gap-4">
-          {/* Patch/version note */}
-          <span style={{ color: "var(--color-dim)" }}>
+        <div className="flex items-center gap-3">
+          <span
+            className="text-xs font-bold tracking-[0.2em] uppercase"
+            style={{ fontFamily: "var(--font-display)", color: "var(--color-gold)", opacity: 0.85 }}
+          >
+            ✦ Codex
+          </span>
+          <span style={{ color: "#2e2418" }}>│</span>
+          <span className="text-xs" style={{ color: "var(--color-dim)" }}>
             {knowledgeInfo && knowledgeInfo.count > 0
-              ? `✦ ${knowledgeInfo.count} facts cached for ${currentGame?.name ?? selectedGameKey}${knowledgeInfo.patchNote ? ` · ${knowledgeInfo.patchNote}` : ""}`
-              : `Master Build Codex`}
+              ? `${knowledgeInfo.count} facts · ${currentGame?.name ?? selectedGameKey}${knowledgeInfo.patchNote ? ` · ${knowledgeInfo.patchNote}` : ""}`
+              : "Master Build Codex"}
           </span>
           {updateStatus && (
-            <span style={{ color: "var(--color-gold)" }}>{updateStatus}</span>
+            <span className="text-xs" style={{ color: "var(--color-gold)" }}>{updateStatus}</span>
           )}
         </div>
-        {/* Menu items */}
-        <div className="flex items-center gap-4" style={{ color: "var(--color-dim)" }}>
-          {[
-            { label: "File", items: [] },
-            { label: "Edit", items: [] },
-            { label: "View", items: [] },
-            { label: "Window", items: [] },
-            { label: "Help", items: [] },
-          ].map((m) => (
-            <span
-              key={m.label}
-              className="hover:text-white cursor-default transition-colors px-1"
-            >
-              {m.label}
-            </span>
+        <div className="flex items-center gap-3 text-xs" style={{ color: "var(--color-dim2)" }}>
+          {["File", "Edit", "View", "Window", "Help"].map((m) => (
+            <span key={m} className="hover:text-white/60 cursor-default transition-colors px-0.5">{m}</span>
           ))}
         </div>
       </div>
@@ -240,144 +236,154 @@ export default function CodexPage() {
       <div className="flex flex-1 min-h-0">
         {/* ── Left Sidebar ──────────────────────────────────────────────────── */}
         <aside
-          className="flex flex-col flex-shrink-0 overflow-y-auto"
+          className="flex flex-col flex-shrink-0"
           style={{
-            width: 200,
-            background: "var(--color-card)",
-            borderRight: "1px solid #2a2318",
+            width: 218,
+            background: "linear-gradient(180deg, #171310 0%, #141009 100%)",
+            borderRight: "1px solid #272018",
           }}
         >
-          {/* CODEX brand */}
+          {/* Brand header */}
           <div
-            className="px-4 py-3 flex-shrink-0"
-            style={{ borderBottom: "1px solid #2a2318" }}
+            className="px-4 py-3 flex-shrink-0 flex items-center gap-2"
+            style={{ borderBottom: "1px solid #222018" }}
           >
-            <p
-              className="text-base font-bold tracking-widest"
-              style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
-            >
-              CODEX
-            </p>
+            <span style={{ color: hexToRgba(accent, 0.8), fontSize: "1rem" }}>⚔</span>
+            <div>
+              <p
+                className="text-sm font-bold tracking-[0.22em] uppercase leading-none"
+                style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
+              >
+                CODEX
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--color-dim2)", letterSpacing: "0.05em" }}>
+                Build Guide
+              </p>
+            </div>
           </div>
 
           {/* Game + Build list */}
           <div className="flex-1 overflow-y-auto py-2">
-            {buildsByGame.map(({ game, builds: gameBuilds }) => (
-              <div key={game.key} className="mb-1">
-                {/* Game header */}
-                <button
-                  data-testid={`sidebar-game-${game.key}`}
-                  onClick={() => setSelectedGameKey(game.key)}
-                  className={cn(
-                    "w-full text-left px-4 py-1.5 text-xs font-semibold uppercase tracking-widest transition-colors",
-                    selectedGameKey === game.key
-                      ? "hover:opacity-90"
-                      : "hover:bg-white/5"
-                  )}
-                  style={
-                    selectedGameKey === game.key
-                      ? { color: accent, background: hexToRgba(accent, 0.06) }
-                      : { color: "var(--color-dim)" }
-                  }
-                >
-                  {game.icon} {game.name}
-                </button>
+            {buildsByGame.map(({ game, builds: gameBuilds }) => {
+              const isGameActive = selectedGameKey === game.key;
+              return (
+                <div key={game.key} className="mb-0.5">
+                  {/* Game header */}
+                  <button
+                    data-testid={`sidebar-game-${game.key}`}
+                    onClick={() => setSelectedGameKey(game.key)}
+                    className="w-full text-left px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-all flex items-center gap-2"
+                    style={
+                      isGameActive
+                        ? {
+                            color: accent,
+                            background: `linear-gradient(90deg, ${hexToRgba(accent, 0.12)} 0%, transparent 100%)`,
+                            borderLeft: `2px solid ${accent}`,
+                            paddingLeft: 10,
+                          }
+                        : { color: "var(--color-dim)", borderLeft: "2px solid transparent", paddingLeft: 10 }
+                    }
+                  >
+                    <span>{game.icon}</span>
+                    <span>{game.name}</span>
+                    {game.isCustom && <span style={{ color: "var(--color-gold)", fontSize: "0.55rem" }}>✦ AI</span>}
+                  </button>
 
-                {/* Builds under this game — only show if game is selected */}
-                {selectedGameKey === game.key && gameBuilds.map((build) => {
-                  const isActive = build.key === selectedBuildKey;
-                  return (
-                    <button
-                      key={build.key}
-                      data-testid={`sidebar-build-${build.key}`}
-                      onClick={() => setSelectedBuildKey(build.key)}
-                      className={cn(
-                        "w-full text-left px-4 py-2 text-xs transition-colors flex flex-col gap-0.5",
-                        isActive ? "" : "hover:bg-white/5"
-                      )}
-                      style={
-                        isActive
-                          ? {
-                              background: hexToRgba(build.accent, 0.1),
-                              borderLeft: `2px solid ${build.accent}`,
-                              paddingLeft: 14,
-                            }
-                          : {
-                              borderLeft: "2px solid transparent",
-                              paddingLeft: 14,
-                            }
-                      }
-                    >
-                      <span
-                        className="font-medium leading-tight"
-                        style={{ color: isActive ? build.accent : "var(--color-text)" }}
+                  {/* Builds under active game */}
+                  {isGameActive && gameBuilds.map((build) => {
+                    const isActive = build.key === selectedBuildKey;
+                    return (
+                      <button
+                        key={build.key}
+                        data-testid={`sidebar-build-${build.key}`}
+                        onClick={() => setSelectedBuildKey(build.key)}
+                        className="w-full text-left py-2 text-xs transition-all flex flex-col gap-0.5"
+                        style={
+                          isActive
+                            ? {
+                                background: `linear-gradient(90deg, ${hexToRgba(build.accent, 0.14)} 0%, transparent 100%)`,
+                                borderLeft: `2px solid ${build.accent}`,
+                                paddingLeft: 22,
+                                paddingRight: 10,
+                              }
+                            : {
+                                borderLeft: "2px solid transparent",
+                                paddingLeft: 22,
+                                paddingRight: 10,
+                                opacity: 0.75,
+                              }
+                        }
                       >
-                        {build.icon} {build.label}
-                      </span>
-                      {build.sub && (
                         <span
-                          className="text-xs leading-tight truncate"
-                          style={{ color: "var(--color-dim)", fontSize: "0.65rem" }}
+                          className="font-medium leading-tight"
+                          style={{ color: isActive ? build.accent : "var(--color-text)" }}
                         >
-                          {build.sub}
+                          {build.icon} {build.label}
+                          {build.isAI && <span className="ml-1" style={{ color: "var(--color-gold)", fontSize: "0.55rem" }}>✦ AI</span>}
                         </span>
-                      )}
-                    </button>
-                  );
-                })}
+                        {build.sub && (
+                          <span className="leading-tight truncate" style={{ color: "var(--color-dim)", fontSize: "0.63rem" }}>
+                            {build.sub}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
 
-                {selectedGameKey === game.key && gameBuilds.length === 0 && (
-                  <p className="px-4 py-2 text-xs" style={{ color: "var(--color-dim)" }}>
-                    No builds yet
-                  </p>
-                )}
-              </div>
-            ))}
+                  {isGameActive && gameBuilds.length === 0 && (
+                    <p className="py-2 text-xs italic" style={{ color: "var(--color-dim2)", paddingLeft: 22 }}>
+                      No builds yet
+                    </p>
+                  )}
+
+                  {/* Separator between games */}
+                  {!isGameActive && <div style={{ height: 1, background: "linear-gradient(90deg, transparent, #221c14, transparent)", margin: "2px 12px" }} />}
+                </div>
+              );
+            })}
           </div>
 
           {/* Sidebar bottom actions */}
           <div
-            className="px-3 py-2 flex-shrink-0 space-y-1.5"
-            style={{ borderTop: "1px solid #2a2318" }}
+            className="px-3 py-2.5 flex-shrink-0 space-y-1.5"
+            style={{
+              borderTop: "1px solid #222018",
+              background: "linear-gradient(180deg, transparent, rgba(0,0,0,0.2))",
+            }}
           >
             <button
               data-testid="btn-add-build"
               onClick={() => setShowAddModal(true)}
-              className="w-full px-2 py-1.5 rounded text-xs font-medium transition-all hover:opacity-90 flex items-center justify-center gap-1"
+              className="w-full px-2 py-2 rounded text-xs font-semibold tracking-wide transition-all hover:opacity-90 flex items-center justify-center gap-1.5"
               style={{
-                background: hexToRgba(accent, 0.12),
-                border: `1px solid ${hexToRgba(accent, 0.35)}`,
+                background: `linear-gradient(135deg, ${hexToRgba(accent, 0.18)} 0%, ${hexToRgba(accent, 0.08)} 100%)`,
+                border: `1px solid ${hexToRgba(accent, 0.4)}`,
                 color: accent,
+                fontFamily: "var(--font-display)",
+                letterSpacing: "0.08em",
               }}
             >
-              + Add Build
+              ✦ New Build
             </button>
 
-            {/* Learn button */}
             <div className="flex flex-col gap-1">
               <div className="flex gap-1">
                 <button
                   data-testid="btn-learn"
-                  onClick={() => {
-                    if (showLearnInput) {
-                      learnMutation.mutate();
-                    } else {
-                      setShowLearnInput((v) => !v);
-                    }
-                  }}
+                  onClick={() => { showLearnInput ? learnMutation.mutate() : setShowLearnInput(v => !v); }}
                   disabled={learnMutation.isPending || updateMutation.isPending}
-                  className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-50"
-                  style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+                  className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
+                  style={{ border: "1px solid #302820", color: "var(--color-dim)" }}
                   title="Build item database (weapons, armor, spells, etc.)"
                 >
-                  🎓 {showLearnInput ? "Go" : "Learn"}
+                  🎓 {showLearnInput ? "Start" : "Learn"}
                 </button>
                 <button
                   data-testid="btn-update"
                   onClick={() => updateMutation.mutate()}
                   disabled={updateMutation.isPending || learnMutation.isPending}
-                  className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-50"
-                  style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+                  className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
+                  style={{ border: "1px solid #302820", color: "var(--color-dim)" }}
                   title="Check for patch updates"
                 >
                   ↻ Update
@@ -392,18 +398,13 @@ export default function CodexPage() {
                     onChange={(e) => setLearnHintUrl(e.target.value)}
                     placeholder="Wiki URL (optional)"
                     className="flex-1 min-w-0 px-2 py-1 rounded text-xs"
-                    style={{
-                      background: "var(--color-bg)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                      outline: "none",
-                    }}
+                    style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-text)", outline: "none" }}
                     onKeyDown={(e) => { if (e.key === "Enter") learnMutation.mutate(); }}
                   />
                   <button
                     onClick={() => { setShowLearnInput(false); setLearnHintUrl(""); }}
                     className="px-1.5 py-1 rounded text-xs hover:bg-white/5"
-                    style={{ color: "var(--color-dim)", border: "1px solid #3a3028" }}
+                    style={{ color: "var(--color-dim)", border: "1px solid #302820" }}
                   >✕</button>
                 </div>
               )}
@@ -415,40 +416,45 @@ export default function CodexPage() {
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           {/* Tab bar */}
           <div
-            className="flex items-center flex-shrink-0 px-2"
+            className="flex items-end flex-shrink-0 px-1 gap-0.5"
             style={{
-              background: "var(--color-card)",
-              borderBottom: "1px solid #2a2318",
-              minHeight: 36,
+              background: "linear-gradient(180deg, #171310 0%, var(--color-card) 100%)",
+              borderBottom: `1px solid #272018`,
+              minHeight: 38,
             }}
             role="tablist"
             aria-label="Build sections"
           >
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                role="tab"
-                aria-selected={activeTab === tab}
-                data-testid={`tab-${tab.replace(/ /g, "-").toLowerCase()}`}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  "px-4 py-1.5 text-xs font-medium transition-all border-b-2 -mb-px whitespace-nowrap flex items-center gap-1.5",
-                  activeTab === tab ? "" : "hover:text-white/70 border-transparent"
-                )}
-                style={
-                  activeTab === tab
-                    ? { color: accent, borderColor: accent }
-                    : { color: "var(--color-dim)" }
-                }
-              >
-                {tab === "Your Build" && "⚔"}
-                {tab === "Materials" && "⚗"}
-                {tab === "Similar" && "⊞"}
-                {tab === "Other OP" && "★"}
-                {tab === "Quick Ref" && "◈"}
-                {tab}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const icon = tab === "Your Build" ? "⚔" : tab === "Materials" ? "⚗" : tab === "Similar" ? "⊞" : tab === "Other OP" ? "★" : "◈";
+              const isActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  role="tab"
+                  aria-selected={isActive}
+                  data-testid={`tab-${tab.replace(/ /g, "-").toLowerCase()}`}
+                  onClick={() => setActiveTab(tab)}
+                  className={cn(
+                    "px-3.5 py-1.5 text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 relative -mb-px",
+                    isActive ? "rounded-t" : "hover:text-white/60"
+                  )}
+                  style={
+                    isActive
+                      ? {
+                          color: accent,
+                          background: "var(--color-bg)",
+                          border: `1px solid #272018`,
+                          borderBottom: `1px solid var(--color-bg)`,
+                        }
+                      : { color: "var(--color-dim2)", background: "transparent", border: "1px solid transparent" }
+                  }
+                >
+                  <span style={{ opacity: isActive ? 1 : 0.6 }}>{icon}</span>
+                  {tab}
+                </button>
+              );
+            })}
           </div>
 
           {/* Tab content */}
@@ -500,62 +506,57 @@ export default function CodexPage() {
 
           {/* ── Bottom Status Bar ─────────────────────────────────────────── */}
           <div
-            className="flex items-center justify-between px-4 flex-shrink-0 text-xs gap-4"
+            className="flex items-center justify-between flex-shrink-0 text-xs gap-4"
             style={{
-              background: "var(--color-card)",
-              borderTop: "1px solid #2a2318",
-              minHeight: 32,
+              background: "linear-gradient(180deg, var(--color-card) 0%, #121008 100%)",
+              borderTop: "1px solid #272018",
+              minHeight: 30,
+              paddingLeft: 12,
+              paddingRight: 10,
             }}
           >
-            <div className="flex items-center gap-2" style={{ color: "var(--color-dim)" }}>
+            <div className="flex items-center gap-2.5">
               {knowledgeInfo && knowledgeInfo.count > 0 ? (
                 <button
                   onClick={() => setShowKnowledge(true)}
-                  className="hover:text-white transition-colors cursor-pointer"
-                  style={{ background: "none", border: "none", padding: 0 }}
+                  className="transition-colors hover:opacity-80 flex items-center gap-1"
+                  style={{ background: "none", border: "none", padding: 0, color: "var(--color-dim)" }}
                   title="View cached knowledge"
                 >
-                  🧠 {knowledgeInfo.count} facts · {currentGame?.name ?? selectedGameKey}
+                  🧠 <span style={{ color: "var(--color-gold)", opacity: 0.75 }}>{knowledgeInfo.count}</span>
+                  <span style={{ color: "var(--color-dim2)" }}> facts · {currentGame?.name ?? selectedGameKey}</span>
                 </button>
               ) : (
-                <span>Ready</span>
+                <span style={{ color: "var(--color-dim2)" }}>Ready</span>
               )}
-              <span style={{ color: "#2a3a2a" }}>|</span>
+              <span style={{ color: "#252018" }}>│</span>
               <button
                 onClick={() => setShowTeamLog(true)}
-                className="hover:text-white transition-colors cursor-pointer"
-                style={{ background: "none", border: "none", padding: 0, color: "#6db86d" }}
-                title="AI Team Log — Claude ↔ Perplexity communication channel"
+                className="transition-all hover:opacity-90 flex items-center gap-1"
+                style={{ background: "none", border: "none", padding: 0, color: "#4a9a4a" }}
+                title="AI Team Log — Claude ↔ Perplexity"
               >
-                📡 Team Log
+                📡 <span>Team Log</span>
               </button>
             </div>
 
             <div className="flex items-center gap-1">
-              <button
-                data-testid="btn-export"
-                onClick={() => exportMutation.mutate()}
-                className="px-2.5 py-1 rounded transition-all hover:bg-white/5 flex items-center gap-1"
-                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-              >
-                💾 Save
-              </button>
-              <button
-                data-testid="btn-import"
-                onClick={handleImport}
-                className="px-2.5 py-1 rounded transition-all hover:bg-white/5 flex items-center gap-1"
-                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-              >
-                📂 Load
-              </button>
-              <button
-                data-testid="btn-reset"
-                onClick={() => toast({ title: "Reset: delete individual builds using the ✕ button on each build." })}
-                className="px-2.5 py-1 rounded transition-all hover:bg-white/5 flex items-center gap-1"
-                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-              >
-                ↺ Reset
-              </button>
+              {[
+                { id: "btn-export", label: "💾", title: "Save", onClick: () => exportMutation.mutate() },
+                { id: "btn-import", label: "📂", title: "Load", onClick: handleImport },
+                { id: "btn-reset", label: "↺", title: "Reset", onClick: () => toast({ title: "Delete individual builds using the ✕ button on each build." }) },
+              ].map(({ id, label, title, onClick }) => (
+                <button
+                  key={id}
+                  data-testid={id}
+                  onClick={onClick}
+                  className="px-2 py-0.5 rounded transition-all hover:bg-white/5 flex items-center gap-1"
+                  style={{ border: "1px solid #282018", color: "var(--color-dim2)" }}
+                  title={title}
+                >
+                  {label} {title}
+                </button>
+              ))}
             </div>
           </div>
         </div>

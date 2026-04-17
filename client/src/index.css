@@ -5,27 +5,26 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Custom color palette per spec ──────────────────────────────────────────
-   bg #0b0a08, card #18140f, cardHi #221c15
-   text #d8cfba, dim #8a8070, bright #f5ede0
-   crimson #d64545, gold #e8c05a, purple #b370d8
+/* ── Palette ─────────────────────────────────────────────────────────────────
+   bg      #0d0b08   card    #171310   cardHi  #1f1a14
+   text    #d8cfba   dim     #7a7060   bright  #f5ede0
+   crimson #d64545   gold    #e8c05a   purple  #b370d8
    ─────────────────────────────────────────────────────────────────────────── */
-
 :root {
-  --background: 30 20% 4%;         /* #0b0a08 */
-  --foreground: 38 18% 78%;        /* #d8cfba */
-  --card: 28 24% 7%;               /* #18140f */
+  --background: 30 20% 4%;
+  --foreground: 38 18% 78%;
+  --card: 28 24% 7%;
   --card-foreground: 38 18% 78%;
-  --card-hi: 28 20% 10%;           /* #221c15 */
+  --card-hi: 28 20% 10%;
   --popover: 28 24% 7%;
   --popover-foreground: 38 18% 78%;
-  --primary: 0 62% 56%;            /* crimson #d64545 */
+  --primary: 0 62% 56%;
   --primary-foreground: 38 18% 90%;
   --secondary: 28 20% 10%;
   --secondary-foreground: 38 18% 78%;
   --muted: 28 15% 15%;
-  --muted-foreground: 32 8% 50%;   /* dim #8a8070 */
-  --accent: 42 72% 63%;            /* gold #e8c05a */
+  --muted-foreground: 32 8% 50%;
+  --accent: 42 72% 63%;
   --accent-foreground: 28 24% 7%;
   --destructive: 0 62% 56%;
   --destructive-foreground: 38 18% 90%;
@@ -34,22 +33,23 @@
   --ring: 0 62% 56%;
   --radius: 0.375rem;
 
-  /* Custom tokens */
-  --color-bg: #0b0a08;
-  --color-card: #18140f;
-  --color-card-hi: #221c15;
-  --color-text: #d8cfba;
-  --color-dim: #8a8070;
-  --color-bright: #f5ede0;
+  --color-bg:      #0d0b08;
+  --color-card:    #171310;
+  --color-card-hi: #1f1a14;
+  --color-card-2:  #251f17;
+  --color-text:    #d8cfba;
+  --color-dim:     #7a7060;
+  --color-dim2:    #5a5040;
+  --color-bright:  #f5ede0;
   --color-crimson: #d64545;
-  --color-gold: #e8c05a;
-  --color-purple: #b370d8;
-  --color-blue: #5591c7;
-  --color-green: #6daa45;
-  --color-fire: #e85a1a;
+  --color-gold:    #e8c05a;
+  --color-purple:  #b370d8;
+  --color-blue:    #5591c7;
+  --color-green:   #6daa45;
+  --color-fire:    #e85a1a;
 
   --font-display: 'Cinzel', 'Palatino Linotype', serif;
-  --font-body: 'DM Sans', 'Helvetica Neue', sans-serif;
+  --font-body:    'DM Sans', 'Helvetica Neue', sans-serif;
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
@@ -62,10 +62,7 @@ html {
   scroll-behavior: smooth;
 }
 
-html, body, #root {
-  height: 100%;
-  overflow: hidden;
-}
+html, body, #root { height: 100%; overflow: hidden; }
 
 body {
   min-height: 100dvh;
@@ -83,9 +80,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 p, li, figcaption { text-wrap: pretty; }
-
 img, video, canvas { display: block; max-width: 100%; height: auto; }
-
 button { cursor: pointer; }
 
 :focus-visible {
@@ -107,34 +102,146 @@ button { cursor: pointer; }
 }
 
 /* ── Scrollbars ───────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--color-card); }
-::-webkit-scrollbar-thumb { background: #3a3028; border-radius: 3px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #352d24; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #4a3e32; }
 
-/* ── Utility classes ──────────────────────────────────────────────────────── */
-.font-display { font-family: var(--font-display); }
-.font-body { font-family: var(--font-body); }
-.text-bright { color: var(--color-bright); }
-.text-dim { color: var(--color-dim); }
-.text-crimson { color: var(--color-crimson); }
-.text-gold { color: var(--color-gold); }
-.text-purple { color: var(--color-purple); }
-
-/* ── Stat bar animations ─────────────────────────────────────────────────── */
+/* ── Keyframes ────────────────────────────────────────────────────────────── */
 @keyframes barFill {
-  from { width: 0; }
+  from { width: 0; opacity: 0.4; }
+  to   { opacity: 1; }
 }
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 6px currentColor; }
+  50%       { box-shadow: 0 0 14px currentColor, 0 0 24px currentColor; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(32px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ── Utility ──────────────────────────────────────────────────────────────── */
+.font-display  { font-family: var(--font-display); }
+.font-body     { font-family: var(--font-body); }
+.text-bright   { color: var(--color-bright); }
+.text-dim      { color: var(--color-dim); }
+.text-crimson  { color: var(--color-crimson); }
+.text-gold     { color: var(--color-gold); }
+.text-purple   { color: var(--color-purple); }
+.animate-fade-in    { animation: fadeIn 0.2s ease-out; }
+.animate-slide-right { animation: slideInRight 0.25s ease-out; }
+
+/* ── Stat bar ─────────────────────────────────────────────────────────────── */
 .stat-bar-fill {
-  animation: barFill 0.4s ease-out forwards;
+  animation: barFill 0.5s cubic-bezier(.2, .8, .4, 1) forwards;
+}
+.stat-bar-fill--capped {
+  animation: barFill 0.5s cubic-bezier(.2, .8, .4, 1) forwards,
+             glowPulse 2s ease-in-out 0.5s infinite;
 }
 
-/* ── Phase button active ring ─────────────────────────────────────────────── */
+/* ── Phase button ─────────────────────────────────────────────────────────── */
 .phase-btn-active {
-  box-shadow: 0 0 0 2px var(--color-card), 0 0 0 4px currentColor;
+  box-shadow: 0 0 0 1px var(--color-card), 0 0 0 3px currentColor;
 }
 
-/* ── Card hover ───────────────────────────────────────────────────────────── */
-.item-card-toggle {
-  transition: max-height 0.25s ease, opacity 0.2s ease;
+/* ── Section divider label ────────────────────────────────────────────────── */
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.65rem;
+  font-family: var(--font-display);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+.section-label::before,
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #2e2620, transparent);
+}
+.section-label::before { flex: 0 0 8px; }
+
+/* ── Rune divider (decorative) ────────────────────────────────────────────── */
+.rune-divider {
+  text-align: center;
+  font-size: 0.5rem;
+  letter-spacing: 0.5em;
+  color: var(--color-dim2);
+  margin: 4px 0;
+}
+
+/* ── Glow border on cards ─────────────────────────────────────────────────── */
+.card-glow {
+  position: relative;
+}
+.card-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, currentColor 0%, transparent 50%, currentColor 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+/* ── Item card expanded content ───────────────────────────────────────────── */
+.item-expand {
+  animation: fadeIn 0.18s ease-out;
+}
+
+/* ── Sidebar game header ──────────────────────────────────────────────────── */
+.sidebar-game-active {
+  background: linear-gradient(90deg, rgba(0,0,0,0) 0%, var(--accent-bg) 100%);
+}
+
+/* ── Shimmer text (for build name on hero) ────────────────────────────────── */
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--color-bright) 0%,
+    var(--color-gold) 40%,
+    var(--color-bright) 60%,
+    var(--color-bright) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+/* ── Pulsing dot for learn progress ──────────────────────────────────────── */
+.pulse-dot {
+  animation: pulseDot 1.2s ease-in-out infinite;
+}
+
+/* ── Knowledge viewer slide-in ────────────────────────────────────────────── */
+.panel-slide-in {
+  animation: slideInRight 0.22s cubic-bezier(0.2, 0.8, 0.4, 1);
 }
