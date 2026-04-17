@@ -115,7 +115,7 @@ export interface RefRow {
 
 // ── Knowledge cache ────────────────────────────────────────────────────────────
 export interface KnowledgeFact {
-  type: "WEAPON" | "ARMOR" | "RING" | "SPELL" | "ITEM" | "MECHANIC";
+  type: "WEAPON" | "SHIELD" | "CATALYST" | "ARMOR" | "RING" | "SPELL" | "BUFF" | "BUILD" | "ITEM" | "MECHANIC";
   name: string;
   location?: string;
   upgrade?: string;

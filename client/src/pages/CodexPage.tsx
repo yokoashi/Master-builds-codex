@@ -68,6 +68,25 @@ export default function CodexPage() {
     },
   });
 
+  const learnMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<{ total: number; breakdown: Record<string, number> }>("POST", "/api/learn", {
+        gameKey: selectedGameKey,
+        gameName: currentGame?.name ?? selectedGameKey,
+      }),
+    onMutate: () => setUpdateStatus("🔵 sonar-deep-research learning item database (14 categories)..."),
+    onSuccess: (data: { total: number; breakdown: Record<string, number> }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${selectedGameKey}`] });
+      const bd = Object.entries(data.breakdown).map(([k, v]) => `${k}:${v}`).join(" ");
+      setUpdateStatus(`✓ Learned ${data.total} items — ${bd}`);
+      setTimeout(() => setUpdateStatus(null), 12000);
+    },
+    onError: (err: Error) => {
+      setUpdateStatus(`✗ Learn failed: ${err.message}`);
+      setTimeout(() => setUpdateStatus(null), 6000);
+    },
+  });
+
   const updateMutation = useMutation({
     mutationFn: () =>
       apiRequest<{ patchVersion: string; count: number }>("POST", "/api/update", {
@@ -252,9 +271,19 @@ export default function CodexPage() {
             + Add Build
           </button>
           <button
+            data-testid="btn-learn"
+            onClick={() => learnMutation.mutate()}
+            disabled={learnMutation.isPending || updateMutation.isPending}
+            className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5 disabled:opacity-50"
+            style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+            title="Build a full item database (14 categories: weapons, shields, armor, spells, buffs, rings)"
+          >
+            🎓 Learn
+          </button>
+          <button
             data-testid="btn-update"
             onClick={() => updateMutation.mutate()}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || learnMutation.isPending}
             className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5 disabled:opacity-50"
             style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
           >

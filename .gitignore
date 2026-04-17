@@ -10,3 +10,4 @@ logs/
 releases/
 *.ico
 config.json
+codex-electron/release/

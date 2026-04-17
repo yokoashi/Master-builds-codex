@@ -1,11 +1,14 @@
 import type { Express } from "express";
 import type { Server } from "http";
+import { readFileSync, writeFileSync } from "fs";
+import { resolve } from "path";
 import Perplexity from "@perplexity-ai/perplexity_ai";
 import { storage } from "./storage";
 import {
   extractFactsFromBuild,
   updateKnowledgeCache,
   buildKnowledgeBlock,
+  parseLearnLines,
 } from "./knowledge";
 import { parseJsonResponse } from "./parse-json";
 import { SEED_GAMES, SEED_BUILDS } from "@shared/seed-data";
@@ -24,10 +27,12 @@ const pplx = new Perplexity({
 });
 
 // Model selection:
-// sonar-pro       — 200K context, built-in web search, best for factual generation
+// sonar-pro           — 200K context, built-in web search, best for factual generation
 // sonar-reasoning-pro — 128K context, Chain-of-Thought reasoning (replaces Claude extended thinking)
+// sonar-deep-research — runs 20-40 internal searches; best for exhaustive item databases
 const SONAR_PRO = "sonar-pro";
 const SONAR_REASONING = "sonar-reasoning-pro";
+const SONAR_DEEP = "sonar-deep-research";
 
 // ── Helper: extract text from Perplexity non-streaming response ──────────────
 // The SDK's create() return type union is overly broad; we know stream:false gives us
@@ -732,6 +737,152 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
     } catch (err) {
       res.status(500).json({ error: friendlyPplxError(err) });
     }
+  });
+
+  // ── POST /api/learn — full 14-category knowledge database build ─────────────
+  // Uses sonar-deep-research (20-40 internal searches per category) to build a
+  // comprehensive item database: 8 distinct categories including SHIELD, CATALYST, BUFF.
+  // Researcher → Synthesizer: deep-research gathers, sonar-reasoning-pro validates.
+  app.post("/api/learn", async (req, res) => {
+    try {
+      const { gameKey, gameName } = req.body as { gameKey: string; gameName: string };
+      if (!gameKey || !gameName) return res.status(400).json({ error: "gameKey and gameName required" });
+
+      const RULES = `\nRules:\n- EXHAUSTIVE — every item in ${gameName} including rare, DLC, NG+-exclusive\n- Exact in-game names only\n- loc: specific zone + NPC/boss/chest — never "Various", "Exploration", "N/A"\n- ALL numeric values required (AP, weight, damage, scaling, buildup)\n- Output ONLY item lines in exact format — no headers, no markdown`;
+
+      const WPN = `WEAPON Name — [weapon type]; AP: ~N (+0) → ~N (+max); scaling: [grade STAT at max]; status: [N buildup (+0) → N (+max) or "none"]; weight: ~N — loc: [zone + source] — stat: [requirements; upgrade mat]`;
+      const SHD = `SHIELD Name — [type: small/medium/great/parrying]; stability: N (+0) → N (max); guard boost: N%; block: N% physical / N% elemental; weight: ~N — loc: [zone + source] — stat: [requirements; upgrade mat]`;
+      const CAT = `CATALYST Name — [type: staff/seal/wand]; spell buff: ~N (+0) → ~N (max); scaling: [STAT grade]; weight: ~N — loc: [zone + source] — stat: [INT/FTH/ARC required]`;
+      const ARM = `ARMOR Name — [piece: helm/chest/gauntlets/leggings]; set: [set name]; weight: ~N; physical def: ~N; elemental def: ~N fire / ~N lightning / ~N magic / ~N holy; poise: ~N — loc: [zone + source]`;
+      const RNG = `RING/ACC Name — [precise effect WITH NUMBERS: "+15% Bleed dmg", "+60 buildup/hit", "+20 Stamina"] — loc: [zone + source]`;
+      const SPL = `SPELL Name — [school]; damage: ~N per cast; effect: [precise]; FP: N — loc: [NPC + zone] — stat: [N STAT required; scales with STAT]`;
+      const BUF = `BUFF Name — [school]; effect: [WITH NUMBERS: "+15% dmg 60s", "heals 300 HP"]; duration: Ns; FP: N — loc: [NPC + zone] — stat: [N STAT required]`;
+
+      const categories = [
+        { name: "physical & quality weapons", prompt: `Search ${gameName} wiki. List EVERY physical weapon: swords, greatswords, daggers, axes, hammers, maces, clubs, fists. One line per weapon:\n${WPN}${RULES}` },
+        { name: "colossal & ultra-great weapons", prompt: `Search ${gameName} wiki. List EVERY colossal weapon, ultra-greatsword, great hammer, colossal axe. One line per weapon:\n${WPN}${RULES}` },
+        { name: "polearms, halberds, spears & ranged", prompt: `Search ${gameName} wiki. List EVERY polearm, halberd, spear, lance, whip, bow, crossbow, greatbow. One line per weapon:\n${WPN}${RULES}` },
+        { name: "status & elemental weapons", prompt: `Search ${gameName} wiki. List EVERY weapon with status/elemental: Bleed, Poison, Frost, Fire, Lightning, Holy, Scarlet Rot, Madness. Start each line with WEAPON:\n${WPN}\nCRITICAL: status field must show buildup at +0 AND max upgrade.${RULES}` },
+        { name: "catalysts, staves & seals — start each line with CATALYST", prompt: `Search ${gameName} wiki. List EVERY casting tool: staves, seals, wands, catalysts, foci. CRITICAL: each line MUST start with CATALYST (not WEAPON):\n${CAT}${RULES}` },
+        { name: "shields & offhand — start each line with SHIELD", prompt: `Search ${gameName} wiki. List EVERY shield: small, medium, greatshield, parrying, torch, lantern. CRITICAL: each line MUST start with SHIELD (not WEAPON):\n${SHD}${RULES}` },
+        { name: "light & medium armor — start each line with ARMOR", prompt: `Search ${gameName} wiki. List EVERY light and medium armor piece (helm/chest/gauntlets/leggings for every set). CRITICAL: each line MUST start with ARMOR:\n${ARM}${RULES}` },
+        { name: "heavy, boss & special armor — start each line with ARMOR", prompt: `Search ${gameName} wiki. List EVERY heavy armor, boss armor set, unique armor, DLC armor. CRITICAL: each line MUST start with ARMOR. loc field must say exactly how to obtain:\n${ARM}${RULES}` },
+        { name: "unique missable & NG+ armor — start each line with ARMOR", prompt: `Search ${gameName} wiki. List EVERY missable, questline, covenant, or NG+-exclusive armor. loc field is critical — be specific about HOW to obtain. Start each line with ARMOR:\n${ARM}${RULES}` },
+        { name: "rings, talismans & accessories", prompt: `Search ${gameName} wiki. List EVERY ring, talisman, amulet, charm, accessory. Effects MUST have specific numbers. Start each line with RING/ACC:\n${RNG}${RULES}` },
+        { name: "offensive spells — start each line with SPELL", prompt: `Search ${gameName} wiki. List EVERY offensive spell/sorcery/incantation/pyromancy. CRITICAL: each line MUST start with SPELL. Damage must be real numbers:\n${SPL}${RULES}` },
+        { name: "support & buff spells — start each line with BUFF", prompt: `Search ${gameName} wiki. List EVERY buff/heal/support/utility spell. CRITICAL: each line MUST start with BUFF (not SPELL). Effect magnitudes must be numbers:\n${BUF}${RULES}` },
+        { name: "endgame, final bosses & NG+", prompt: `Search ${gameName} wiki for final bosses and their drops, NG+ cycle changes, NG+-exclusive items, recommended stats per NG+ tier. For boss/NG+ output:\nBUILD [Name] — [drops/unlocks]; rec level: ~N; key stats: [VIG N / STR N] — loc: [area or NG+N]${RULES}` },
+        { name: "unique legendary & boss weapons", prompt: `Search ${gameName} wiki. List EVERY unique/legendary weapon, boss weapon, remembrance weapon. Note "unique/uninfusable" in type. loc MUST say exactly HOW to obtain:\n${WPN}${RULES}` },
+      ];
+
+      const allFacts: import("@shared/types").KnowledgeFact[] = [];
+      const categoryResults: { name: string; count: number }[] = [];
+
+      // Run categories in parallel batches of 3
+      const CONCURRENT = 3;
+      for (let i = 0; i < categories.length; i += CONCURRENT) {
+        const batch = categories.slice(i, i + CONCURRENT);
+        const results = await Promise.allSettled(
+          batch.map((cat) =>
+            pplx.chat.completions.create({
+              model: SONAR_DEEP,
+              stream: false as const,
+              max_tokens: 8000,
+              messages: [{ role: "user", content: cat.prompt }],
+            })
+          )
+        );
+        for (let j = 0; j < results.length; j++) {
+          const r = results[j];
+          if (r.status === "fulfilled") {
+            const text = extractText(r.value as PplxResponse);
+            const facts = parseLearnLines(text, gameKey, gameName);
+            allFacts.push(...facts);
+            categoryResults.push({ name: batch[j].name, count: facts.length });
+          } else {
+            categoryResults.push({ name: batch[j].name, count: 0 });
+          }
+        }
+      }
+
+      // Synthesis pass: sonar-reasoning-pro deduplicates and validates
+      let finalFacts = allFacts;
+      if (allFacts.length > 0) {
+        try {
+          const rawLines = allFacts.map((f) => f.raw).join("\n").slice(0, 40000);
+          const synthPrompt = `You are validating a ${gameName} item database. 14 categories were searched. Here is the raw data.
+
+Tasks:
+1. REMOVE duplicates (same item twice — keep version with more numbers)
+2. REMOVE lines with vague placeholders like "AP: ~N" or "damage: varies"
+3. VERIFY prefixes: WEAPON/SHIELD/CATALYST/ARMOR/RING\/ACC/SPELL/BUFF/BUILD
+   - Shields MUST stay SHIELD (not WEAPON)
+   - Casting tools MUST stay CATALYST (not WEAPON)
+   - Support spells MUST stay BUFF (not SPELL)
+4. Output ONLY cleaned item lines, one per line. No commentary.
+
+Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(", ")}
+
+Raw data:
+${rawLines}`;
+
+          const synthResp = await pplx.chat.completions.create({
+            model: SONAR_REASONING,
+            stream: false as const,
+            max_tokens: 12000,
+            messages: [{ role: "user", content: synthPrompt }],
+          });
+          const synthText = extractText(synthResp as PplxResponse);
+          const synthFacts = parseLearnLines(synthText, gameKey, gameName);
+          if (synthFacts.length >= allFacts.length * 0.35) {
+            finalFacts = synthFacts;
+          }
+        } catch {
+          // non-fatal — use raw facts
+        }
+      }
+
+      if (finalFacts.length > 0) {
+        updateKnowledgeCache(gameKey, gameName, finalFacts);
+      }
+
+      // Count by category for response
+      const breakdown: Record<string, number> = {};
+      for (const f of finalFacts) {
+        breakdown[f.type] = (breakdown[f.type] ?? 0) + 1;
+      }
+
+      return res.json({
+        ok: true,
+        total: finalFacts.length,
+        breakdown,
+        categories: categoryResults,
+      });
+    } catch (err) {
+      res.status(500).json({ error: friendlyPplxError(err) });
+    }
+  });
+
+  // ── GET/POST /api/team-log — AI inter-agent communication channel ────────────
+  // Claude writes summaries; Perplexity reads them as context for next search session.
+  const teamLogPath = resolve("team-log.json");
+
+  app.get("/api/team-log", (_req, res) => {
+    try {
+      const entries = JSON.parse(readFileSync(teamLogPath, "utf8"));
+      res.json({ ok: true, entries });
+    } catch { res.json({ ok: true, entries: [] }); }
+  });
+
+  app.post("/api/team-log", (req, res) => {
+    try {
+      const { from, message, type = "info" } = req.body as { from: string; message: string; type?: string };
+      let entries: unknown[] = [];
+      try { entries = JSON.parse(readFileSync(teamLogPath, "utf8")); } catch { entries = []; }
+      entries = [...entries, { from, message, type, ts: Date.now() }].slice(-80);
+      writeFileSync(teamLogPath, JSON.stringify(entries, null, 2));
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: String(e) }); }
   });
 
   // ── POST /api/export — export all builds as JSON ──────────────────────────
