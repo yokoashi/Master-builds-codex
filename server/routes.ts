@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import type { Server } from "http";
+import { EventEmitter } from "events";
 import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import Perplexity from "@perplexity-ai/perplexity_ai";
@@ -33,6 +34,19 @@ const pplx = new Perplexity({
 // sonar-deep-research — runs 20-40 internal searches; best for exhaustive item databases
 const SONAR_PRO = "sonar-pro";
 const SONAR_REASONING = "sonar-reasoning-pro";
+
+// ── Learn progress broadcaster ───────────────────────────────────────────────
+// Emits {gameKey, stage, detail, done} events that the SSE endpoint forwards
+// to any connected client listeners.
+export interface LearnProgressEvent {
+  gameKey: string;
+  stage: string;   // short label shown in the UI
+  detail?: string; // optional extra info (e.g. category name)
+  done?: boolean;  // signals the stream can close
+  error?: string;
+}
+const learnEmitter = new EventEmitter();
+learnEmitter.setMaxListeners(20);
 const SONAR_DEEP = "sonar-deep-research";
 
 // ── Helper: extract text from Perplexity non-streaming response ──────────────
@@ -787,6 +801,35 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
   // Pre-pass: wiki-fetch.ts discovers real sources (Trello, Fextralife, Fandom) and
   // seeds the cache with verified names BEFORE the AI category queries run.
   // Researcher → Synthesizer: deep-research gathers, sonar-reasoning-pro validates.
+  // ── GET /api/learn/progress — SSE stream for learn progress events ─────────
+  app.get("/api/learn/progress", (req, res) => {
+    const gameKey = (req.query.gameKey as string) ?? "";
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    // Send a heartbeat every 15s so the connection stays alive
+    const hb = setInterval(() => res.write(": heartbeat\n\n"), 15000);
+
+    const handler = (ev: LearnProgressEvent) => {
+      if (ev.gameKey !== gameKey) return;
+      res.write(`data: ${JSON.stringify(ev)}\n\n`);
+      if (ev.done || ev.error) {
+        clearInterval(hb);
+        res.end();
+        learnEmitter.off("progress", handler);
+      }
+    };
+    learnEmitter.on("progress", handler);
+
+    req.on("close", () => {
+      clearInterval(hb);
+      learnEmitter.off("progress", handler);
+    });
+  });
+
   app.post("/api/learn", async (req, res) => {
     try {
       const { gameKey, gameName, hintUrl } = req.body as {
@@ -796,6 +839,9 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
         hintUrl?: string;
       };
       if (!gameKey || !gameName) return res.status(400).json({ error: "gameKey and gameName required" });
+
+      const emit = (stage: string, detail?: string) =>
+        learnEmitter.emit("progress", { gameKey, stage, detail } satisfies LearnProgressEvent);
 
       // ── Wiki pre-pass — run before AI queries ─────────────────────────────
       // Discovers real item sources (Trello, Fextralife, Fandom, etc.) and seeds
@@ -810,14 +856,19 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
       }
       if (existingCount < 50 || hintUrl) {
         try {
+          emit("Wiki pre-pass", `Finding real item sources for ${gameName}...`);
           const prePass = await fetchWikiPrePass(gameName, gameKey, pplx, hintUrl);
           if (prePass.facts.length > 0) {
             updateKnowledgeCache(gameKey, gameName, prePass.facts, `Wiki pre-pass — ${prePass.facts.length} items`);
             preFacts = prePass.facts.length;
             preSources = prePass.sourcesUsed;
+            emit("Wiki pre-pass done", `${preFacts} items from ${prePass.sourcesUsed.length} source(s)`);
+          } else {
+            emit("Wiki pre-pass done", "No structured sources found — continuing with AI");
           }
         } catch {
           // Pre-pass is non-fatal — AI queries continue regardless
+          emit("Wiki pre-pass skipped", "Error during pre-pass — continuing with AI");
         }
       }
 
@@ -853,8 +904,14 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
 
       // Run categories in parallel batches of 3
       const CONCURRENT = 3;
+      const totalBatches = Math.ceil(categories.length / CONCURRENT);
       for (let i = 0; i < categories.length; i += CONCURRENT) {
         const batch = categories.slice(i, i + CONCURRENT);
+        const batchNum = Math.floor(i / CONCURRENT) + 1;
+        emit(
+          `Batch ${batchNum}/${totalBatches}`,
+          batch.map((c) => c.name).join(" · ")
+        );
         const results = await Promise.allSettled(
           batch.map((cat) =>
             pplx.chat.completions.create({
@@ -876,8 +933,13 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
             categoryResults.push({ name: batch[j].name, count: 0 });
           }
         }
+        emit(
+          `Batch ${batchNum}/${totalBatches} done`,
+          `${allFacts.length} facts so far`
+        );
       }
 
+      emit("Synthesis pass", `Deduplicating & validating ${allFacts.length} facts...`);
       // Synthesis pass: sonar-reasoning-pro deduplicates and validates
       let finalFacts = allFacts;
       if (allFacts.length > 0) {
@@ -919,6 +981,13 @@ ${rawLines}`;
         updateKnowledgeCache(gameKey, gameName, finalFacts);
       }
 
+      learnEmitter.emit("progress", {
+        gameKey,
+        stage: "Complete",
+        detail: `${finalFacts.length} facts cached`,
+        done: true,
+      } satisfies LearnProgressEvent);
+
       // Count by category for response
       const breakdown: Record<string, number> = {};
       for (const f of finalFacts) {
@@ -935,7 +1004,15 @@ ${rawLines}`;
         preSources,
       });
     } catch (err) {
-      res.status(500).json({ error: friendlyPplxError(err) });
+      const msg = friendlyPplxError(err);
+      learnEmitter.emit("progress", {
+        gameKey: (req.body as { gameKey?: string })?.gameKey ?? "",
+        stage: "Error",
+        detail: msg,
+        done: true,
+        error: msg,
+      } satisfies LearnProgressEvent);
+      res.status(500).json({ error: msg });
     }
   });
 

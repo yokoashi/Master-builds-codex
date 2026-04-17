@@ -12,6 +12,7 @@ import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 import KnowledgeViewer from "@/components/KnowledgeViewer";
+import LearnProgress from "@/components/LearnProgress";
 
 const TABS = ["Your Build", "Materials", "Similar", "Other OP", "Quick Ref"] as const;
 type Tab = typeof TABS[number];
@@ -27,6 +28,7 @@ export default function CodexPage() {
   const [learnHintUrl, setLearnHintUrl] = useState("");
   const [showLearnInput, setShowLearnInput] = useState(false);
   const [showKnowledge, setShowKnowledge] = useState(false);
+  const [showLearnProgress, setShowLearnProgress] = useState(false);
 
   const { data: games = [] } = useQuery<Game[]>({
     queryKey: ["/api/games"],
@@ -84,7 +86,8 @@ export default function CodexPage() {
       }),
     onMutate: () => {
       setShowLearnInput(false);
-      setUpdateStatus("🔵 Wiki pre-pass running...");
+      setShowLearnProgress(true);
+      setUpdateStatus(null);
     },
     onSuccess: (data: {
       total: number;
@@ -436,6 +439,21 @@ export default function CodexPage() {
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-4">
+            {/* Learn progress panel — shown while learn is running */}
+            {showLearnProgress && currentGame && (
+              <div className="mb-4">
+                <LearnProgress
+                  gameKey={selectedGameKey}
+                  gameName={currentGame.name}
+                  accent={accent}
+                  onDone={() => {
+                    setShowLearnProgress(false);
+                    queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${selectedGameKey}`] });
+                  }}
+                />
+              </div>
+            )}
+
             {currentBuild && currentGame ? (
               <div role="tabpanel">
                 {activeTab === "Your Build" && (
