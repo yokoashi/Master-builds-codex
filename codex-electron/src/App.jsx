@@ -1440,15 +1440,17 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
     // Item-related path keywords — used to filter discovered links worth crawling
     const ITEM_PATH_RE=/\/(weapon|armor|ring|spell|staff|shield|bow|talisman|accessory|catalyst|incantation|sorcery|pyromancy|ash[\-_]of[\-_]war|equip|gear|item)/i;
     const MAX_AUTO_LINKS=12; // extra pages discovered by link-following
+    const BATCH_SIZE=5;       // pages per AI call for bulk imports
     // Mutable queue: starts with explicit URLs, grows as we discover item links
     const urlQueue=[...explicitUrls];
     const explicitSet=new Set(explicitUrls);
     const visited=new Set();
+    const queued=new Set(explicitUrls); // O(1) dedup for urlQueue additions
     let autoCount=0;
     // Helper: convert raw HTML to readable plain text while preserving stat data.
     // Extracts img alt text, title/data-* attributes, table structure, and section
     // headings before stripping — otherwise armor defense grids are unreadable.
-    const htmlToText=(rawHtml)=>{
+    const htmlToText=(rawHtml,maxLen=56000)=>{
       let w=rawHtml
         .replace(/<script[\s\S]*?<\/script>/gi,"")
         .replace(/<style[\s\S]*?<\/style>/gi,"");
@@ -1507,7 +1509,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
         .replace(/\n[ \t]+/g,"\n")
         .replace(/\n{3,}/g,"\n\n")
         .trim()
-        .slice(0,56000);
+        .slice(0,maxLen);
     };
     // Helper: parse AI fact lines
     const parseFactLines=(raw)=>{
@@ -1519,74 +1521,40 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       }).filter(Boolean);
       return[...lines,...flex];
     };
-    let qi=0;
-    while(qi<urlQueue.length){
-      const url=urlQueue[qi++];
-      if(visited.has(url)){continue;}
-      visited.add(url);
-      const isAuto=!explicitSet.has(url);
-      const pageNum=visited.size;
-      const totalPages=urlQueue.length;
-      setUpdateMsg(`📥 Page ${pageNum}/${totalPages}${isAuto?" (auto)":""} — fetching...`);
-      try{
-        let rawHtml="";
-        if(window.electronAPI?.fetchUrl){
-          const r=await window.electronAPI.fetchUrl(url);
-          if(r.error)throw new Error(r.error);
-          rawHtml=r.html||"";
-        }else{
-          const r=await fetch(url);
-          if(!r.ok)throw new Error(`HTTP ${r.status}`);
-          rawHtml=await r.text();
-        }
-        // Discover intra-wiki item links on explicitly-entered pages (not auto pages, to avoid snowball)
-        if(explicitSet.has(url)&&autoCount<MAX_AUTO_LINKS){
-          try{
-            const baseHost=new URL(url).hostname;
-            const hrefRe=/href=["']([^"'#][^"']*?)["']/g;
-            let m;
-            while((m=hrefRe.exec(rawHtml))!==null&&autoCount<MAX_AUTO_LINKS){
-              try{
-                const abs=new URL(m[1],url).href;
-                if(new URL(abs).hostname!==baseHost)continue;
-                if(visited.has(abs)||urlQueue.includes(abs))continue;
-                if(ITEM_PATH_RE.test(new URL(abs).pathname)){
-                  urlQueue.push(abs);
-                  autoCount++;
-                }
-              }catch(_){}
-            }
-            if(autoCount>0)setUpdateMsg(`📥 Found ${autoCount} item pages — crawling...`);
-          }catch(_){}
-        }
-        const plainText=htmlToText(rawHtml);
-        if(plainText.length<50){errors++;setUpdateMsg(`⚠ Page ${pageNum} — no content, skipping`);await new Promise(r=>setTimeout(r,900));continue;}
-        setUpdateMsg(`📥 Page ${pageNum}/${urlQueue.length}${isAuto?" (auto)":""} — extracting items...`);
-        const prompt=`You are extracting item data from a ${gameName} wiki page. Output one ARMOR or WEAPON or RING/ACC or SPELL line per item — every piece on the page gets its own line.
-
+    // Shared extraction prompt builder (used for both single and batch modes)
+    const buildExtractionPrompt=(gameName,combinedContent,isBatch)=>`You are extracting item data from ${isBatch?"multiple":"a"} ${gameName} wiki page${isBatch?"s":""}. Output one line per item.
+${isBatch?`Each page is separated by === Page Name === markers. Extract ALL items from ALL pages.\n`:""}
 HOW TO READ THIS CONTENT:
 • Section headings appear as  ## Item Name ##  — everything after a heading belongs to that item until the next heading
 • Table rows are formatted as:  │ col1 · col2 · col3 · │
 • Image alt text appears in [brackets] — [Physical], [Smite], [Heavy Head] etc.
-• Stat icons and their values appear next to each other — "[Physical] 91" means Physical Defense = 91
+
+WEAPON UPGRADE TABLES — READ THIS CAREFULLY:
+Fextralife weapon pages show upgrade progression as a table where:
+- ROWS = stat types (Physical, Bleed, Strength Scaling, Dexterity Scaling, Radiance Scaling, etc.)
+- COLUMNS = upgrade levels (+0, +1, +2, ... +10 or max)
+Example table:
+│ · +0 · +1 · +2 · +3 · +4 · +5 · +6 · +7 · +8 · +9 · +10 · │
+│ Physical · 150 · 165 · 182 · 199 · 219 · 240 · 264 · 290 · 319 · 350 · 385 · │
+│ Bleed · 300 · 300 · 300 · 300 · 300 · 300 · 300 · 300 · 300 · 300 · 300 · │
+│ Strength Scaling · D · D · D · C · C · C · B · B · B · A · S · │
+│ Radiance Scaling · E · E · E · E · D · D · D · C · C · B · B · │
+This means: Physical AP = 150 at +0, 385 at +10; Bleed buildup = 300 flat at all levels; Strength scaling = D→S; Radiance scaling = E→B
+Output: WEAPON Bloody Glory — Greatsword; AP: ~150 (+0) → ~385 (+10); scaling: S STR / B RAD at +10; status: 300 Bleed (flat all levels); weight: ~14 — loc: ...
 
 ARMOR STAT TABLES — READ THIS CAREFULLY:
-Armor pages (especially Fextralife) show stats in a 4-column pattern:
+Armor pages show stats in a 4-column pattern:
 │ [stat name] · [value] · [stat name] · [value] · │
 Example:
 │ Physical · 91 · Smite · 57 · │
 │ Holy · 74 · Bleed · 55 · │
-│ Fire · 32 · Burn · 22 · │
-│ Wither · 52 · Ignite · 21 · │
-│ · · Frostbite · 37 · │
-│ · · Poison · 39 · │
-This means: Physical=91, Smite=57, Holy=74, Bleed=55, Fire=32, Burn=22, Wither=52, Ignite=21, Frostbite=37, Poison=39
+This means: Physical=91, Smite=57, Holy=74, Bleed=55
 
-For every armor piece (helm, chest, gauntlets, leggings) output ONE line:
-ARMOR [Piece Name] — [slot type, e.g. Heavy Head]; weight: N; Physical: N, Holy: N, Fire: N, Wither: N (or whatever damage mitigation stats exist); Smite: N, Bleed: N, Burn: N, Ignite: N, Frostbite: N, Poison: N (or whatever resistance stats exist) — loc: [how to obtain] — stat: N/A
+For every armor piece output ONE line:
+ARMOR [Piece Name] — [slot type]; weight: N; Physical: N, Holy: N, Fire: N, Wither: N; Smite: N, Bleed: N, Burn: N, Ignite: N, Frostbite: N, Poison: N — loc: [how to obtain] — stat: N/A
 
 For WEAPON output one line:
-WEAPON [Name] — [type]; AP: ~N (+0) → ~N (+max); scaling: [grades at max]; status: [N type or none]; weight: N — loc: [location] — stat: [requirements; upgrade material]
+WEAPON [Name] — [type]; AP: ~N (+0) → ~N (+max); scaling: [grades at max upgrade e.g. S STR / B RAD]; status: [N type (flat or +0→+max) — or "none"]; weight: N — loc: [location] — stat: [requirements; upgrade material]
 
 For RING/ACC output one line:
 RING/ACC [Name] — [precise numeric effect] — loc: [location] — stat: N/A
@@ -1595,19 +1563,95 @@ For SPELL output one line:
 SPELL [Name] — [school]; damage: ~N or N buildup/cast; effect: [precise]; FP: N — loc: [NPC + zone] — stat: [requirement]
 
 RULES:
-- Output a SEPARATE line for EVERY individual armor piece — not just the set total
-- Include EVERY number visible on the page — do not omit any stat
-- Section headings (## Name ##) tell you which piece the following stats belong to
-- loc: use zone name, boss, NPC — never "Various", "Exploration", or "N/A" unless truly unknown
-- Output ONLY the item lines — no headers, no commentary, no markdown
+- Extract EVERY weapon/armor/spell/ring from EVERY page — do not skip any
+- For weapons: AP at +0 AND max upgrade are MANDATORY — read the upgrade table columns
+- For weapons with flat status (same value all upgrades): write "300 Bleed (flat)" not a range
+- Scaling grades at max upgrade are MANDATORY
+- Section headings (## Name ##) tell you which piece/item the following stats belong to
+- loc: zone name + boss/NPC/chest — never "Various", "Exploration", or "N/A" unless truly unknown
+- Output ONLY item lines — no headers, no commentary, no markdown
 
-Wiki page content:
-${plainText}`;
-        const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:6000});
-        allLines.push(...parseFactLines(rawFacts));
+${isBatch?"Pages content (separated by === markers):":"Wiki page content:"}
+${combinedContent}`;
+
+    // Fetch a single URL and return {name, text} or null
+    const fetchPage=async(url,pageIdx,totalKnown)=>{
+      if(visited.has(url))return null;
+      visited.add(url);
+      const isAuto=!explicitSet.has(url);
+      setUpdateMsg(`📥 Fetching ${pageIdx+1}/${totalKnown}${isAuto?" (auto)":""} — ${url.split("/").pop()}...`);
+      let rawHtml="";
+      if(window.electronAPI?.fetchUrl){
+        const r=await window.electronAPI.fetchUrl(url);
+        if(r.error)throw new Error(r.error);
+        rawHtml=r.html||"";
+      }else{
+        const r=await fetch(url);
+        if(!r.ok)throw new Error(`HTTP ${r.status}`);
+        rawHtml=await r.text();
+      }
+      // Discover intra-wiki item links on explicitly-entered pages (not auto, to avoid snowball)
+      if(explicitSet.has(url)&&autoCount<MAX_AUTO_LINKS){
+        try{
+          const baseHost=new URL(url).hostname;
+          const hrefRe=/href=["']([^"'#][^"']*?)["']/g;
+          let m;
+          while((m=hrefRe.exec(rawHtml))!==null&&autoCount<MAX_AUTO_LINKS){
+            try{
+              const abs=new URL(m[1],url).href;
+              if(new URL(abs).hostname!==baseHost)continue;
+              if(visited.has(abs)||queued.has(abs))continue;
+              if(ITEM_PATH_RE.test(new URL(abs).pathname)){
+                urlQueue.push(abs);queued.add(abs);autoCount++;
+              }
+            }catch(_){}
+          }
+        }catch(_){}
+      }
+      const pageName=decodeURIComponent(url.split("/").pop().replace(/[_+]/g," "));
+      // Use smaller per-page limit when batching so combined content fits in context
+      const isBulk=explicitUrls.length>1;
+      const text=htmlToText(rawHtml,isBulk?14000:56000);
+      return text.length>=50?{name:pageName,text}:null;
+    };
+
+    // Process pages in batches of BATCH_SIZE
+    let qi=0;
+    let batchNum=0;
+    while(qi<urlQueue.length){
+      // Collect a batch
+      const batchPages=[];
+      while(batchPages.length<BATCH_SIZE&&qi<urlQueue.length){
+        const url=urlQueue[qi++];
+        if(visited.has(url))continue;
+        try{
+          const page=await fetchPage(url,qi-1,urlQueue.length);
+          if(page)batchPages.push(page);
+        }catch(e){
+          errors++;
+          setUpdateMsg(`⚠ Fetch error — ${(e.message||"error").slice(0,80)}, skipping`);
+          await new Promise(r=>setTimeout(r,1000));
+        }
+      }
+      if(batchPages.length===0)continue;
+      batchNum++;
+      const isBatch=batchPages.length>1;
+      const combinedContent=isBatch
+        ?batchPages.map(p=>`=== ${p.name} ===\n${p.text}`).join("\n\n")
+        :batchPages[0].text;
+      const batchLabel=isBatch
+        ?`batch ${batchNum} (${batchPages.length} pages)`
+        :`page: ${batchPages[0].name}`;
+      setUpdateMsg(`🤖 Extracting ${batchLabel} — ${allLines.length} items so far...`);
+      try{
+        const prompt=buildExtractionPrompt(gameName,combinedContent,isBatch);
+        const rawFacts=await apiCall(prompt,false,{prov:coreKey,rawText:true,maxTokens:8000});
+        const parsed=parseFactLines(rawFacts);
+        allLines.push(...parsed);
+        setUpdateMsg(`✓ ${batchLabel} → ${parsed.length} items (total: ${allLines.length})`);
       }catch(e){
         errors++;
-        setUpdateMsg(`⚠ Page ${pageNum} — ${(e.message||"error").slice(0,80)}, skipping`);
+        setUpdateMsg(`⚠ AI error on ${batchLabel} — ${(e.message||"error").slice(0,80)}, skipping`);
         await new Promise(r=>setTimeout(r,1500));
       }
     }
