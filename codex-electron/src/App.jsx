@@ -956,14 +956,26 @@ export default function App(){
     let body,rawText;
 
     if(tProv==="claude"){
-      body={model:PROVIDERS.claude.model,max_tokens:opts.maxTokens||6000,messages:[{role:"user",content:prompt}]};
-      if(useSearch)body.tools=[{type:"web_search_20250305",name:"web_search"}];
+      body={model:PROVIDERS.claude.model,max_tokens:opts.maxTokens||6000,
+        system:opts.rawText
+          ?"You are a game research assistant. Search for and provide accurate, concise, up-to-date information. Be specific with item names, locations, and stats."
+          :"You are an expert soulslike build theorycrafter. Output ONLY a single valid JSON object — no preamble, no markdown, no commentary, no tool calls. Start your response with { and end with }.",
+        messages:[{role:"user",content:prompt}]};
+      // Only enable web_search for rawText (research) calls. JSON generation calls must NOT
+      // use tools — Claude outputs a tool_use block instead of JSON and we cannot handle
+      // the multi-turn tool-result loop here.
+      if(useSearch&&opts.rawText)body.tools=[{type:"web_search_20250305",name:"web_search"}];
       let data;
       if(window.electronAPI){data=await window.electronAPI.callAI("claude",body,curKey);}
       else{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":curKey,"anthropic-version":"2023-06-01"},body:JSON.stringify(body)});data=await r.json();}
       if(data.error)throw new Error(data.error.message||"Claude API error");
       const blocks=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text);
-      if(blocks.length===0)throw new Error("No text in Claude response");
+      if(blocks.length===0){
+        // stop_reason=tool_use means Claude tried to search but we didn't provide tool results
+        const sr=data.stop_reason||"";
+        if(sr==="tool_use")throw new Error("Claude tried to use a search tool but this step requires direct JSON output. Try generating without a reference URL, or switch the Core provider to Perplexity.");
+        throw new Error("No text in Claude response");
+      }
       rawText=blocks.join("\n");
     } else {
       // OpenAI-compatible: Perplexity, OpenAI, Gemini, Groq
