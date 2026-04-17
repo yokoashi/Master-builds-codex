@@ -23,6 +23,8 @@ export default function CodexPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [deletePending, setDeletePending] = useState<Build | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [learnHintUrl, setLearnHintUrl] = useState("");
+  const [showLearnInput, setShowLearnInput] = useState(false);
 
   const { data: games = [] } = useQuery<Game[]>({
     queryKey: ["/api/games"],
@@ -70,16 +72,31 @@ export default function CodexPage() {
 
   const learnMutation = useMutation({
     mutationFn: () =>
-      apiRequest<{ total: number; breakdown: Record<string, number> }>("POST", "/api/learn", {
+      apiRequest<{
+        total: number;
+        breakdown: Record<string, number>;
+        preFacts?: number;
+        preSources?: string[];
+      }>("POST", "/api/learn", {
         gameKey: selectedGameKey,
         gameName: currentGame?.name ?? selectedGameKey,
+        ...(learnHintUrl.trim() ? { hintUrl: learnHintUrl.trim() } : {}),
       }),
-    onMutate: () => setUpdateStatus("🔵 sonar-deep-research learning item database (14 categories)..."),
-    onSuccess: (data: { total: number; breakdown: Record<string, number> }) => {
+    onMutate: () => {
+      setShowLearnInput(false);
+      setUpdateStatus("🔵 Wiki pre-pass running (finding real item sources)...");
+    },
+    onSuccess: (data: {
+      total: number;
+      breakdown: Record<string, number>;
+      preFacts?: number;
+      preSources?: string[];
+    }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${selectedGameKey}`] });
       const bd = Object.entries(data.breakdown).map(([k, v]) => `${k}:${v}`).join(" ");
-      setUpdateStatus(`✓ Learned ${data.total} items — ${bd}`);
-      setTimeout(() => setUpdateStatus(null), 12000);
+      const preNote = data.preFacts ? ` (+${data.preFacts} from wiki pre-pass)` : "";
+      setUpdateStatus(`✓ Learned ${data.total} items${preNote} — ${bd}`);
+      setTimeout(() => setUpdateStatus(null), 14000);
     },
     onError: (err: Error) => {
       setUpdateStatus(`✗ Learn failed: ${err.message}`);
@@ -270,16 +287,51 @@ export default function CodexPage() {
           >
             + Add Build
           </button>
-          <button
-            data-testid="btn-learn"
-            onClick={() => learnMutation.mutate()}
-            disabled={learnMutation.isPending || updateMutation.isPending}
-            className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5 disabled:opacity-50"
-            style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-            title="Build a full item database (14 categories: weapons, shields, armor, spells, buffs, rings)"
-          >
-            🎓 Learn
-          </button>
+          {/* Learn button + optional hint URL input */}
+          <div className="flex flex-col gap-1">
+            <div className="flex gap-1">
+              <button
+                data-testid="btn-learn"
+                onClick={() => {
+                  if (showLearnInput) {
+                    learnMutation.mutate();
+                  } else {
+                    setShowLearnInput(true);
+                  }
+                }}
+                disabled={learnMutation.isPending || updateMutation.isPending}
+                className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5 disabled:opacity-50"
+                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+                title="Build a full item database (14 categories: weapons, shields, armor, spells, buffs, rings)"
+              >
+                🎓 {showLearnInput ? "Start Learn" : "Learn"}
+              </button>
+              {showLearnInput && (
+                <button
+                  onClick={() => { setShowLearnInput(false); setLearnHintUrl(""); }}
+                  className="px-2 py-1.5 rounded text-xs hover:bg-white/5"
+                  style={{ color: "var(--color-dim)", border: "1px solid #3a3028" }}
+                >✕</button>
+              )}
+            </div>
+            {showLearnInput && (
+              <input
+                data-testid="input-learn-hint-url"
+                type="url"
+                value={learnHintUrl}
+                onChange={(e) => setLearnHintUrl(e.target.value)}
+                placeholder="Optional: paste wiki/Trello URL (or leave blank)"
+                className="w-72 px-2 py-1 rounded text-xs"
+                style={{
+                  background: "var(--color-surface)",
+                  border: "1px solid #3a3028",
+                  color: "var(--color-text)",
+                  outline: "none",
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") learnMutation.mutate(); }}
+              />
+            )}
+          </div>
           <button
             data-testid="btn-update"
             onClick={() => updateMutation.mutate()}

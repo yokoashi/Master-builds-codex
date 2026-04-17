@@ -10,6 +10,7 @@ import {
   buildKnowledgeBlock,
   parseLearnLines,
 } from "./knowledge";
+import { fetchWikiPrePass } from "./wiki-fetch";
 import { parseJsonResponse } from "./parse-json";
 import { SEED_GAMES, SEED_BUILDS } from "@shared/seed-data";
 import type {
@@ -770,11 +771,42 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
   // ── POST /api/learn — full 14-category knowledge database build ─────────────
   // Uses sonar-deep-research (20-40 internal searches per category) to build a
   // comprehensive item database: 8 distinct categories including SHIELD, CATALYST, BUFF.
+  // Pre-pass: wiki-fetch.ts discovers real sources (Trello, Fextralife, Fandom) and
+  // seeds the cache with verified names BEFORE the AI category queries run.
   // Researcher → Synthesizer: deep-research gathers, sonar-reasoning-pro validates.
   app.post("/api/learn", async (req, res) => {
     try {
-      const { gameKey, gameName } = req.body as { gameKey: string; gameName: string };
+      const { gameKey, gameName, hintUrl } = req.body as {
+        gameKey: string;
+        gameName: string;
+        /** Optional URL supplied by user (e.g. a Trello board link) — used as priority source */
+        hintUrl?: string;
+      };
       if (!gameKey || !gameName) return res.status(400).json({ error: "gameKey and gameName required" });
+
+      // ── Wiki pre-pass — run before AI queries ─────────────────────────────
+      // Discovers real item sources (Trello, Fextralife, Fandom, etc.) and seeds
+      // the cache with verified names so the AI has a factual foundation.
+      // Skipped if the cache already has ≥50 facts (already learned or seeded).
+      let preFacts = 0;
+      let preSources: string[] = [];
+      const existingCache = storage.getKnowledgeCache(gameKey);
+      let existingCount = 0;
+      if (existingCache) {
+        try { existingCount = (JSON.parse(existingCache.facts) as unknown[]).length; } catch { /* ignore */ }
+      }
+      if (existingCount < 50 || hintUrl) {
+        try {
+          const prePass = await fetchWikiPrePass(gameName, gameKey, pplx, hintUrl);
+          if (prePass.facts.length > 0) {
+            updateKnowledgeCache(gameKey, gameName, prePass.facts, `Wiki pre-pass — ${prePass.facts.length} items`);
+            preFacts = prePass.facts.length;
+            preSources = prePass.sourcesUsed;
+          }
+        } catch {
+          // Pre-pass is non-fatal — AI queries continue regardless
+        }
+      }
 
       const RULES = `\nRules:\n- EXHAUSTIVE — every item in ${gameName} including rare, DLC, NG+-exclusive\n- Exact in-game names only\n- loc: specific zone + NPC/boss/chest — never "Various", "Exploration", "N/A"\n- ALL numeric values required (AP, weight, damage, scaling, buildup)\n- Output ONLY item lines in exact format — no headers, no markdown`;
 
@@ -885,6 +917,9 @@ ${rawLines}`;
         total: finalFacts.length,
         breakdown,
         categories: categoryResults,
+        // Pre-pass results for UI display
+        preFacts,
+        preSources,
       });
     } catch (err) {
       res.status(500).json({ error: friendlyPplxError(err) });
