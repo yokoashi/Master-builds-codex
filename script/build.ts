@@ -1,11 +1,11 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile, copyFile } from "fs/promises";
+import { rm, readFile, copyFile, mkdir } from "fs/promises";
+import path from "path";
 
-// Server deps to bundle — reduces openat(2) syscalls for faster cold start.
-// sql.js IS in the allowlist: esbuild bundles the JS portion just fine.
-// The .wasm binary is NOT a static import so esbuild won't see it — we
-// copy it manually into dist/ after the bundle step.
+// Server deps to bundle into index.cjs.
+// sql.js is NOT in this list — db.ts loads it via dynamic require() at
+// runtime so esbuild never needs to resolve it at build time.
 // drizzle-orm / drizzle-zod still needed for schema type declarations.
 const allowlist = [
   "@google/generative-ai",
@@ -25,7 +25,6 @@ const allowlist = [
   "openai",
   "passport",
   "passport-local",
-  "sql.js",
   "stripe",
   "uuid",
   "ws",
@@ -46,6 +45,9 @@ async function buildAll(electron = false) {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
+  // sql.js is NOT in the allowlist and NOT in the externals list either —
+  // it's loaded via dynamic require() in db.ts at runtime, so esbuild
+  // never sees the import at all.
   const externals = allDeps.filter((dep) => !allowlist.includes(dep));
 
   await esbuild({
@@ -62,13 +64,17 @@ async function buildAll(electron = false) {
     logLevel: "info",
   });
 
-  // sql.js loads WASM dynamically via locateFile() — esbuild never sees the
-  // .wasm import so it won't emit it automatically. Copy it next to index.cjs
-  // so __dirname/sql-wasm.wasm resolves correctly at runtime.
-  console.log("copying sql-wasm.wasm to dist/...");
+  // Copy sql.js dist files next to index.cjs so db.ts can find them via
+  // __dirname. This covers both plain Node production and dev fallback.
+  console.log("copying sql.js dist files to dist/...");
+  const sqlJsSrc = path.join("node_modules", "sql.js", "dist");
   await copyFile(
-    "node_modules/sql.js/dist/sql-wasm.wasm",
-    "dist/sql-wasm.wasm"
+    path.join(sqlJsSrc, "sql-wasm.wasm"),
+    path.join("dist", "sql-wasm.wasm")
+  );
+  await copyFile(
+    path.join(sqlJsSrc, "sql-wasm.js"),
+    path.join("dist", "sql-wasm.js")
   );
 
   if (electron) {

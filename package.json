@@ -30,11 +30,11 @@
       {
         "from": "dist",
         "to": "app/dist"
-      },
-      {
-        "from": "dist/sql-wasm.wasm",
-        "to": "sql-wasm.wasm"
       }
+    ],
+    "asarUnpack": [
+      "dist/sql-wasm.wasm",
+      "dist/sql-wasm.js"
     ],
     "win": {
       "target": [
