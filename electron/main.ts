@@ -64,19 +64,33 @@ function startServer(apiKey: string): Promise<void> {
 
     serverProcess = spawn("node", [SERVER_ENTRY], { env, stdio: "pipe" });
 
+    // Accumulate stderr so we can show the real crash reason in the dialog
+    let stderrBuf = "";
     serverProcess.stdout?.on("data", (d: Buffer) =>
       console.log("[server]", d.toString().trim())
     );
-    serverProcess.stderr?.on("data", (d: Buffer) =>
-      console.error("[server]", d.toString().trim())
-    );
+    serverProcess.stderr?.on("data", (d: Buffer) => {
+      const line = d.toString();
+      stderrBuf += line;
+      console.error("[server]", line.trim());
+    });
+
+    // If the server process dies before we connect, reject immediately
+    // with the actual crash output — don't wait the full 15 seconds.
+    serverProcess.on("exit", (code) => {
+      if (code !== 0 && code !== null) {
+        clearInterval(poll);
+        const detail = stderrBuf.trim().slice(-1500) || `Exit code ${code}`;
+        reject(new Error(`Server exited with code ${code}:\n\n${detail}`));
+      }
+    });
 
     serverProcess.on("error", (err) => {
-      dialog.showErrorBox("Server failed to start", err.message);
+      clearInterval(poll);
       reject(err);
     });
 
-    // Poll until server responds (up to 15 s)
+    // Poll until server responds (up to 30 s)
     const start = Date.now();
     const poll = setInterval(() => {
       http
@@ -86,9 +100,14 @@ function startServer(apiKey: string): Promise<void> {
           resolve();
         })
         .on("error", () => {
-          if (Date.now() - start > 15_000) {
+          if (Date.now() - start > 30_000) {
             clearInterval(poll);
-            reject(new Error("Server did not start within 15 seconds."));
+            const detail = stderrBuf.trim().slice(-1500);
+            reject(new Error(
+              `Server did not respond within 30 seconds.${
+                detail ? `\n\nServer output:\n${detail}` : ""
+              }`
+            ));
           }
         });
     }, 300);
