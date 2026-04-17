@@ -14,6 +14,7 @@ import DeleteModal from "@/components/DeleteModal";
 import KnowledgeViewer from "@/components/KnowledgeViewer";
 import LearnProgress from "@/components/LearnProgress";
 import ThemePicker from "@/components/ThemePicker";
+import SetupScreen from "@/components/SetupScreen";
 
 const TABS = ["Your Build", "Materials", "Similar", "Other OP", "Quick Ref"] as const;
 type Tab = typeof TABS[number];
@@ -31,6 +32,7 @@ export default function CodexPage() {
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [showLearnProgress, setShowLearnProgress] = useState(false);
   const [showTeamLog, setShowTeamLog] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [teamLogInput, setTeamLogInput] = useState("");
 
   const { data: games = [] } = useQuery<Game[]>({
@@ -228,6 +230,24 @@ export default function CodexPage() {
         </div>
         <div className="flex items-center gap-3 text-xs" style={{ color: "var(--color-dim2)" }}>
           <ThemePicker />
+          <button
+            onClick={() => setShowSettings(true)}
+            title="API Key Settings"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--color-dim)",
+              cursor: "pointer",
+              fontSize: "0.8rem",
+              padding: "2px 4px",
+              lineHeight: 1,
+              transition: "color 0.15s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-bright)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-dim)"; }}
+          >
+            ⚙
+          </button>
           <span style={{ color: "#2e2418" }}>│</span>
           {["File", "Edit", "View", "Window", "Help"].map((m) => (
             <span key={m} className="hover:text-white/60 cursor-default transition-colors px-0.5">{m}</span>
@@ -576,6 +596,15 @@ export default function CodexPage() {
             setSelectedBuildKey(build.key);
             setShowAddModal(false);
           }}
+        />
+      )}
+
+      {/* ── Settings Modal ──────────────────────────────────────────────────── */}
+      {showSettings && (
+        <SetupScreen
+          asModal
+          onComplete={() => setShowSettings(false)}
+          onClose={() => setShowSettings(false)}
         />
       )}
 

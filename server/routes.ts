@@ -28,10 +28,10 @@ import type {
 // Dual-AI pipeline:
 //   Perplexity — web research, real-time item data, wiki crawling
 //   Claude     — JSON structuring, extended thinking, synthesis validation
-const pplx = new Perplexity({
+let pplx = new Perplexity({
   apiKey: process.env.PERPLEXITY_API_KEY ?? "",
 });
-const claude = new Anthropic({
+let claude = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY ?? "",
 });
 
@@ -321,6 +321,65 @@ export function registerRoutes(httpServer: Server, app: Express) {
       res.json({ facts, patchNote: cache.patchNote, updatedAt: cache.updatedAt });
     } catch {
       res.json({ facts: [], patchNote: null, updatedAt: null });
+    }
+  });
+
+  // ── GET /api/config — read API key status (never returns actual key values) ──
+  app.get("/api/config", (_req, res) => {
+    const hasPerplexity = Boolean(process.env.PERPLEXITY_API_KEY);
+    const hasClaude = Boolean(process.env.CLAUDE_API_KEY);
+    // Mask key: show first 8 + last 4 chars so user can verify which key is loaded
+    function mask(k: string | undefined): string {
+      if (!k || k.length < 12) return k ? "••••••••" : "";
+      return k.slice(0, 8) + "••••••••" + k.slice(-4);
+    }
+    res.json({
+      hasPerplexity,
+      hasClaude,
+      perplexityMask: mask(process.env.PERPLEXITY_API_KEY),
+      claudeMask: mask(process.env.CLAUDE_API_KEY),
+    });
+  });
+
+  // ── POST /api/config — write keys to config.json + hot-reload env vars ───
+  app.post("/api/config", (req, res) => {
+    const { perplexityKey, claudeKey } = req.body as {
+      perplexityKey?: string;
+      claudeKey?: string;
+    };
+    const configPath = process.env.CONFIG_PATH;
+    if (!configPath) {
+      // In dev mode CONFIG_PATH isn't set — update env vars in-memory only
+      if (perplexityKey) process.env.PERPLEXITY_API_KEY = perplexityKey;
+      if (claudeKey) process.env.CLAUDE_API_KEY = claudeKey;
+      // Refresh SDK instances
+      if (perplexityKey) pplx = new Perplexity({ apiKey: perplexityKey });
+      if (claudeKey) claude = new Anthropic({ apiKey: claudeKey });
+      return res.json({ ok: true, persisted: false });
+    }
+    try {
+      const { readFileSync, writeFileSync, existsSync } = require("fs") as typeof import("fs");
+      const existing = existsSync(configPath)
+        ? JSON.parse(readFileSync(configPath, "utf-8"))
+        : {};
+      const updated = {
+        ...existing,
+        ...(perplexityKey ? { PERPLEXITY_API_KEY: perplexityKey } : {}),
+        ...(claudeKey ? { CLAUDE_API_KEY: claudeKey } : {}),
+      };
+      writeFileSync(configPath, JSON.stringify(updated, null, 2) + "\n", "utf-8");
+      // Hot-reload into current process
+      if (perplexityKey) {
+        process.env.PERPLEXITY_API_KEY = perplexityKey;
+        pplx = new Perplexity({ apiKey: perplexityKey });
+      }
+      if (claudeKey) {
+        process.env.CLAUDE_API_KEY = claudeKey;
+        claude = new Anthropic({ apiKey: claudeKey });
+      }
+      res.json({ ok: true, persisted: true });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
     }
   });
 

@@ -57,6 +57,7 @@ function startServer(apiKey: string, claudeKey = ""): Promise<void> {
       PERPLEXITY_API_KEY: apiKey,
       CLAUDE_API_KEY: claudeKey,
       DB_PATH: dbPath,
+      CONFIG_PATH: CONFIG_PATH,
     };
 
     serverProcess = spawn("node", [SERVER_ENTRY], { env, stdio: "pipe" });
@@ -147,20 +148,7 @@ app.whenReady().then(async () => {
   const apiKey = config.PERPLEXITY_API_KEY ?? process.env.PERPLEXITY_API_KEY ?? "";
 
   const claudeKey = config.CLAUDE_API_KEY ?? process.env.CLAUDE_API_KEY ?? "";
-  if (!apiKey || !claudeKey) {
-    const missing = [!apiKey && "PERPLEXITY_API_KEY", !claudeKey && "CLAUDE_API_KEY"].filter(Boolean).join(" and ");
-    const result = dialog.showMessageBoxSync({
-      type: "warning",
-      title: "API Keys Missing",
-      message:
-        `Missing: ${missing}\n\n` +
-        `Config file:\n${CONFIG_PATH}\n\n` +
-        "Paste both your Perplexity and Claude (Anthropic) API keys into that file, then relaunch.\n\n" +
-        "The app will open but AI generation won't work without both keys.",
-      buttons: ["Open Anyway", "Quit"],
-    });
-    if (result === 1) { app.quit(); return; }
-  }
+  // Keys may be empty on first launch — the in-app setup screen handles it.
 
   try {
     await startServer(apiKey, config.CLAUDE_API_KEY ?? process.env.CLAUDE_API_KEY ?? "");
