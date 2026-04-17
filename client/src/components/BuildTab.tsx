@@ -276,7 +276,7 @@ function BuildTabInner({ build, game, onDelete }: Props) {
             Total: {totalStats} / {game.endgameBudget}
           </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-1.5">
           {statEntries.map(([stat, val]) => (
             // Key includes build key + phase index so StatBar remounts on phase
             // switch and the fill animation replays from 0 each time.
@@ -297,8 +297,8 @@ function BuildTabInner({ build, game, onDelete }: Props) {
       {[
         { label: "Weapons", items: phase.weapons },
         { label: "Armor", items: phase.armor },
-        { label: "Accessories", items: phase.acc },
-        { label: "Spells / Skills", items: phase.spells },
+        { label: "Accessories / Rings", items: phase.acc },
+        { label: "Spells / Buffs", items: phase.spells },
       ].map(({ label, items }) =>
         items && items.length > 0 ? (
           <div key={label} className="mb-4">
