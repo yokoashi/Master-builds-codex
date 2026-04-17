@@ -1,8 +1,9 @@
 import type { Build, KnowledgeFact } from "@shared/types";
 import { storage } from "./storage";
 
-const MAX_FACTS = 1500; // was 200 — raised to support 8 categories × 150+ items each
-const DISPLAY_PER_CAT = 150; // show up to 150 per category (raised from 80 to surface more seed facts)
+const MAX_FACTS = 1500;       // storage cap: 8 categories × 150+ items each
+const DISPLAY_PER_CAT = 150;  // UI viewer: show up to 150 per category
+const INJECT_PER_CAT = 60;    // prompt injection cap: 60×14 cats = 840 max lines (~85K chars, safe for 200K ctx)
 const DEDUP_PREFIX_LEN = 40;
 
 const CAT_ORDER = ["WEAPON", "SHIELD", "CATALYST", "ARMOR", "RING", "SPELL", "BUFF", "BUILD", "ITEM", "MECHANIC", "GEM", "UPGRADE", "MAP", "LORE"] as const;
@@ -143,7 +144,7 @@ export function updateKnowledgeCache(
   });
 }
 
-/** Format facts as a prompt prefix block, grouped by category (80 per category) */
+/** Format facts as a prompt prefix block, grouped by category (up to DISPLAY_PER_CAT each) */
 export function buildKnowledgeBlock(gameKey: string): string {
   const cache = storage.getKnowledgeCache(gameKey);
   if (!cache) return "";
@@ -161,7 +162,7 @@ export function buildKnowledgeBlock(gameKey: string): string {
     (Date.now() - new Date(cache.updatedAt).getTime()) / 3600000
   );
 
-  // Group by type for organized injection (each category gets up to 80 entries)
+  // Group by type; inject up to INJECT_PER_CAT per category to stay within context limits
   const groups: Record<string, KnowledgeFact[]> = {};
   for (const f of facts) {
     if (!groups[f.type]) groups[f.type] = [];
@@ -173,7 +174,7 @@ export function buildKnowledgeBlock(gameKey: string): string {
   for (const cat of CAT_ORDER) {
     const items = groups[cat];
     if (!items || items.length === 0) continue;
-    const show = items.slice(-DISPLAY_PER_CAT);
+    const show = items.slice(-INJECT_PER_CAT);
     factBlock += `\n[${CAT_LABELS[cat] ?? cat}] ${show.length}/${items.length}:\n`;
     factBlock += show.map((f) => `- ${f.raw}`).join("\n") + "\n";
     totalShown += show.length;

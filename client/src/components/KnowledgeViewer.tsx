@@ -147,7 +147,7 @@ export default function KnowledgeViewer({ gameKey, gameName, accent, onClose }: 
   return (
     /* Overlay */
     <div
-      className="fixed inset-0 z-50 flex items-stretch justify-end"
+      className="absolute inset-0 z-50 flex items-stretch justify-end"
       style={{ background: "rgba(0,0,0,0.55)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
