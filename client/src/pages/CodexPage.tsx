@@ -29,6 +29,8 @@ export default function CodexPage() {
   const [showLearnInput, setShowLearnInput] = useState(false);
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [showLearnProgress, setShowLearnProgress] = useState(false);
+  const [showTeamLog, setShowTeamLog] = useState(false);
+  const [teamLogInput, setTeamLogInput] = useState("");
 
   const { data: games = [] } = useQuery<Game[]>({
     queryKey: ["/api/games"],
@@ -44,6 +46,18 @@ export default function CodexPage() {
     updatedAt: string | null;
   }>({
     queryKey: [`/api/knowledge/${selectedGameKey}`],
+  });
+
+  type TeamLogEntry = { from: string; type: string; ts: number; message: string };
+  const { data: teamLog = [], refetch: refetchTeamLog } = useQuery<TeamLogEntry[]>({
+    queryKey: ["/api/team-log"],
+    enabled: showTeamLog,
+    refetchInterval: showTeamLog ? 15000 : false,
+  });
+  const teamLogMutation = useMutation({
+    mutationFn: (message: string) =>
+      apiRequest("POST", "/api/team-log", { from: "claude", type: "message", message }),
+    onSuccess: () => { setTeamLogInput(""); refetchTeamLog(); },
   });
 
   const builds = allBuilds.filter((b) => b.gameKey === selectedGameKey);
@@ -493,7 +507,7 @@ export default function CodexPage() {
               minHeight: 32,
             }}
           >
-            <div className="flex items-center gap-1" style={{ color: "var(--color-dim)" }}>
+            <div className="flex items-center gap-2" style={{ color: "var(--color-dim)" }}>
               {knowledgeInfo && knowledgeInfo.count > 0 ? (
                 <button
                   onClick={() => setShowKnowledge(true)}
@@ -506,6 +520,15 @@ export default function CodexPage() {
               ) : (
                 <span>Ready</span>
               )}
+              <span style={{ color: "#2a3a2a" }}>|</span>
+              <button
+                onClick={() => setShowTeamLog(true)}
+                className="hover:text-white transition-colors cursor-pointer"
+                style={{ background: "none", border: "none", padding: 0, color: "#6db86d" }}
+                title="AI Team Log — Claude ↔ Perplexity communication channel"
+              >
+                📡 Team Log
+              </button>
             </div>
 
             <div className="flex items-center gap-1">
@@ -559,6 +582,89 @@ export default function CodexPage() {
           accent={accent}
           onClose={() => setShowKnowledge(false)}
         />
+      )}
+
+      {showTeamLog && (
+        <div
+          className="fixed inset-0 z-50 flex items-stretch justify-end"
+          onClick={() => setShowTeamLog(false)}
+        >
+          <div
+            className="flex flex-col h-full overflow-hidden"
+            style={{ width: 520, background: "#0b120b", borderLeft: "1px solid #1e3a1e" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+              style={{ borderBottom: "1px solid #1e3a1e" }}>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: "#6db86d" }}>📡 AI Team Log</p>
+                <p className="text-xs" style={{ color: "#3a5a3a" }}>Claude ↔ Perplexity · team-log.json · /api/team-log</p>
+              </div>
+              <button onClick={() => setShowTeamLog(false)}
+                className="px-2 py-1 rounded text-xs hover:bg-white/5"
+                style={{ color: "var(--color-dim)", border: "1px solid #2a3a2a" }}>✕</button>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col-reverse gap-2">
+              {teamLog.length === 0 && (
+                <p className="text-xs text-center py-8" style={{ color: "#3a5a3a" }}>No messages yet.</p>
+              )}
+              {[...teamLog].reverse().map((entry, i) => (
+                <div key={i} className="rounded px-3 py-2"
+                  style={{
+                    background: entry.from === "claude" ? "#0a1e2e" : "#1a0e2a",
+                    border: `1px solid ${entry.from === "claude" ? "#1a3a5a" : "#3a1a5a"}`,
+                  }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-semibold"
+                      style={{ color: entry.from === "claude" ? "#5ab8e8" : "#b85ae8" }}>
+                      {entry.from === "claude" ? "🤖 Claude" : "🔍 Perplexity"}
+                    </span>
+                    {entry.type !== "message" && (
+                      <span className="text-xs px-1 rounded" style={{ background: "#1e2e1e", color: "#6db86d" }}>
+                        {entry.type}
+                      </span>
+                    )}
+                    <span className="text-xs ml-auto" style={{ color: "#3a5a3a" }}>
+                      {new Date(entry.ts).toLocaleString()}
+                    </span>
+                  </div>
+                  <pre className="text-xs whitespace-pre-wrap break-words" style={{ color: "#c8d8c8", fontFamily: "inherit", maxHeight: 300, overflow: "auto" }}>
+                    {entry.message}
+                  </pre>
+                </div>
+              ))}
+            </div>
+
+            {/* Input */}
+            <div className="flex-shrink-0 p-3" style={{ borderTop: "1px solid #1e3a1e" }}>
+              <textarea
+                value={teamLogInput}
+                onChange={(e) => setTeamLogInput(e.target.value)}
+                placeholder="Write a message to Perplexity... (Ctrl+Enter to send)"
+                rows={3}
+                className="w-full rounded px-3 py-2 text-xs resize-none mb-2"
+                style={{ background: "#0d180d", border: "1px solid #2a4a2a", color: "#c8d8c8", outline: "none" }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && teamLogInput.trim()) {
+                    teamLogMutation.mutate(teamLogInput.trim());
+                  }
+                }}
+              />
+              <div className="flex justify-end">
+                <button
+                  onClick={() => { if (teamLogInput.trim()) teamLogMutation.mutate(teamLogInput.trim()); }}
+                  disabled={teamLogMutation.isPending || !teamLogInput.trim()}
+                  className="px-4 py-1.5 rounded text-xs font-medium disabled:opacity-50"
+                  style={{ background: "#1a3a1a", border: "1px solid #3a6a3a", color: "#6db86d" }}>
+                  Send to Team Log
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {deletePending && (
