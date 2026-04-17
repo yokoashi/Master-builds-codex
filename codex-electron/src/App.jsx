@@ -1113,20 +1113,28 @@ export default function App(){
       const cacheSize=knowledgeCache[cacheKey]?.facts?.length||0;
       const useSearchStep1=addUrl.trim().length>0||cacheSize<20||useCustomGame;
 
-      // ── Provider routing from user selection ───────────────────────────────
-      // selectedProviders is ordered: [0]=Core build, [1]=Continuation, [2]=Variants
-      // When multi-AI is OFF, all steps use the same provider as core
+      // ── Provider routing ────────────────────────────────────────────────────
+      // Implements Perplexity's recommended dual-provider pattern:
+      //   Research  → Perplexity sonar-deep-research  (grounded, cited, multi-search)
+      //   JSON gen  → Claude Sonnet                   (best structured output)
+      //   Verify    → Perplexity sonar-reasoning-pro  (chain-of-thought fact-check)
+      // Falls back to single-provider when only one key is configured or multiAI is OFF.
       const [provCore=provider, provCont2, provVars2]=selectedProviders;
       const singleProvMode=!multiAI;
-      // Step 0 Research: prefer a search-capable provider from the selection;
-      // fall back to any search-capable provider not already used for Core.
-      const researchProv=
-        selectedProviders.find(p=>p!==provCore&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable)
-        ||["perplexity"].find(p=>!selectedProviders.includes(p)&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable);
-      // Step 2 Continuation: use explicit selection if set, otherwise auto-pick (single-AI mode locks to provCore)
-      const contProv=singleProvMode?provCore:(provCont2||(["perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore));
-      // Step 3 Variants: same (single-AI mode locks to provCore)
-      const variantsProv=singleProvMode?provCore:(provVars2||(["claude","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore));
+      const hasPplxKey=!!(apiKeys.perplexity||"").trim();
+      const hasClaudeKey=!!(apiKeys.claude||"").trim();
+      // Dual mode: both keys available + multiAI ON → auto-assign optimal roles
+      const dualMode=hasPplxKey&&hasClaudeKey&&!singleProvMode;
+      // Research: always Perplexity in dual mode (sonar-deep-research = many searches)
+      const researchProv=dualMode?"perplexity":
+        (selectedProviders.find(p=>p!==provCore&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable)
+        ||["perplexity"].find(p=>!selectedProviders.includes(p)&&(apiKeys[p]||"").trim()&&PROVIDERS[p]?.searchCapable));
+      // JSON generation: always Claude in dual mode (best JSON + no tool-use conflicts)
+      const jsonProv=dualMode?"claude":provCore;
+      // Continuation and variants: Claude in dual mode, otherwise follow selection
+      const contProv=singleProvMode?provCore:dualMode?"claude":(provCont2||(["perplexity","claude"].find(p=>(apiKeys[p]||"").trim())||provCore));
+      const variantsProv=singleProvMode?provCore:dualMode?"claude":(provVars2||(["claude","perplexity"].find(p=>(apiKeys[p]||"").trim())||provCore));
+      const totalSteps=dualMode?5:4; // dual mode has an extra deep-research step label
 
       // ── Step 0: Web research — short, targeted, non-fatal ───────────────────
       // Only runs if a search-capable provider is available AND different from main
@@ -1134,8 +1142,9 @@ export default function App(){
       let researchContext="";
       if(researchProv){
         const rp=PROVIDERS[researchProv];
-        setAddStep(`${rp.icon} ${rp.label} — researching current ${gameName} meta...`);
-        setGenInfo({prov:researchProv,label:"researching current meta",step:0,total:3});
+        const researchLabel=dualMode?"sonar-deep-research — weapons, rings, locations, mats...":"researching current meta...";
+        setAddStep(`${rp.icon} ${rp.label} — ${researchLabel}`);
+        setGenInfo({prov:researchProv,label:dualMode?"deep research (Step 1/5)":"researching",step:0,total:totalSteps});
         try{
           const buildDesc=addMode==="ai"?addText.slice(0,120):addMode==="semi"?(semiForm.playstyle||semiForm.label||"OP build").slice(0,120):manualForm.label.slice(0,120)||"OP build";
           // Keep research prompt short — we only need a targeted summary, not an essay
@@ -1155,9 +1164,9 @@ Search thoroughly across multiple sources. Include specific numbers.`;
         }catch(e){/* non-fatal — continue without research */}
       }
 
-      const step1Label=useSearchStep1?(useCustomGame?`researching ${gameName} + phases 1–3`:"researching + phases 1–3"):`phases 1–3 (${cacheSize} cached facts)`;
-      setAddStep(`${PROVIDERS[provCore].icon} ${PROVIDERS[provCore].label} — ${step1Label}...`);
-      setGenInfo({prov:provCore,label:step1Label,step:1,total:3});
+      const step1Label=dualMode?`generating phases 1–3 from Perplexity research`:useSearchStep1?(useCustomGame?`researching ${gameName} + phases 1–3`:"researching + phases 1–3"):`phases 1–3 (${cacheSize} cached facts)`;
+      setAddStep(`${PROVIDERS[jsonProv].icon} ${PROVIDERS[jsonProv].label} — ${step1Label}...`);
+      setGenInfo({prov:jsonProv,label:dualMode?"JSON generation (Step 2/5)":step1Label,step:1,total:totalSteps});
       const customGameMetaSchema=useCustomGame?`"game_meta":{"icon":"single emoji representing this game","stat_keys":["STAT1","STAT2","STAT3","STAT4","STAT5","STAT6"],"stat_max":99,"notes":"1-2 sentence note on the game's stat system"},\n`:"";
       const p1=`You are an elite ${gameName} theorycrafter with deep knowledge of weapons, stats, item locations, and optimal progression routes. Generate the FIRST HALF of an OP build (metadata + 3 early phases).
 
@@ -1199,7 +1208,8 @@ RULES:
 - For EACH item you include in Phase 2 and Phase 3, web search "${gameName} [item name] location" to verify the exact zone and landmark before writing the "loc" field. Do NOT rely on training data alone for locations.${urlRef}${knowledgeBlock}${researchContext}
 
 ${userConstraints}`;
-      const step1=await apiCall(p1,useSearchStep1,{prov:provCore,maxTokens:8000});
+      // In dual mode, Step 0 already gathered research — Step 1 generates JSON only
+      const step1=await apiCall(p1,dualMode?false:useSearchStep1,{prov:jsonProv,maxTokens:8000});
       if(!step1.label||!step1.ph||!Array.isArray(step1.ph))throw new Error("Invalid build metadata");
       let resolvedStatKeysStr=statKeysStr,resolvedStatObjStr=statObjStr,customGameMeta=null;
       if(useCustomGame){
@@ -1209,7 +1219,7 @@ ${userConstraints}`;
       }
 
       setAddStep(`${PROVIDERS[contProv].icon} ${PROVIDERS[contProv].label} — phases 4–7 + NG+ for "${step1.label}"...`);
-      setGenInfo({prov:contProv,label:`phases 4–7 + NG+`,step:2,total:3});
+      setGenInfo({prov:contProv,label:dualMode?"JSON generation (Step 3/5)":"phases 4–7 + NG+",step:2,total:totalSteps});
       const phase1to3Summary=(step1.ph||[]).map((ph,i)=>`Phase ${i+1} "${ph.name}" (${ph.range}): weapons=${(ph.weapons||[]).map(w=>w.n).join(", ")||"none"}; armor=${(ph.armor||[]).map(a=>a.n).join(", ")||"none"}; acc=${(ph.acc||[]).map(a=>a.n).join(", ")||"none"}; spells=${(ph.spells||[]).map(s=>s.n).join(", ")||"none"}`).join("\n");
       const p2=`You are continuing a "${step1.label}" (${step1.sub}) build guide for ${gameName}. Phases 1-3 have already been written. Generate the LATE progression phases 4-7.
 
@@ -1249,8 +1259,8 @@ Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       let verifiedStep1Ph=[...(step1.ph||[])];
       let verifiedStep2Ph=[...(step2.ph||[])];
       if((apiKeys.perplexity||"").trim()){
-        setAddStep("🔵 Perplexity — fact-checking item types & locations...");
-        setGenInfo({prov:"perplexity",label:"verifying items via web search",step:2,total:4});
+        setAddStep("🔵 Perplexity sonar-reasoning-pro — fact-checking item types & locations...");
+        setGenInfo({prov:"perplexity",label:dualMode?"fact-check (Step 4/5)":"verifying items via web search",step:3,total:totalSteps});
         try{
           // Collect every unique item across all 7 phases
           const seen=new Set();
@@ -1310,7 +1320,7 @@ Only include items with genuine errors. If all items are correct output: {"corre
 
       const vp=PROVIDERS[variantsProv];
       setAddStep(`${vp.icon} ${vp.label} — variants & comparison...`);
-      setGenInfo({prov:variantsProv,label:"similar builds + comparison table",step:3,total:4});
+      setGenInfo({prov:variantsProv,label:dualMode?"variants (Step 5/5)":"similar builds + comparison table",step:4,total:totalSteps});
       const p3=`You previously generated a full "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the VARIANTS SECTION.
 
 CRITICAL OUTPUT FORMAT: Single JSON object only. Start with { end with }. No preamble.
@@ -1871,9 +1881,46 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
         // non-fatal — continue even if one category fails
       }
     }
+    // ── Claude synthesis pass (dual-provider pattern) ─────────────────────────
+    // After Perplexity's sonar-deep-research gathers raw item data, Claude:
+    // 1. Deduplicates (keeps the more detailed version of any duplicate)
+    // 2. Normalizes format (all lines start with WEAPON/ARMOR/RING/ACC/SPELL)
+    // 3. Removes lines with no real numbers (pure placeholder stats)
+    // 4. Fills in gaps from training knowledge when confident
+    // This implements the Researcher → Synthesizer multi-agent pattern.
+    if(hasPplx&&hasClaude&&allLines.length>0){
+      setUpdateMsg(`🟠 Claude — synthesizing ${allLines.length} items from deep research...`);
+      try{
+        const rawBlock=allLines.join("\n").slice(0,40000);
+        const synthPrompt=`You are validating a ${gameName} item database gathered by Perplexity's sonar-deep-research.
+
+Your tasks (in order):
+1. REMOVE obvious duplicates — if the same item appears twice, keep the version with more specific numbers
+2. REMOVE lines with completely vague stats like "AP: ~N" or "damage: varies" with no actual numbers — real data only
+3. NORMALIZE format — every output line must start with WEAPON / ARMOR / RING/ACC / SPELL / BUILD
+4. FIX obvious format errors (wrong prefix, missing em-dash separator, etc.)
+5. FILL IN missing stats you know confidently from your training data (e.g. if a weapon's weight or location is missing but you know it)
+
+Output ONLY the cleaned item lines, one per line. No commentary, no headers.
+
+Raw data (${allLines.length} items):
+${rawBlock}`;
+        const synthRaw=await apiCall(synthPrompt,false,{prov:"claude",rawText:true,maxTokens:8000});
+        const synthLines=parseLines(synthRaw);
+        // Only adopt Claude's output if it kept at least 40% of the original data
+        // (guards against Claude accidentally dropping everything)
+        if(synthLines.length>=allLines.length*0.4){
+          allLines.length=0;
+          allLines.push(...synthLines);
+          setUpdateMsg(`🟠 Claude synthesis: ${allLines.length} validated items`);
+          await new Promise(r=>setTimeout(r,800));
+        }
+      }catch(e){/* non-fatal — proceed with raw Perplexity data */}
+    }
     if(allLines.length>0){
       updateKnowledgeCache(cacheKey,gameName,allLines,null);
-      setUpdateMsg(`✓ Learned ${allLines.length} items for ${gameName}`);
+      const synthNote=hasPplx&&hasClaude?" (deep-research + Claude synthesis)":"";
+      setUpdateMsg(`✓ Learned ${allLines.length} items for ${gameName}${synthNote}`);
       setTimeout(()=>setUpdateMsg(""),9000);
     }else{
       setUpdateMsg("✗ No items found — check API keys or try a more specific game name.");
