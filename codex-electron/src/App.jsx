@@ -1290,7 +1290,7 @@ Return ONLY this JSON:
         (Date.now()-gameProfiles[cacheKey].lastUpdated)<7*24*3600*1000;
       if(useCustomGame&&!hadProfile){
         setAddStep(`🔵 Researching "${gameName}" — building game knowledge profile...`);
-        setGenInfo({prov:"perplexity",label:"game research (new game)",step:0,total:8});
+        setGenInfo({prov:"perplexity",model:"sonar-deep-research",label:"game research (new game)",step:0,total:8});
         try{
           await runGameResearch(gameName,cacheKey,(msg)=>{setAddStep(msg);});
         }catch(e){/* non-fatal — continue without profile */}
@@ -1329,9 +1329,10 @@ Return ONLY this JSON:
       let researchContext="";
       if(researchProv){
         const rp=PROVIDERS[researchProv];
-        const researchLabel=dualMode?"sonar-deep-research — weapons, rings, locations, mats...":"researching current meta...";
+        const researchModel=researchProv==="perplexity"?"sonar-deep-research":"web search";
+        const researchLabel=dualMode?`[${researchModel}] — weapons, rings, locations, mats...`:"researching current meta...";
         setAddStep(`${rp.icon} ${rp.label} — ${researchLabel}`);
-        setGenInfo({prov:researchProv,label:dualMode?"deep research (Step 1/5)":"researching",step:0,total:totalSteps});
+        setGenInfo({prov:researchProv,model:researchProv==="perplexity"?"sonar-deep-research":undefined,label:dualMode?"deep research (Step 1/5)":"researching",step:0,total:totalSteps});
         try{
           const buildDesc=addMode==="ai"?addText.slice(0,120):addMode==="semi"?(semiForm.playstyle||semiForm.label||"OP build").slice(0,120):manualForm.label.slice(0,120)||"OP build";
           // Keep research prompt short — we only need a targeted summary, not an essay
@@ -1353,7 +1354,7 @@ Search thoroughly across multiple sources. Include specific numbers.`;
 
       const step1Label=dualMode?`generating phases 1–3 from Perplexity research`:useSearchStep1?(useCustomGame?`researching ${gameName} + phases 1–3`:"researching + phases 1–3"):`phases 1–3 (${cacheSize} cached facts)`;
       setAddStep(`${PROVIDERS[jsonProv].icon} ${PROVIDERS[jsonProv].label} — ${step1Label}...`);
-      setGenInfo({prov:jsonProv,label:dualMode?"JSON generation (Step 2/5)":step1Label,step:1,total:totalSteps});
+      setGenInfo({prov:jsonProv,model:jsonProv==="perplexity"?"sonar-pro":jsonProv==="claude"?"claude-sonnet-4-6":undefined,label:dualMode?"JSON generation (Step 2/5)":step1Label,step:1,total:totalSteps});
       // If the game profile already has verified stats, skip game_meta detection in Step 1 —
       // use the profile's confirmed values directly instead of asking the AI to guess.
       const profileForStep1=useCustomGame?gameProfiles[cacheKey]:null;
@@ -1427,7 +1428,7 @@ ${userConstraints}`;
 
       const p2phase7label=hasNGPlus?"phases 4–7 + NG+":"phases 4–7 (no NG+)";
       setAddStep(`${PROVIDERS[contProv].icon} ${PROVIDERS[contProv].label} — ${p2phase7label} for "${step1.label}"...`);
-      setGenInfo({prov:contProv,label:dualMode?`JSON generation (Step 3/5)`:p2phase7label,step:2,total:totalSteps});
+      setGenInfo({prov:contProv,model:contProv==="perplexity"?"sonar-pro":contProv==="claude"?"claude-sonnet-4-6":undefined,label:dualMode?`JSON generation (Step 3/5)`:p2phase7label,step:2,total:totalSteps});
       const phase1to3Summary=(step1.ph||[]).map((ph,i)=>`Phase ${i+1} "${ph.name}" (${ph.range}): weapons=${(ph.weapons||[]).map(w=>w.n).join(", ")||"none"}; armor=${(ph.armor||[]).map(a=>a.n).join(", ")||"none"}; acc=${(ph.acc||[]).map(a=>a.n).join(", ")||"none"}; spells=${(ph.spells||[]).map(s=>s.n).join(", ")||"none"}`).join("\n");
       const p2RangeEx=levelTerm==="Lv"?"":`(Use "${levelTerm}" instead of "Lv" in all range fields — e.g. "${levelTerm} 25-40" not "Lv 25-40")`;
       const p2Phase7Schema=hasNGPlus
@@ -1480,8 +1481,8 @@ Build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       let verifiedStep1Ph=[...(step1.ph||[])];
       let verifiedStep2Ph=[...(step2.ph||[])];
       if((apiKeys.perplexity||"").trim()){
-        setAddStep("🔵 Perplexity sonar-reasoning-pro — fact-checking item types & locations...");
-        setGenInfo({prov:"perplexity",label:dualMode?"fact-check (Step 4/5)":"verifying items via web search",step:3,total:totalSteps});
+        setAddStep("🔵 Perplexity [sonar-reasoning-pro] — fact-checking item types & locations...");
+        setGenInfo({prov:"perplexity",model:"sonar-reasoning-pro",label:dualMode?"fact-check (Step 4/5)":"verifying items via web search",step:3,total:totalSteps});
         try{
           // Collect every unique item across all 7 phases
           const seen=new Set();
@@ -1541,7 +1542,7 @@ Only include items with genuine errors. If all items are correct output: {"corre
 
       const vp=PROVIDERS[variantsProv];
       setAddStep(`${vp.icon} ${vp.label} — variants & comparison...`);
-      setGenInfo({prov:variantsProv,label:dualMode?"variants (Step 5/5)":"similar builds + comparison table",step:4,total:totalSteps});
+      setGenInfo({prov:variantsProv,model:variantsProv==="perplexity"?"sonar-pro":variantsProv==="claude"?"claude-sonnet-4-6":undefined,label:dualMode?"variants (Step 5/5)":"similar builds + comparison table",step:4,total:totalSteps});
       const p3=`You previously generated a full "${step1.label}" (${step1.sub}) build for ${gameName}. Now generate the VARIANTS SECTION.${customGameGuard}
 
 CRITICAL OUTPUT FORMAT: Single JSON object only. Start with { end with }. No preamble.
@@ -1900,7 +1901,8 @@ ${combinedContent}`;
       const batchLabel=isBatch
         ?`batch ${batchNum} (${batchPages.length} pages)`
         :`page: ${batchPages[0].name}`;
-      setUpdateMsg(`🤖 Extracting ${batchLabel} — ${allLines.length} items so far...`);
+      const extractModelLabel=coreKey==="perplexity"?"🔵 Perplexity [sonar-reasoning-pro]":coreKey==="claude"?"🟠 Claude [claude-sonnet-4-6]":"🤖 AI";
+      setUpdateMsg(`${extractModelLabel}: extracting ${batchLabel} — ${allLines.length} items so far...`);
       try{
         const prompt=buildExtractionPrompt(gameName,combinedContent,isBatch);
         // sonar-reasoning-pro: reasons through complex upgrade tables better than sonar-pro
@@ -2093,7 +2095,7 @@ CRITICAL: Include EVERY final boss and their weapon/armor drops. Include NG+1 th
       const batch=categories.slice(i,i+LEARN_CONCURRENT);
       const batchEnd=Math.min(i+LEARN_CONCURRENT,categories.length);
       const names=batch.map(c=>c.name).join(" + ");
-      setUpdateMsg(`🔵 Deep-researching: ${names} (${batchEnd}/${categories.length})...`);
+      setUpdateMsg(`🔵 Perplexity [sonar-deep-research]: ${names} (${batchEnd}/${categories.length})...`);
       const results=await Promise.allSettled(
         batch.map(cat=>apiCall(cat.prompt,true,{prov:learnProv,rawText:true,maxTokens:cat.tokens,pplxModel:learnModel}))
       );
@@ -2362,12 +2364,13 @@ ${rawBlock}`;
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,fontSize:".7rem"}}>
               <span>{PROVIDERS[genInfo.prov]?.icon}</span>
               <span style={{color:C.text,fontWeight:600}}>{PROVIDERS[genInfo.prov]?.label}</span>
+              {genInfo.model&&<span style={{color:"#4da6ff",fontSize:".62rem",fontFamily:"monospace",background:"#ffffff0d",padding:"1px 5px",borderRadius:3,border:"1px solid #4da6ff44"}}>{genInfo.model}</span>}
               <span style={{color:C.dim,marginLeft:2}}>{genInfo.label}</span>
             </div>
             <div style={{display:"flex",gap:3}}>
-              {[0,1,2,3].map(i=><div key={i} style={{flex:1,height:2,borderRadius:1,background:i<=genInfo.step?a:"#ffffff1a"}}/>)}
+              {Array.from({length:genInfo.total||4}).map((_,i)=><div key={i} style={{flex:1,height:2,borderRadius:1,background:i<=genInfo.step?a:"#ffffff1a"}}/>)}
             </div>
-            <div style={{marginTop:4,fontSize:".62rem",color:C.dim,textAlign:"right"}}>step {genInfo.step+1} / 4</div>
+            <div style={{marginTop:4,fontSize:".62rem",color:C.dim,textAlign:"right"}}>step {genInfo.step+1} / {genInfo.total||4}</div>
           </div>}
           {adding&&!genInfo&&<div style={{marginTop:12,fontSize:".7rem",color:C.dim,fontStyle:"italic",textAlign:"center",lineHeight:1.4}}>Running 3 API calls — usually 30–90 seconds.</div>}
         </div>
