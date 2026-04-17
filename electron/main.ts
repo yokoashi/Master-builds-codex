@@ -30,8 +30,13 @@ function loadConfig(): AppConfig {
     if (fs.existsSync(CONFIG_PATH)) {
       return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
     }
+    // First launch — auto-create a blank config.json next to the exe.
+    // This way the user only needs to open the file and paste their key;
+    // they never have to create it manually.
+    const placeholder: AppConfig = { PERPLEXITY_API_KEY: "" };
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(placeholder, null, 2) + "\n", "utf-8");
   } catch {
-    // Ignore parse errors — treat as empty config
+    // Ignore write errors (e.g. read-only fs) — treat as empty config
   }
   return {};
 }
@@ -123,9 +128,9 @@ app.whenReady().then(async () => {
       title: "API Key Missing",
       message:
         "No Perplexity API key found.\n\n" +
-        `Please add your key to:\n${CONFIG_PATH}\n\n` +
-        'Example:\n{ "PERPLEXITY_API_KEY": "pplx-xxxx..." }\n\n' +
-        "The app will open but AI build generation will not work until the key is set.",
+        `A config file has been created for you at:\n${CONFIG_PATH}\n\n` +
+        "Open that file, paste your Perplexity API key into the PERPLEXITY_API_KEY field, then relaunch the app.\n\n" +
+        "The app will open now but AI build generation will not work until the key is set.",
       buttons: ["Open Anyway", "Quit"],
     });
     if (result === 1) {
