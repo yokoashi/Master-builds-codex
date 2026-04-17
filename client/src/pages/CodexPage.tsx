@@ -46,7 +46,6 @@ export default function CodexPage() {
   const currentGame = games.find((g) => g.key === selectedGameKey);
   const currentBuild = builds.find((b) => b.key === selectedBuildKey) ?? builds[0] ?? null;
 
-  // When switching games, auto-select first build of that game
   useEffect(() => {
     const gameBuild = allBuilds.find((b) => b.gameKey === selectedGameKey);
     if (gameBuild && !allBuilds.find((b) => b.key === selectedBuildKey && b.gameKey === selectedGameKey)) {
@@ -58,7 +57,6 @@ export default function CodexPage() {
     mutationFn: (key: string) => apiRequest("DELETE", `/api/builds/${key}`),
     onSuccess: (_data, deletedKey) => {
       queryClient.invalidateQueries({ queryKey: ["/api/builds"] }).then(() => {
-        // Select next build from freshly-invalidated data to avoid stale closure
         const fresh = queryClient.getQueryData<Build[]>(["/api/builds"]) ?? [];
         const remaining = fresh.filter(
           (b) => b.gameKey === selectedGameKey && b.key !== deletedKey
@@ -84,7 +82,7 @@ export default function CodexPage() {
       }),
     onMutate: () => {
       setShowLearnInput(false);
-      setUpdateStatus("🔵 Wiki pre-pass running (finding real item sources)...");
+      setUpdateStatus("🔵 Wiki pre-pass running...");
     },
     onSuccess: (data: {
       total: number;
@@ -94,8 +92,8 @@ export default function CodexPage() {
     }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${selectedGameKey}`] });
       const bd = Object.entries(data.breakdown).map(([k, v]) => `${k}:${v}`).join(" ");
-      const preNote = data.preFacts ? ` (+${data.preFacts} from wiki pre-pass)` : "";
-      setUpdateStatus(`✓ Learned ${data.total} items${preNote} — ${bd}`);
+      const preNote = data.preFacts ? ` (+${data.preFacts} wiki)` : "";
+      setUpdateStatus(`✓ Learned ${data.total}${preNote} — ${bd}`);
       setTimeout(() => setUpdateStatus(null), 14000);
     },
     onError: (err: Error) => {
@@ -114,7 +112,7 @@ export default function CodexPage() {
     onMutate: () => setUpdateStatus("⟳ Checking..."),
     onSuccess: (data: { patchVersion: string; count: number }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${selectedGameKey}`] });
-      setUpdateStatus(`✓ Updated (${data.patchVersion}) — ${data.count} changes cached`);
+      setUpdateStatus(`✓ Updated (${data.patchVersion}) — ${data.count} changes`);
       setTimeout(() => setUpdateStatus(null), 6000);
     },
     onError: (err: Error) => {
@@ -130,10 +128,10 @@ export default function CodexPage() {
     dynamicGames: Game[];
     dynamicBuilds: Build[];
   };
+
   const exportMutation = useMutation({
     mutationFn: () => apiRequest<ExportData>("POST", "/api/export"),
     onSuccess: (data: ExportData) => {
-      // Server returns JSON directly — stringify once for the download blob
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -170,292 +168,352 @@ export default function CodexPage() {
     input.click();
   }
 
-  function handleReset() {
-    // This is handled by the reset button which shows a modal
-    // For now just reload seed data by clearing dynamic builds
-    toast({ title: "Reset: use the delete button on individual builds to remove them." });
-  }
-
   const accent = currentBuild?.accent ?? "#d64545";
-  const accentBg = hexToRgba(accent, 0.08);
-  const accentBorder = hexToRgba(accent, 0.3);
+
+  // Group builds by game for sidebar
+  const buildsByGame = games.map((game) => ({
+    game,
+    builds: allBuilds.filter((b) => b.gameKey === game.key),
+  }));
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--color-bg)" }}>
-      <div className="mx-auto px-4 py-8" style={{ maxWidth: 920 }}>
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <header className="mb-8">
-          <p className="text-xs tracking-[0.25em] uppercase mb-1" style={{ color: accent, fontFamily: "var(--font-display)" }}>
-            ✦ AI-Powered Build Guide
-          </p>
-          <h1
-            className="text-4xl font-bold mb-1"
-            style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
-          >
-            MASTER BUILD CODEX
-          </h1>
-          <p className="text-sm mb-4" style={{ color: "var(--color-dim)" }}>
-            OP Soulslike Builds — AI-Generated &amp; Community-Verified
-          </p>
-          <hr style={{ borderColor: accentBorder }} />
-        </header>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: "var(--color-bg)", color: "var(--color-text)" }}>
+      {/* ── Menu Bar ──────────────────────────────────────────────────────────── */}
+      <div
+        className="flex items-center justify-between px-4 py-0.5 text-xs flex-shrink-0 select-none"
+        style={{
+          background: "var(--color-card)",
+          borderBottom: "1px solid #2a2318",
+          minHeight: 28,
+        }}
+      >
+        <div className="flex items-center gap-4">
+          {/* Patch/version note */}
+          <span style={{ color: "var(--color-dim)" }}>
+            {knowledgeInfo && knowledgeInfo.count > 0
+              ? `✦ ${knowledgeInfo.count} facts cached for ${currentGame?.name ?? selectedGameKey}${knowledgeInfo.patchNote ? ` · ${knowledgeInfo.patchNote}` : ""}`
+              : `Master Build Codex`}
+          </span>
+          {updateStatus && (
+            <span style={{ color: "var(--color-gold)" }}>{updateStatus}</span>
+          )}
+        </div>
+        {/* Menu items */}
+        <div className="flex items-center gap-4" style={{ color: "var(--color-dim)" }}>
+          {[
+            { label: "File", items: [] },
+            { label: "Edit", items: [] },
+            { label: "View", items: [] },
+            { label: "Window", items: [] },
+            { label: "Help", items: [] },
+          ].map((m) => (
+            <span
+              key={m.label}
+              className="hover:text-white cursor-default transition-colors px-1"
+            >
+              {m.label}
+            </span>
+          ))}
+        </div>
+      </div>
 
-        {/* ── Game Selector ───────────────────────────────────────────────── */}
-        <section className="mb-4" aria-label="Game selector">
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>
-            Game
-          </p>
-          <div className="flex flex-wrap gap-2" data-testid="game-selector">
-            {games.map((game) => {
-              const isActive = game.key === selectedGameKey;
-              return (
+      {/* ── Main Layout: Sidebar + Content ───────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
+        {/* ── Left Sidebar ──────────────────────────────────────────────────── */}
+        <aside
+          className="flex flex-col flex-shrink-0 overflow-y-auto"
+          style={{
+            width: 200,
+            background: "var(--color-card)",
+            borderRight: "1px solid #2a2318",
+          }}
+        >
+          {/* CODEX brand */}
+          <div
+            className="px-4 py-3 flex-shrink-0"
+            style={{ borderBottom: "1px solid #2a2318" }}
+          >
+            <p
+              className="text-base font-bold tracking-widest"
+              style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
+            >
+              CODEX
+            </p>
+          </div>
+
+          {/* Game + Build list */}
+          <div className="flex-1 overflow-y-auto py-2">
+            {buildsByGame.map(({ game, builds: gameBuilds }) => (
+              <div key={game.key} className="mb-1">
+                {/* Game header */}
                 <button
-                  key={game.key}
-                  data-testid={`game-btn-${game.key}`}
+                  data-testid={`sidebar-game-${game.key}`}
                   onClick={() => setSelectedGameKey(game.key)}
                   className={cn(
-                    "px-3 py-1.5 rounded text-sm font-medium transition-all",
-                    isActive
-                      ? "text-white"
+                    "w-full text-left px-4 py-1.5 text-xs font-semibold uppercase tracking-widest transition-colors",
+                    selectedGameKey === game.key
+                      ? "hover:opacity-90"
                       : "hover:bg-white/5"
                   )}
                   style={
-                    isActive
-                      ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent }
-                      : { border: "1px solid #2a2318", color: "var(--color-dim)" }
+                    selectedGameKey === game.key
+                      ? { color: accent, background: hexToRgba(accent, 0.06) }
+                      : { color: "var(--color-dim)" }
                   }
                 >
                   {game.icon} {game.name}
-                  {game.isCustom && (
-                    <span className="ml-1 text-xs" style={{ color: "var(--color-gold)" }}>✦ AI</span>
-                  )}
                 </button>
-              );
-            })}
-          </div>
-        </section>
 
-        {/* ── Build Selector ─────────────────────────────────────────────── */}
-        <section className="mb-4" aria-label="Build selector">
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>
-            Build
-          </p>
-          <div className="flex flex-wrap gap-2" data-testid="build-selector">
-            {builds.map((build) => {
-              const isActive = build.key === selectedBuildKey;
-              return (
-                <button
-                  key={build.key}
-                  data-testid={`build-btn-${build.key}`}
-                  onClick={() => setSelectedBuildKey(build.key)}
-                  className={cn(
-                    "px-3 py-1.5 rounded text-sm font-medium transition-all",
-                    isActive ? "" : "hover:bg-white/5"
-                  )}
-                  style={
-                    isActive
-                      ? {
-                          background: hexToRgba(build.accent, 0.12),
-                          border: `1px solid ${hexToRgba(build.accent, 0.4)}`,
-                          color: build.accent,
-                        }
-                      : { border: "1px solid #2a2318", color: "var(--color-dim)" }
-                  }
-                >
-                  {build.icon} {build.label}
-                  {build.isAI && (
-                    <span className="ml-1 text-xs" style={{ color: "var(--color-gold)" }}>✦ AI</span>
-                  )}
-                </button>
-              );
-            })}
-            {builds.length === 0 && (
-              <span className="text-sm" style={{ color: "var(--color-dim)" }}>
-                No builds for this game yet.
-              </span>
-            )}
-          </div>
-        </section>
+                {/* Builds under this game — only show if game is selected */}
+                {selectedGameKey === game.key && gameBuilds.map((build) => {
+                  const isActive = build.key === selectedBuildKey;
+                  return (
+                    <button
+                      key={build.key}
+                      data-testid={`sidebar-build-${build.key}`}
+                      onClick={() => setSelectedBuildKey(build.key)}
+                      className={cn(
+                        "w-full text-left px-4 py-2 text-xs transition-colors flex flex-col gap-0.5",
+                        isActive ? "" : "hover:bg-white/5"
+                      )}
+                      style={
+                        isActive
+                          ? {
+                              background: hexToRgba(build.accent, 0.1),
+                              borderLeft: `2px solid ${build.accent}`,
+                              paddingLeft: 14,
+                            }
+                          : {
+                              borderLeft: "2px solid transparent",
+                              paddingLeft: 14,
+                            }
+                      }
+                    >
+                      <span
+                        className="font-medium leading-tight"
+                        style={{ color: isActive ? build.accent : "var(--color-text)" }}
+                      >
+                        {build.icon} {build.label}
+                      </span>
+                      {build.sub && (
+                        <span
+                          className="text-xs leading-tight truncate"
+                          style={{ color: "var(--color-dim)", fontSize: "0.65rem" }}
+                        >
+                          {build.sub}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
 
-        {/* ── Action Buttons ─────────────────────────────────────────────── */}
-        <section className="flex flex-wrap gap-2 mb-4">
-          <button
-            data-testid="btn-add-build"
-            onClick={() => setShowAddModal(true)}
-            className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/10"
-            style={{ border: "1px solid var(--color-crimson)", color: "var(--color-crimson)" }}
+                {selectedGameKey === game.key && gameBuilds.length === 0 && (
+                  <p className="px-4 py-2 text-xs" style={{ color: "var(--color-dim)" }}>
+                    No builds yet
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Sidebar bottom actions */}
+          <div
+            className="px-3 py-2 flex-shrink-0 space-y-1.5"
+            style={{ borderTop: "1px solid #2a2318" }}
           >
-            + Add Build
-          </button>
-          {/* Learn button + optional hint URL input */}
-          <div className="flex flex-col gap-1">
-            <div className="flex gap-1">
-              <button
-                data-testid="btn-learn"
-                onClick={() => {
-                  if (showLearnInput) {
-                    learnMutation.mutate();
-                  } else {
-                    setShowLearnInput(true);
-                  }
-                }}
-                disabled={learnMutation.isPending || updateMutation.isPending}
-                className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5 disabled:opacity-50"
-                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-                title="Build a full item database (14 categories: weapons, shields, armor, spells, buffs, rings)"
-              >
-                🎓 {showLearnInput ? "Start Learn" : "Learn"}
-              </button>
-              {showLearnInput && (
+            <button
+              data-testid="btn-add-build"
+              onClick={() => setShowAddModal(true)}
+              className="w-full px-2 py-1.5 rounded text-xs font-medium transition-all hover:opacity-90 flex items-center justify-center gap-1"
+              style={{
+                background: hexToRgba(accent, 0.12),
+                border: `1px solid ${hexToRgba(accent, 0.35)}`,
+                color: accent,
+              }}
+            >
+              + Add Build
+            </button>
+
+            {/* Learn button */}
+            <div className="flex flex-col gap-1">
+              <div className="flex gap-1">
                 <button
-                  onClick={() => { setShowLearnInput(false); setLearnHintUrl(""); }}
-                  className="px-2 py-1.5 rounded text-xs hover:bg-white/5"
-                  style={{ color: "var(--color-dim)", border: "1px solid #3a3028" }}
-                >✕</button>
+                  data-testid="btn-learn"
+                  onClick={() => {
+                    if (showLearnInput) {
+                      learnMutation.mutate();
+                    } else {
+                      setShowLearnInput((v) => !v);
+                    }
+                  }}
+                  disabled={learnMutation.isPending || updateMutation.isPending}
+                  className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-50"
+                  style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+                  title="Build item database (weapons, armor, spells, etc.)"
+                >
+                  🎓 {showLearnInput ? "Go" : "Learn"}
+                </button>
+                <button
+                  data-testid="btn-update"
+                  onClick={() => updateMutation.mutate()}
+                  disabled={updateMutation.isPending || learnMutation.isPending}
+                  className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-50"
+                  style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+                  title="Check for patch updates"
+                >
+                  ↻ Update
+                </button>
+              </div>
+              {showLearnInput && (
+                <div className="flex gap-1">
+                  <input
+                    data-testid="input-learn-hint-url"
+                    type="url"
+                    value={learnHintUrl}
+                    onChange={(e) => setLearnHintUrl(e.target.value)}
+                    placeholder="Wiki URL (optional)"
+                    className="flex-1 min-w-0 px-2 py-1 rounded text-xs"
+                    style={{
+                      background: "var(--color-bg)",
+                      border: "1px solid #3a3028",
+                      color: "var(--color-text)",
+                      outline: "none",
+                    }}
+                    onKeyDown={(e) => { if (e.key === "Enter") learnMutation.mutate(); }}
+                  />
+                  <button
+                    onClick={() => { setShowLearnInput(false); setLearnHintUrl(""); }}
+                    className="px-1.5 py-1 rounded text-xs hover:bg-white/5"
+                    style={{ color: "var(--color-dim)", border: "1px solid #3a3028" }}
+                  >✕</button>
+                </div>
               )}
             </div>
-            {showLearnInput && (
-              <input
-                data-testid="input-learn-hint-url"
-                type="url"
-                value={learnHintUrl}
-                onChange={(e) => setLearnHintUrl(e.target.value)}
-                placeholder="Optional: paste wiki/Trello URL (or leave blank)"
-                className="w-72 px-2 py-1 rounded text-xs"
-                style={{
-                  background: "var(--color-surface)",
-                  border: "1px solid #3a3028",
-                  color: "var(--color-text)",
-                  outline: "none",
-                }}
-                onKeyDown={(e) => { if (e.key === "Enter") learnMutation.mutate(); }}
-              />
+          </div>
+        </aside>
+
+        {/* ── Content Area ──────────────────────────────────────────────────── */}
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          {/* Tab bar */}
+          <div
+            className="flex items-center flex-shrink-0 px-2"
+            style={{
+              background: "var(--color-card)",
+              borderBottom: "1px solid #2a2318",
+              minHeight: 36,
+            }}
+            role="tablist"
+            aria-label="Build sections"
+          >
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={activeTab === tab}
+                data-testid={`tab-${tab.replace(/ /g, "-").toLowerCase()}`}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "px-4 py-1.5 text-xs font-medium transition-all border-b-2 -mb-px whitespace-nowrap flex items-center gap-1.5",
+                  activeTab === tab ? "" : "hover:text-white/70 border-transparent"
+                )}
+                style={
+                  activeTab === tab
+                    ? { color: accent, borderColor: accent }
+                    : { color: "var(--color-dim)" }
+                }
+              >
+                {tab === "Your Build" && "⚔"}
+                {tab === "Materials" && "⚗"}
+                {tab === "Similar" && "⊞"}
+                {tab === "Other OP" && "★"}
+                {tab === "Quick Ref" && "◈"}
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {currentBuild && currentGame ? (
+              <div role="tabpanel">
+                {activeTab === "Your Build" && (
+                  <BuildTab
+                    build={currentBuild}
+                    game={currentGame}
+                    onDelete={() => setDeletePending(currentBuild)}
+                  />
+                )}
+                {activeTab === "Materials" && (
+                  <MaterialsTab game={currentGame} accent={accent} />
+                )}
+                {activeTab === "Similar" && (
+                  <SimilarTab build={currentBuild} accent={accent} />
+                )}
+                {activeTab === "Other OP" && (
+                  <OtherTab build={currentBuild} accent={accent} />
+                )}
+                {activeTab === "Quick Ref" && (
+                  <QuickRefTab build={currentBuild} accent={accent} />
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-16" style={{ color: "var(--color-dim)" }}>
+                <p className="text-base mb-2">No builds found for this game.</p>
+                <p className="text-sm">Click <strong>+ Add Build</strong> to generate one with AI.</p>
+              </div>
             )}
           </div>
-          <button
-            data-testid="btn-update"
-            onClick={() => updateMutation.mutate()}
-            disabled={updateMutation.isPending || learnMutation.isPending}
-            className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5 disabled:opacity-50"
-            style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-          >
-            ↻ Update
-          </button>
-          <button
-            data-testid="btn-export"
-            onClick={() => exportMutation.mutate()}
-            className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5"
-            style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-          >
-            💾 Save
-          </button>
-          <button
-            data-testid="btn-import"
-            onClick={handleImport}
-            className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5"
-            style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-          >
-            📂 Load
-          </button>
-          <button
-            data-testid="btn-reset"
-            onClick={handleReset}
-            className="px-3 py-1.5 rounded text-sm font-medium transition-all hover:bg-white/5"
-            style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-          >
-            ↺ Reset
-          </button>
-        </section>
 
-        {/* ── Knowledge Cache Status Bar ─────────────────────────────────── */}
-        {(knowledgeInfo && knowledgeInfo.count > 0) && (
+          {/* ── Bottom Status Bar ─────────────────────────────────────────── */}
           <div
-            className="mb-4 px-3 py-2 rounded text-xs flex items-center gap-2"
-            style={{ background: hexToRgba("#e8c05a", 0.08), border: `1px solid ${hexToRgba("#e8c05a", 0.2)}` }}
-            data-testid="cache-status-bar"
+            className="flex items-center justify-between px-4 flex-shrink-0 text-xs gap-4"
+            style={{
+              background: "var(--color-card)",
+              borderTop: "1px solid #2a2318",
+              minHeight: 32,
+            }}
           >
-            <span>🧠</span>
-            <span style={{ color: "var(--color-gold)" }}>
-              {knowledgeInfo.count} facts cached for {currentGame?.name ?? selectedGameKey}
-              {knowledgeInfo.patchNote && ` · ${knowledgeInfo.patchNote}`}
-            </span>
-            {updateStatus && (
-              <span className="ml-2" style={{ color: "var(--color-dim)" }}>
-                {updateStatus}
-              </span>
-            )}
-          </div>
-        )}
-        {updateStatus && (!knowledgeInfo || knowledgeInfo.count === 0) && (
-          <div
-            className="mb-4 px-3 py-2 rounded text-xs"
-            style={{ background: hexToRgba("#e8c05a", 0.05), border: `1px solid ${hexToRgba("#e8c05a", 0.15)}` }}
-          >
-            <span style={{ color: "var(--color-dim)" }}>{updateStatus}</span>
-          </div>
-        )}
-
-        {/* ── Tab Bar ────────────────────────────────────────────────────── */}
-        <div
-          className="flex gap-0 mb-6 border-b"
-          style={{ borderColor: "#2a2318" }}
-          role="tablist"
-          aria-label="Build sections"
-        >
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              role="tab"
-              aria-selected={activeTab === tab}
-              data-testid={`tab-${tab.replace(/ /g, "-").toLowerCase()}`}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                "px-4 py-2 text-sm font-medium transition-all border-b-2 -mb-px",
-                activeTab === tab ? "" : "hover:text-white/70 border-transparent"
+            <div className="flex items-center gap-1" style={{ color: "var(--color-dim)" }}>
+              {knowledgeInfo && knowledgeInfo.count > 0 ? (
+                <span>
+                  🧠 {knowledgeInfo.count} facts · {currentGame?.name ?? selectedGameKey}
+                </span>
+              ) : (
+                <span>Ready</span>
               )}
-              style={
-                activeTab === tab
-                  ? { color: accent, borderColor: accent }
-                  : { color: "var(--color-dim)" }
-              }
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+            </div>
 
-        {/* ── Tab Content ────────────────────────────────────────────────── */}
-        {currentBuild && currentGame ? (
-          <div role="tabpanel">
-            {activeTab === "Your Build" && (
-              <BuildTab
-                build={currentBuild}
-                game={currentGame}
-                onDelete={() => setDeletePending(currentBuild)}
-              />
-            )}
-            {activeTab === "Materials" && (
-              <MaterialsTab game={currentGame} accent={accent} />
-            )}
-            {activeTab === "Similar" && (
-              <SimilarTab build={currentBuild} accent={accent} />
-            )}
-            {activeTab === "Other OP" && (
-              <OtherTab build={currentBuild} accent={accent} />
-            )}
-            {activeTab === "Quick Ref" && (
-              <QuickRefTab build={currentBuild} accent={accent} />
-            )}
+            <div className="flex items-center gap-1">
+              <button
+                data-testid="btn-export"
+                onClick={() => exportMutation.mutate()}
+                className="px-2.5 py-1 rounded transition-all hover:bg-white/5 flex items-center gap-1"
+                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+              >
+                💾 Save
+              </button>
+              <button
+                data-testid="btn-import"
+                onClick={handleImport}
+                className="px-2.5 py-1 rounded transition-all hover:bg-white/5 flex items-center gap-1"
+                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+              >
+                📂 Load
+              </button>
+              <button
+                data-testid="btn-reset"
+                onClick={() => toast({ title: "Reset: delete individual builds using the ✕ button on each build." })}
+                className="px-2.5 py-1 rounded transition-all hover:bg-white/5 flex items-center gap-1"
+                style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+              >
+                ↺ Reset
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="text-center py-16" style={{ color: "var(--color-dim)" }}>
-            <p className="text-lg mb-2">No builds found for this game.</p>
-            <p className="text-sm">Click <strong>+ Add Build</strong> to generate one with AI.</p>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* ── Modals ─────────────────────────────────────────────────────────── */}
+      {/* ── Modals ────────────────────────────────────────────────────────────── */}
       {showAddModal && currentGame && (
         <AddBuildModal
           game={currentGame}
