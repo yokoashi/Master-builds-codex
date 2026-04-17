@@ -1,8 +1,8 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { EventEmitter } from "events";
-import { readFileSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join, resolve } from "path";
 import Perplexity from "@perplexity-ai/perplexity_ai";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "./storage";
@@ -53,6 +53,25 @@ export interface LearnProgressEvent {
 const learnEmitter = new EventEmitter();
 learnEmitter.setMaxListeners(20);
 const SONAR_DEEP = "sonar-deep-research";
+
+// ── App settings (persisted to settings.json next to the DB) ─────────────────
+interface AppSettings { dualAi: boolean; }
+const SETTINGS_PATH = process.env.DB_PATH
+  ? join(dirname(process.env.DB_PATH), "settings.json")
+  : join(process.cwd(), "settings.json");
+
+function loadSettings(): AppSettings {
+  try {
+    if (existsSync(SETTINGS_PATH)) {
+      return { dualAi: true, ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+    }
+  } catch { /* ignore */ }
+  return { dualAi: true };
+}
+function saveSettings(s: AppSettings) {
+  try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
+}
+let appSettings = loadSettings();
 
 // ── Helper: extract text from Perplexity non-streaming response ──────────────
 // The SDK's create() return type union is overly broad; we know stream:false gives us
@@ -305,8 +324,20 @@ export function registerRoutes(httpServer: Server, app: Express) {
     }
   });
 
+  // ── GET /api/settings ─────────────────────────────────────────────────────
+  app.get("/api/settings", (_req, res) => res.json(appSettings));
+
+  // ── PATCH /api/settings ───────────────────────────────────────────────────
+  app.patch("/api/settings", (req, res) => {
+    const { dualAi } = req.body as Partial<AppSettings>;
+    if (typeof dualAi === "boolean") appSettings.dualAi = dualAi;
+    saveSettings(appSettings);
+    res.json(appSettings);
+  });
+
   // ── POST /api/generate/step1 — metadata + loadouts + phases 1-3 ───────────
-  // Model: sonar-pro (200K context, web search grounded item locations)
+  // Dual-AI: Perplexity researches → Claude structures (when dualAi=true)
+  // Single-AI: Perplexity sonar-pro with JSON schema (when dualAi=false)
   app.post("/api/generate/step1", async (req, res) => {
     try {
       const body = req.body as GenerateStep1Request;
@@ -427,19 +458,20 @@ Generate JSON with this exact structure:
 Include phases 1, 2, and 3 only (Early Game, Core Weapon, Key Accessories).
 Be specific with item locations, upgrade paths, and tips. Use web search to verify current patch accuracy. No placeholder text.`;
 
-      // ── Phase A: Perplexity researches real item data ─────────────────────
-      // sonar-pro does the web search; returns raw text with confirmed item names.
-      // No JSON schema here — we want raw research prose, not structured output.
-      let researchContext = "";
-      try {
-        const researchResp = await pplx.chat.completions.create({
-          model: SONAR_PRO,
-          stream: false as const,
-          max_tokens: 4000,
-          messages: [
-            {
-              role: "user",
-              content: `Search the web for "${body.gameName} ${body.buildDescription} build guide" and "${body.gameName} weapons wiki" and "${body.gameName} items locations".
+      let parsed: { ok: true; value: Partial<Build> } | { ok: false; error: string };
+
+      if (appSettings.dualAi) {
+        // ── Dual-AI: Perplexity researches → Claude structures ───────────────
+        let researchContext = "";
+        try {
+          const researchResp = await pplx.chat.completions.create({
+            model: SONAR_PRO,
+            stream: false as const,
+            max_tokens: 4000,
+            messages: [
+              {
+                role: "user",
+                content: `Search the web for "${body.gameName} ${body.buildDescription} build guide" and "${body.gameName} weapons wiki" and "${body.gameName} items locations".
 
 List the REAL confirmed items for a ${body.buildDescription} build in ${body.gameName}:
 - Weapons (name, AP, location, upgrade path)
@@ -449,25 +481,35 @@ List the REAL confirmed items for a ${body.buildDescription} build in ${body.gam
 - Stat requirements and progression (levels 1→endgame)
 
 Only include items you found confirmed in search results. Exact in-game names only.`,
-            },
+              },
+            ],
+          });
+          researchContext = extractText(researchResp as PplxResponse);
+        } catch {
+          researchContext = "(Web research unavailable — use knowledge cache and game expertise)";
+        }
+        parsed = await claudeJson<Partial<Build>>(
+          systemContent,
+          `${userContent}\n\nPERPLEXITY RESEARCH (confirmed real items from web search — use these as ground truth):\n${researchContext.substring(0, 6000)}`,
+          false
+        );
+      } else {
+        // ── Single-AI: Perplexity sonar-pro with JSON schema ─────────────────
+        const sonarResp = await pplx.chat.completions.create({
+          model: SONAR_PRO,
+          stream: false as const,
+          max_tokens: 8000,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          response_format: { type: "json_schema", json_schema: { schema: STEP1_SCHEMA, name: "build_step1" } } as any,
+          messages: [
+            { role: "system", content: systemContent },
+            { role: "user", content: userContent },
           ],
         });
-        researchContext = extractText(researchResp as PplxResponse);
-      } catch {
-        // Non-fatal — Claude proceeds with knowledge block alone
-        researchContext = "(Web research unavailable — use knowledge cache and game expertise)";
+        const raw = extractText(sonarResp as PplxResponse);
+        const pr = parseJsonResponse<Partial<Build>>(raw);
+        parsed = pr.ok ? pr : { ok: false, error: pr.error };
       }
-
-      // ── Phase B: Claude structures the JSON from research ─────────────────
-      // Claude never does web search — it only structures the research Perplexity returned.
-      const parsed = await claudeJson<Partial<Build>>(
-        systemContent,
-        `${userContent}
-
-PERPLEXITY RESEARCH (confirmed real items from web search — use these as ground truth):
-${researchContext.substring(0, 6000)}`,
-        false
-      );
 
       if (!parsed.ok) {
         return res.status(422).json({
@@ -553,21 +595,34 @@ Generate JSON:
 
 Be detailed about late-game item locations and NG+ strategy changes. No placeholder text.`;
 
-      // Claude with extended thinking — best for complex multi-phase planning
-      const parsed = await claudeJson<{ phases_4_to_7: Build["phases"] }>(
-        systemContent,
-        userContent,
-        true // extended thinking: budget_tokens 5000
-      );
+      let parsed2: { ok: true; value: { phases_4_to_7: Build["phases"] } } | { ok: false; error: string };
 
-      if (!parsed.ok) {
-        return res.status(422).json({
-          error: `Step 2 parse failed: ${parsed.error}`,
-          raw: "",
+      if (appSettings.dualAi) {
+        // Claude extended thinking — best for complex multi-phase planning
+        parsed2 = await claudeJson<{ phases_4_to_7: Build["phases"] }>(systemContent, userContent, true);
+      } else {
+        // sonar-reasoning-pro — CoT, strips <think> tags via parseJsonResponse
+        const sonarResp = await pplx.chat.completions.create({
+          model: SONAR_REASONING,
+          stream: false as const,
+          max_tokens: 8000,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          response_format: { type: "json_schema", json_schema: { schema: STEP2_SCHEMA, name: "build_step2" } } as any,
+          messages: [
+            { role: "system", content: systemContent },
+            { role: "user", content: userContent },
+          ],
         });
+        const raw = extractText(sonarResp as PplxResponse);
+        const pr = parseJsonResponse<{ phases_4_to_7: Build["phases"] }>(raw);
+        parsed2 = pr.ok ? pr : { ok: false, error: pr.error };
       }
 
-      res.json({ ok: true, phases47: parsed.value.phases_4_to_7 });
+      if (!parsed2.ok) {
+        return res.status(422).json({ error: `Step 2 parse failed: ${parsed2.error}`, raw: "" });
+      }
+
+      res.json({ ok: true, phases47: parsed2.value.phases_4_to_7 });
     } catch (err) {
       res.status(500).json({ error: friendlyPplxError(err) });
     }
@@ -638,22 +693,37 @@ Generate JSON:
 
 Generate 2 sim, 2 oth, 5 ref entries.`;
 
-      // Claude generates sim/oth/ref — no web search needed, build context is sufficient
-      const parsed = await claudeJson<{ sim: Build["sim"]; oth: Build["oth"]; ref: Build["ref"] }>(
-        systemContent,
-        userContent,
-        false
-      );
+      type Step3Result = { sim: Build["sim"]; oth: Build["oth"]; ref: Build["ref"] };
+      let parsed3: { ok: true; value: Step3Result } | { ok: false; error: string };
 
-      if (!parsed.ok) {
+      if (appSettings.dualAi) {
+        parsed3 = await claudeJson<Step3Result>(systemContent, userContent, false);
+      } else {
+        const sonarResp = await pplx.chat.completions.create({
+          model: SONAR_PRO,
+          stream: false as const,
+          max_tokens: 8000,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          response_format: { type: "json_schema", json_schema: { schema: STEP3_SCHEMA, name: "build_step3" } } as any,
+          messages: [
+            { role: "system", content: systemContent },
+            { role: "user", content: userContent },
+          ],
+        });
+        const raw = extractText(sonarResp as PplxResponse);
+        const pr = parseJsonResponse<Step3Result>(raw);
+        parsed3 = pr.ok ? pr : { ok: false, error: pr.error };
+      }
+
+      if (!parsed3.ok) {
         return res.json({ ok: true, sim: [], oth: [], ref: [] });
       }
 
       res.json({
         ok: true,
-        sim: parsed.value.sim ?? [],
-        oth: parsed.value.oth ?? [],
-        ref: parsed.value.ref ?? [],
+        sim: parsed3.value.sim ?? [],
+        oth: parsed3.value.oth ?? [],
+        ref: parsed3.value.ref ?? [],
       });
     } catch {
       res.json({ ok: true, sim: [], oth: [], ref: [] });

@@ -121,6 +121,16 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
     queryKey: [`/api/knowledge/${game.key}`],
   });
 
+  const settingsQuery = useQuery<{ dualAi: boolean }>({
+    queryKey: ["/api/settings"],
+  });
+  const dualAi = settingsQuery.data?.dualAi ?? true;
+
+  const toggleDualAi = useMutation({
+    mutationFn: () => apiRequest<{ dualAi: boolean }>("PATCH", "/api/settings", { dualAi: !dualAi }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings"] }),
+  });
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       setError(null);
@@ -341,27 +351,53 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
           </button>
         </div>
 
-        {/* Mode pills */}
-        <div className="flex gap-2 p-4 pb-0">
-          {(["full", "semi", "manual"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              data-testid={`mode-pill-${m}`}
-              className="px-3 py-1 rounded text-sm font-medium transition-all capitalize"
-              style={
-                mode === m
-                  ? {
-                      background: hexToRgba(accentColor, 0.15),
-                      border: `1px solid ${accentColor}`,
-                      color: accentColor,
-                    }
-                  : { border: "1px solid #3a3028", color: "var(--color-dim)" }
-              }
-            >
-              {m === "full" ? "✦ Full AI" : m === "semi" ? "◐ Semi-AI" : "✎ Manual"}
-            </button>
-          ))}
+        {/* Mode pills + dual-AI toggle */}
+        <div className="flex gap-2 p-4 pb-0 items-center justify-between">
+          <div className="flex gap-2">
+            {(["full", "semi", "manual"] as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                data-testid={`mode-pill-${m}`}
+                className="px-3 py-1 rounded text-sm font-medium transition-all capitalize"
+                style={
+                  mode === m
+                    ? {
+                        background: hexToRgba(accentColor, 0.15),
+                        border: `1px solid ${accentColor}`,
+                        color: accentColor,
+                      }
+                    : { border: "1px solid #3a3028", color: "var(--color-dim)" }
+                }
+              >
+                {m === "full" ? "✦ Full AI" : m === "semi" ? "◐ Semi-AI" : "✎ Manual"}
+              </button>
+            ))}
+          </div>
+
+          {/* Dual-AI engine toggle */}
+          <button
+            onClick={() => toggleDualAi.mutate()}
+            disabled={toggleDualAi.isPending}
+            title={dualAi ? "Dual-AI: Perplexity researches + Claude structures. Click to use Perplexity only." : "Single-AI: Perplexity only. Click to enable Claude+Perplexity dual engine."}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
+            style={
+              dualAi
+                ? {
+                    background: hexToRgba("#a78bfa", 0.12),
+                    border: "1px solid rgba(167,139,250,0.35)",
+                    color: "#a78bfa",
+                  }
+                : {
+                    background: "transparent",
+                    border: "1px solid #3a3028",
+                    color: "var(--color-dim2)",
+                  }
+            }
+          >
+            <span style={{ fontSize: "0.65rem" }}>{dualAi ? "⚡" : "🔭"}</span>
+            {dualAi ? "Claude+Pplx" : "Pplx only"}
+          </button>
         </div>
 
         <div className="p-4">
