@@ -544,6 +544,7 @@ export default function App(){
   const [addUrl,setAddUrl]=useState("");
   const [addTargetGame,setAddTargetGame]=useState("lotf");
   const [addCustomGameName,setAddCustomGameName]=useState("");
+  const [addStatImage,setAddStatImage]=useState(null); // {data:base64, mimeType:"image/png"}
   const [adding,setAdding]=useState(false);
   const [addStep,setAddStep]=useState("");
   const [addError,setAddError]=useState("");
@@ -1132,16 +1133,60 @@ export default function App(){
   };
 
   // ── Game Research Pipeline ─────────────────────────────────────────────────
+  // Sends a screenshot to Claude Vision and extracts stat system info as a text block.
+  // Returns a string describing the detected stat categories / names / abbreviations.
+  const analyzeStatImage=async(imageData,gameName)=>{
+    const curKey=(apiKeys.claude||"").trim();
+    if(!curKey||!imageData)return null;
+    try{
+      const body={
+        model:"claude-sonnet-4-6",max_tokens:1500,
+        system:"You are a game analyst. Examine the screenshot and extract every visible stat, tab, or category name shown. Be precise and literal — use exactly the text visible on screen.",
+        messages:[{role:"user",content:[
+          {type:"image",source:{type:"base64",media_type:imageData.mimeType,data:imageData.data}},
+          {type:"text",text:`This is a screenshot from the game "${gameName}" showing its stat distribution / character sheet UI.
+
+Extract ALL visible information:
+1. Every tab name shown (e.g. "Base Stats", "Attunements", "Proficiencies", "Weapon Training", "Race", "Origin", "Oath")
+2. Every stat name and its abbreviation visible on screen
+3. Any numerical values shown (caps, current values, max values)
+4. The overall structure/layout of how stats are grouped
+
+Format your response as:
+TABS/CATEGORIES VISIBLE: [comma-separated list]
+STATS VISIBLE: [Name (ABBR) per line or comma-separated]
+NUMERICAL VALUES: [any numbers associated with stats]
+STRUCTURE NOTES: [how the UI is organized, what groupings are shown]`}
+        ]}]};
+      let data;
+      if(window.electronAPI){data=await window.electronAPI.callAI("claude",body,curKey);}
+      else{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":curKey,"anthropic-version":"2023-06-01"},body:JSON.stringify(body)});data=await r.json();}
+      if(data.error)return null;
+      return(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("")||null;
+    }catch(e){return null;}
+  };
+
   // Builds a comprehensive knowledge profile for any game (custom or not).
   // Flow: Perplexity sonar-deep-research (broad multi-source research) →
   //       Claude Sonnet (structure into JSON profile) →
   //       Perplexity sonar-reasoning-pro (verify key facts, apply corrections)
   // Result stored in gameProfiles[profileKey] and persisted to localStorage.
-  const runGameResearch=async(gameName,profileKey,onStatus)=>{
+  const runGameResearch=async(gameName,profileKey,onStatus,statImage=null)=>{
     const hasPplx=!!(apiKeys.perplexity||"").trim();
     const hasClaude=!!(apiKeys.claude||"").trim();
     if(!hasPplx&&!hasClaude)return null;
     let rawResearch="";
+
+    // ── Image analysis (if user provided a stat screenshot) ────────────────
+    let imageAnalysis="";
+    if(statImage&&hasClaude){
+      onStatus?.(`🖼 Analyzing stat screenshot...`);
+      try{const result=await analyzeStatImage(statImage,gameName);if(result)imageAnalysis=result;}
+      catch(e){/* non-fatal */}
+    }
+    const imageContext=imageAnalysis
+      ?`\n\nUSER-PROVIDED SCREENSHOT ANALYSIS (treat as ground truth — these are the ACTUAL stat names/categories visible in the game UI):\n${imageAnalysis}\n\nMake sure your research confirms and expands on every stat/category visible in that screenshot.`
+      :"";
 
     // ── Phase 1: Deep research ─────────────────────────────────────────────
     const researchProv=hasPplx?"perplexity":"claude";
@@ -1167,7 +1212,7 @@ export default function App(){
 11. NG+ / ENDGAME: Does this game have New Game Plus? What is the endgame? Max content? Final challenges?
 12. CURRENT META: Top builds, strongest weapons, dominant strategies. What stat allocations define each meta build?
 
-Search multiple sources including wikis, Reddit, YouTube guides, and community resources. Be exhaustive and specific.`;
+Search multiple sources including wikis, Reddit, YouTube guides, and community resources. Be exhaustive and specific.${imageContext}`;
       rawResearch=await apiCall(rPrompt,true,{prov:researchProv,rawText:true,maxTokens:8000,
         pplxModel:researchProv==="perplexity"?"sonar-deep-research":undefined})||"";
     }catch(e){/* non-fatal */}
@@ -1224,7 +1269,7 @@ Output a single JSON object with ALL of these fields:
 }
 
 IMPORTANT: statCategories must capture ALL stat groups separately (base stats, attunements, proficiencies, weapon training, etc.). allStatKeys must be the complete flat list of every investable stat abbreviation. If a game has Race/Origin/Oath/Murmur/Boon/Flaw systems, put them in characterOptions.
-
+${imageAnalysis?`\nSCREENSHOT EVIDENCE (highest priority — use these exact names/abbreviations as shown in the actual game UI):\n${imageAnalysis}\n`:""}
 Research data:
 ${rawResearch.slice(0,6000)}`;
       profile=await apiCall(structurePrompt,false,{prov:"claude",maxTokens:3000});
@@ -1342,7 +1387,7 @@ Return ONLY this JSON:
         setAddStep(`🔵 Researching "${gameName}" — building game knowledge profile...`);
         setGenInfo({prov:"perplexity",model:"sonar-deep-research",label:"game research (new game)",step:0,total:8});
         try{
-          await runGameResearch(gameName,cacheKey,(msg)=>{setAddStep(msg);});
+          await runGameResearch(gameName,cacheKey,(msg)=>{setAddStep(msg);},addStatImage||null);
         }catch(e){/* non-fatal — continue without profile */}
       }
 
@@ -1632,7 +1677,7 @@ Main build: "${step1.label}" (${step1.sub}) - ${step1.playstyle}`;
       const finalCacheKey=useCustomGame?customKey:addTargetGame;
       const finalCacheName=useCustomGame?gameName:games[addTargetGame]?.name||gameName;
       if(newFacts.length>0)updateKnowledgeCache(finalCacheKey,finalCacheName,newFacts,null);
-      setShowAdd(false);setAddText("");setAddUrl("");setAddCustomGameName("");setAddStep("");setGenInfo(null);resetForms();
+      setShowAdd(false);setAddText("");setAddUrl("");setAddCustomGameName("");setAddStatImage(null);setAddStep("");setGenInfo(null);resetForms();
     }catch(e){
       let msg=e.message||"Unknown error";
       if(msg.toLowerCase().includes("stream idle timeout")||msg.toLowerCase().includes("partial response")){
@@ -2336,7 +2381,40 @@ ${rawBlock}`;
           <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
             {Object.entries(allGames).map(([k,g])=>{const isA=addTargetGame===k&&!addCustomGameName.trim();return(<button key={k} onClick={()=>{setAddTargetGame(k);setAddCustomGameName("");}} disabled={adding} style={{flex:"1 1 140px",background:isA?C.cardHi:"transparent",border:`1px solid ${isA?a+"66":"#ffffff14"}`,borderRadius:5,padding:"8px",cursor:adding?"not-allowed":"pointer",textAlign:"center",opacity:adding?0.5:1}}><span style={{fontSize:"1.1rem",marginRight:5}}>{g.icon}</span><span style={{fontFamily:"'Cinzel',serif",fontSize:".72rem",color:isA?C.bright:C.dim,fontWeight:700}}>{g.name}</span></button>);})}
           </div>
-          <input type="text" value={addCustomGameName} onChange={e=>setAddCustomGameName(e.target.value)} disabled={adding} placeholder="…or type a new game name (e.g. 'Elden Ring', 'Bloodborne', 'Dark Souls 3')" style={{width:"100%",background:C.bg,border:`1px solid ${addCustomGameName.trim()?a:a+"44"}`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".8rem",outline:"none",boxSizing:"border-box",marginBottom:14}}/>
+          <input type="text" value={addCustomGameName} onChange={e=>{setAddCustomGameName(e.target.value);if(!e.target.value.trim())setAddStatImage(null);}} disabled={adding} placeholder="…or type a new game name (e.g. 'Elden Ring', 'Bloodborne', 'Dark Souls 3')" style={{width:"100%",background:C.bg,border:`1px solid ${addCustomGameName.trim()?a:a+"44"}`,borderRadius:6,padding:"10px 12px",color:C.bright,fontSize:".8rem",outline:"none",boxSizing:"border-box",marginBottom:addCustomGameName.trim()?8:14}}/>
+
+          {addCustomGameName.trim()&&<div style={{marginBottom:14}}>
+            <div style={{fontFamily:"'Cinzel',serif",fontSize:".64rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:5,fontWeight:700}}>
+              Stat Screen Screenshot <span style={{color:C.dim,fontSize:".58rem",textTransform:"none",fontWeight:400,letterSpacing:0}}>— optional but recommended</span>
+            </div>
+            {addStatImage
+              ?<div style={{display:"flex",alignItems:"center",gap:10,background:C.cardHi,border:`1px solid ${a}44`,borderRadius:6,padding:"8px 10px"}}>
+                  <img src={`data:${addStatImage.mimeType};base64,${addStatImage.data}`} alt="stat screenshot" style={{width:60,height:40,objectFit:"cover",borderRadius:4,border:`1px solid ${a}44`}}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:".72rem",color:C.bright,fontWeight:600}}>{addStatImage.name||"Screenshot uploaded"}</div>
+                    <div style={{fontSize:".62rem",color:C.dim}}>Claude will analyze this to extract stat names & categories</div>
+                  </div>
+                  <button onClick={()=>setAddStatImage(null)} disabled={adding} style={{background:"transparent",border:"none",color:C.dim,cursor:"pointer",fontSize:"1rem",padding:"2px 6px",borderRadius:4}} title="Remove image">✕</button>
+                </div>
+              :<label style={{display:"flex",alignItems:"center",gap:10,border:`1px dashed ${a}55`,borderRadius:6,padding:"12px 14px",cursor:adding?"not-allowed":"pointer",opacity:adding?0.5:1,background:"transparent",transition:"border-color .15s"}}>
+                  <span style={{fontSize:"1.4rem"}}>📸</span>
+                  <div>
+                    <div style={{fontSize:".75rem",color:C.text,fontWeight:600}}>Upload a stat screen / character sheet screenshot</div>
+                    <div style={{fontSize:".62rem",color:C.dim,marginTop:2}}>Helps the AI learn exactly which stats and categories this game uses</div>
+                  </div>
+                  <input type="file" accept="image/*" style={{display:"none"}} disabled={adding} onChange={e=>{
+                    const file=e.target.files?.[0];if(!file)return;
+                    const reader=new FileReader();
+                    reader.onload=ev=>{
+                      const dataUrl=ev.target.result;
+                      const match=dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+                      if(match)setAddStatImage({mimeType:match[1],data:match[2],name:file.name});
+                    };
+                    reader.readAsDataURL(file);
+                    e.target.value="";
+                  }}/>
+                </label>}
+          </div>}
 
           {addMode==="ai"&&<>
             <div style={{fontFamily:"'Cinzel',serif",fontSize:".68rem",color:a,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6,fontWeight:700}}>Build Request</div>
