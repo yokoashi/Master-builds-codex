@@ -4,13 +4,18 @@ import { useTheme, THEMES, type ThemeId } from "@/hooks/use-theme";
 export default function ThemePicker() {
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
   useEffect(() => {
     if (!open) return;
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (
+        btnRef.current && !btnRef.current.contains(e.target as Node) &&
+        dropRef.current && !dropRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -18,13 +23,26 @@ export default function ThemePicker() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  function handleToggle() {
+    if (!open && btnRef.current) {
+      // Use fixed positioning to escape any overflow:hidden parent (menu bar / root)
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + 6,
+        left: rect.left,
+      });
+    }
+    setOpen((v) => !v);
+  }
+
   const current = THEMES.find((t) => t.id === theme) ?? THEMES[0];
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <div style={{ position: "relative" }}>
       {/* Trigger button */}
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={handleToggle}
         title="Change theme"
         style={{
           display: "flex",
@@ -68,14 +86,15 @@ export default function ThemePicker() {
         <span style={{ opacity: 0.5, fontSize: "0.6rem" }}>{open ? "▲" : "▼"}</span>
       </button>
 
-      {/* Dropdown panel */}
-      {open && (
+      {/* Dropdown panel — fixed so it escapes overflow:hidden ancestors */}
+      {open && dropdownPos && (
         <div
+          ref={dropRef}
           style={{
-            position: "absolute",
-            bottom: "calc(100% + 6px)",
-            left: 0,
-            zIndex: 200,
+            position: "fixed",
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            zIndex: 9999,
             width: "260px",
             background: "var(--color-card)",
             border: "1px solid #2a2318",
