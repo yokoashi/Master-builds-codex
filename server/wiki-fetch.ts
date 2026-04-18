@@ -18,6 +18,20 @@
 import type { KnowledgeFact } from "@shared/types";
 import Perplexity from "@perplexity-ai/perplexity_ai";
 
+// Minimal interface for an OpenAI-compatible client (e.g. openRouter)
+// Lets us avoid importing the full OpenAI SDK here.
+interface OaiCompatClient {
+  chat: {
+    completions: {
+      create(params: {
+        model: string;
+        max_tokens: number;
+        messages: Array<{ role: string; content: string }>;
+      }): Promise<{ choices: Array<{ message: { content: string | null } }> }>;
+    };
+  };
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 interface PplxResponse {
@@ -87,11 +101,14 @@ export interface DiscoveredSource {
 
 /**
  * Ask sonar-pro (live web search) to find the best item-list sources for a game.
+ * Accepts either a native Perplexity client or an OpenAI-compatible client (e.g. OpenRouter).
+ * When orClient is provided, uses perplexity/sonar-pro via OpenRouter instead.
  * Returns up to 3 ranked sources.
  */
 export async function discoverSources(
   gameName: string,
-  pplx: Perplexity
+  pplx: Perplexity,
+  orClient?: OaiCompatClient
 ): Promise<DiscoveredSource[]> {
   const prompt = `Find the best online sources for a complete item/weapon/armor/accessory list for the game "${gameName}".
 
@@ -108,14 +125,26 @@ Only include URLs that actually contain item lists. Skip homepage links or searc
 Prefer pages that list many items in a table or list format.`;
 
   try {
-    const resp = await pplx.chat.completions.create({
-      model: "sonar-pro",
-      stream: false as const,
-      max_tokens: 800,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text = extractText(resp as PplxResponse);
+    let text: string;
+    if (orClient) {
+      // Use OpenRouter's sonar-pro when OR research mode is active
+      const resp = await orClient.chat.completions.create({
+        model: "perplexity/sonar-pro",
+        max_tokens: 800,
+        messages: [{ role: "user", content: prompt }],
+      });
+      text = resp.choices?.[0]?.message?.content ?? "";
+    } else {
+      const resp = await pplx.chat.completions.create({
+        model: "sonar-pro",
+        stream: false as const,
+        max_tokens: 800,
+        messages: [{ role: "user", content: prompt }],
+      });
+      text = extractText(resp as PplxResponse);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- text declared above
+    if (!text) return [];
     const sources: DiscoveredSource[] = [];
 
     for (const line of text.split("\n")) {
@@ -337,7 +366,8 @@ export async function fetchWikiPrePass(
   gameName: string,
   gameKey: string,
   pplx: Perplexity,
-  hintUrl?: string
+  hintUrl?: string,
+  orClient?: OaiCompatClient
 ): Promise<{ facts: KnowledgeFact[]; sourcesUsed: string[] }> {
   // 1. Build source list — start with any user-supplied hint
   let sources: DiscoveredSource[] = [];
@@ -354,7 +384,8 @@ export async function fetchWikiPrePass(
   }
 
   // 2. Discover additional sources via sonar-pro (always run — finds extras)
-  const discovered = await discoverSources(gameName, pplx);
+  // When orClient is provided, source discovery uses OR's perplexity/sonar-pro instead.
+  const discovered = await discoverSources(gameName, pplx, orClient);
   for (const s of discovered) {
     // Don't add if we already have the same URL
     if (!sources.some((x) => x.url === s.url)) {

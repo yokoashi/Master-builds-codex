@@ -68,8 +68,9 @@ const SONAR_DEEP = "sonar-deep-research";
 // ── App settings (persisted to settings.json next to the DB) ─────────────────
 interface AppSettings {
   aiMode: "dual" | "perplexity" | "claude" | "openrouter";
-  orModel: string;          // OpenRouter model slug (single-model fallback, unused in ensemble)
-  learnSynthMode: "claude" | "openrouter"; // Who runs the synthesis/dedup pass after Perplexity research
+  orModel: string;             // OpenRouter model slug (single-model fallback, unused in ensemble)
+  learnSynthMode: "claude" | "openrouter";      // Who runs the synthesis/dedup pass
+  learnResearchMode: "perplexity" | "openrouter"; // Who runs the 18-category deep research phase
 }
 const SETTINGS_PATH = process.env.DB_PATH
   ? join(dirname(process.env.DB_PATH), "settings.json")
@@ -78,10 +79,10 @@ const SETTINGS_PATH = process.env.DB_PATH
 function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
-      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
     }
   } catch { /* ignore */ }
-  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude" };
+  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity" };
 }
 function saveSettings(s: AppSettings) {
   try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
@@ -266,6 +267,27 @@ Do NOT modify, merge, or summarise. Return the winning list exactly as-is.`;
   } catch {
     return candidates[0].text;
   }
+}
+
+// ── OpenRouter deep-research helper ────────────────────────────────────────
+// Routes a single category prompt through OR's perplexity/sonar-deep-research.
+// Uses the OpenAI-compatible chat completions shape (same as all other OR calls).
+// Returns the raw text response, identical shape to what pplx.chat.completions
+// returns so the caller can use extractText() on it.
+const OR_SONAR_DEEP = "perplexity/sonar-deep-research";
+async function orDeepResearch(
+  prompt: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const resp = await openRouter.chat.completions.create(
+    {
+      model: OR_SONAR_DEEP,
+      max_tokens: 8000,
+      messages: [{ role: "user", content: prompt }],
+    },
+    { signal }
+  );
+  return resp.choices?.[0]?.message?.content ?? "";
 }
 
 // ── JSON Schema definitions for structured output ───────────────────────────
@@ -579,10 +601,11 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
   // ── PATCH /api/settings ───────────────────────────────────────────────────
   app.patch("/api/settings", (req, res) => {
-    const { aiMode, orModel, learnSynthMode } = req.body as Partial<AppSettings>;
+    const { aiMode, orModel, learnSynthMode, learnResearchMode } = req.body as Partial<AppSettings>;
     if (aiMode === "dual" || aiMode === "perplexity" || aiMode === "claude" || aiMode === "openrouter") appSettings.aiMode = aiMode;
     if (typeof orModel === "string" && orModel.trim()) appSettings.orModel = orModel.trim();
     if (learnSynthMode === "claude" || learnSynthMode === "openrouter") appSettings.learnSynthMode = learnSynthMode;
+    if (learnResearchMode === "perplexity" || learnResearchMode === "openrouter") appSettings.learnResearchMode = learnResearchMode;
     saveSettings(appSettings);
     res.json(appSettings);
   });
@@ -1276,7 +1299,13 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
       if (existingCount < 50 || hintUrl) {
         try {
           emit("Wiki pre-pass", `Finding real item sources for ${gameName}...`);
-          const prePass = await fetchWikiPrePass(gameName, gameKey, pplx, hintUrl);
+          const prePass = await fetchWikiPrePass(
+            gameName, gameKey, pplx, hintUrl,
+            appSettings.learnResearchMode === "openrouter"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ? (openRouter as any)
+              : undefined
+          );
           if (prePass.facts.length > 0) {
             updateKnowledgeCache(gameKey, gameName, prePass.facts, `Wiki pre-pass — ${prePass.facts.length} items`);
             preFacts = prePass.facts.length;
@@ -1347,10 +1376,17 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
           batch.map((c) => c.name).join(" · ")
         );
         const LEARN_TIMEOUT_MS = 300_000; // 5 min per category
+        const useOrResearch = appSettings.learnResearchMode === "openrouter";
         const results = await Promise.allSettled(
           batch.map((cat) => {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), LEARN_TIMEOUT_MS);
+            if (useOrResearch) {
+              // Route through OpenRouter's perplexity/sonar-deep-research
+              return orDeepResearch(cat.prompt, controller.signal)
+                .finally(() => clearTimeout(timer));
+            }
+            // Default: native Perplexity SDK
             return pplx.chat.completions.create(
               {
                 model: SONAR_DEEP,
@@ -1365,7 +1401,9 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
         for (let j = 0; j < results.length; j++) {
           const r = results[j];
           if (r.status === "fulfilled") {
-            const text = extractText(r.value as PplxResponse);
+            // orDeepResearch returns string; pplx returns PplxResponse — normalise both
+            const raw = r.value;
+            const text = typeof raw === "string" ? raw : extractText(raw as PplxResponse);
             const facts = parseLearnLines(text, gameKey, gameName);
             allFacts.push(...facts);
             categoryResults.push({ name: batch[j].name, count: facts.length });

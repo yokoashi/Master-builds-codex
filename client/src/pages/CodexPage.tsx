@@ -48,16 +48,24 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
     queryKey: ["/api/builds"],
   });
 
-  // Learn synthesis mode (persisted in settings.json)
+  // Learn research + synthesis modes (persisted in settings.json)
   const { data: settingsData, refetch: refetchSettings } = useQuery<{
     aiMode: string;
     learnSynthMode: "claude" | "openrouter";
+    learnResearchMode: "perplexity" | "openrouter";
   }>({ queryKey: ["/api/settings"] });
   const learnSynthMode = settingsData?.learnSynthMode ?? "claude";
+  const learnResearchMode = settingsData?.learnResearchMode ?? "perplexity";
 
   const setLearnSynthMode = useMutation({
     mutationFn: (mode: "claude" | "openrouter") =>
       apiRequest("PATCH", "/api/settings", { learnSynthMode: mode }),
+    onSuccess: () => refetchSettings(),
+  });
+
+  const setLearnResearchMode = useMutation({
+    mutationFn: (mode: "perplexity" | "openrouter") =>
+      apiRequest("PATCH", "/api/settings", { learnResearchMode: mode }),
     onSuccess: () => refetchSettings(),
   });
 
@@ -408,6 +416,41 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
             </button>
 
             <div className="flex flex-col gap-1">
+              {/* Research mode toggle — who runs the 18-category deep research phase */}
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span style={{ fontSize: "0.6rem", color: "var(--color-dim2)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)", flexShrink: 0 }}>Research</span>
+                <div className="flex rounded overflow-hidden flex-1" style={{ border: "1px solid #2a2218" }}>
+                  {([
+                    { mode: "perplexity", label: "⚡ Pplx",       color: "#5591c7", title: "Perplexity sonar-deep-research (native API — uses Perplexity credits)" },
+                    { mode: "openrouter", label: "◈ OpenRouter", color: "#4ade80", title: "Perplexity sonar-deep-research via OpenRouter (uses OR credits)" },
+                  ] as const).map(({ mode, label, color, title }, idx, arr) => {
+                    const active = learnResearchMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => setLearnResearchMode.mutate(mode)}
+                        disabled={setLearnResearchMode.isPending}
+                        title={title}
+                        style={{
+                          flex: 1,
+                          padding: "2px 4px",
+                          fontSize: "0.6rem",
+                          fontFamily: "var(--font-display)",
+                          letterSpacing: "0.04em",
+                          background: active ? `rgba(${mode === "perplexity" ? "85,145,199" : "74,222,128"},0.12)` : "transparent",
+                          color: active ? color : "var(--color-dim2)",
+                          borderRight: idx < arr.length - 1 ? "1px solid #2a2218" : "none",
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {/* Synthesis mode toggle — who validates the research data */}
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span style={{ fontSize: "0.6rem", color: "var(--color-dim2)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)", flexShrink: 0 }}>Synth</span>
