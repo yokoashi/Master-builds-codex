@@ -68,7 +68,8 @@ const SONAR_DEEP = "sonar-deep-research";
 // ── App settings (persisted to settings.json next to the DB) ─────────────────
 interface AppSettings {
   aiMode: "dual" | "perplexity" | "claude" | "openrouter";
-  orModel: string; // OpenRouter model slug, e.g. "google/gemini-2.5-pro-preview-03-25"
+  orModel: string;          // OpenRouter model slug (single-model fallback, unused in ensemble)
+  learnSynthMode: "claude" | "openrouter"; // Who runs the synthesis/dedup pass after Perplexity research
 }
 const SETTINGS_PATH = process.env.DB_PATH
   ? join(dirname(process.env.DB_PATH), "settings.json")
@@ -77,10 +78,10 @@ const SETTINGS_PATH = process.env.DB_PATH
 function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
-      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
     }
   } catch { /* ignore */ }
-  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL };
+  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude" };
 }
 function saveSettings(s: AppSettings) {
   try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
@@ -231,6 +232,39 @@ Do NOT modify, merge, or summarise. Output the winning JSON verbatim. No explana
     return { ok: false, error: "No valid JSON from any panel model or judge" };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── OpenRouter text-mode ensemble (for synthesis pass) ──────────────────────
+// Same panel as openrouterJson but returns plain text (item lines), not JSON.
+// Judge picks the candidate with the most well-classified item lines.
+async function openrouterSynth(systemPrompt: string, userPrompt: string): Promise<string> {
+  // Run all panel models in parallel
+  const panelResults = await Promise.allSettled(
+    OR_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt))
+  );
+  const candidates: { model: string; text: string }[] = [];
+  for (let i = 0; i < OR_PANEL.length; i++) {
+    const r = panelResults[i];
+    if (r.status === "fulfilled" && r.value.trim()) {
+      candidates.push({ model: OR_PANEL[i], text: r.value });
+    }
+  }
+  if (candidates.length === 0) return "";
+  if (candidates.length === 1) return candidates[0].text;
+
+  // Judge picks the best cleaned fact list
+  const judgeSystem = `You are a game item database quality judge. You will receive ${candidates.length} cleaned item line lists from different AI models.
+Your job: return ONLY the single best list verbatim — the one with the most items, best prefix classification (WEAPON:/ARMOR:/etc.), and most numeric data.
+Do NOT modify, merge, or summarise. Return the winning list exactly as-is.`;
+  const judgeUser = candidates
+    .map((c, i) => `=== CANDIDATE ${i + 1} (${c.model}) ===\n${c.text}`)
+    .join("\n\n");
+  try {
+    const winner = await callOrModel(OR_JUDGE, judgeSystem, judgeUser);
+    return winner.trim() || candidates[0].text;
+  } catch {
+    return candidates[0].text;
   }
 }
 
@@ -545,9 +579,10 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
   // ── PATCH /api/settings ───────────────────────────────────────────────────
   app.patch("/api/settings", (req, res) => {
-    const { aiMode, orModel } = req.body as Partial<AppSettings>;
+    const { aiMode, orModel, learnSynthMode } = req.body as Partial<AppSettings>;
     if (aiMode === "dual" || aiMode === "perplexity" || aiMode === "claude" || aiMode === "openrouter") appSettings.aiMode = aiMode;
     if (typeof orModel === "string" && orModel.trim()) appSettings.orModel = orModel.trim();
+    if (learnSynthMode === "claude" || learnSynthMode === "openrouter") appSettings.learnSynthMode = learnSynthMode;
     saveSettings(appSettings);
     res.json(appSettings);
   });
@@ -1389,19 +1424,27 @@ Tasks:
 
 Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(", ")}`;
 
-          // Claude synthesis — better classification validation than sonar-reasoning-pro.
-          // Returns plain text lines (not JSON), so we call Claude directly.
-          const claudeMsg = await claude.messages.create({
-            model: CLAUDE_MODEL,
-            max_tokens: 12000,
-            system: "You are a database validator. Output ONLY cleaned item lines, one per line. No JSON, no markdown, no commentary.",
-            messages: [{ role: "user", content: synthPrompt }],
-          });
-          const claudeText = claudeMsg.content
-            .filter((b) => b.type === "text")
-            .map((b) => (b as { type: "text"; text: string }).text)
-            .join("");
-          const synthFacts = parseLearnLines(claudeText, gameKey, gameName);
+          // Synthesis pass — Claude (default) or OpenRouter ensemble based on learnSynthMode
+          const synthSystem = "You are a database validator. Output ONLY cleaned item lines, one per line. No JSON, no markdown, no commentary.";
+          let synthText = "";
+          if (appSettings.learnSynthMode === "openrouter") {
+            // OpenRouter panel: 4 models in parallel + judge picks best fact list
+            emit("Synthesis pass", "OpenRouter ensemble validating & classifying...");
+            synthText = await openrouterSynth(synthSystem, synthPrompt);
+          } else {
+            // Claude synthesis (default) — best classification validation
+            const claudeMsg = await claude.messages.create({
+              model: CLAUDE_MODEL,
+              max_tokens: 12000,
+              system: synthSystem,
+              messages: [{ role: "user", content: synthPrompt }],
+            });
+            synthText = claudeMsg.content
+              .filter((b) => b.type === "text")
+              .map((b) => (b as { type: "text"; text: string }).text)
+              .join("");
+          }
+          const synthFacts = parseLearnLines(synthText, gameKey, gameName);
           if (synthFacts.length >= allFacts.length * 0.35) {
             finalFacts = synthFacts;
           }

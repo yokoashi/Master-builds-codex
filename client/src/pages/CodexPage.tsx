@@ -48,6 +48,19 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
     queryKey: ["/api/builds"],
   });
 
+  // Learn synthesis mode (persisted in settings.json)
+  const { data: settingsData, refetch: refetchSettings } = useQuery<{
+    aiMode: string;
+    learnSynthMode: "claude" | "openrouter";
+  }>({ queryKey: ["/api/settings"] });
+  const learnSynthMode = settingsData?.learnSynthMode ?? "claude";
+
+  const setLearnSynthMode = useMutation({
+    mutationFn: (mode: "claude" | "openrouter") =>
+      apiRequest("PATCH", "/api/settings", { learnSynthMode: mode }),
+    onSuccess: () => refetchSettings(),
+  });
+
   const { data: knowledgeInfo } = useQuery<{
     count: number;
     patchNote: string | null;
@@ -395,6 +408,41 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
             </button>
 
             <div className="flex flex-col gap-1">
+              {/* Synthesis mode toggle — who validates the research data */}
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span style={{ fontSize: "0.6rem", color: "var(--color-dim2)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)", flexShrink: 0 }}>Synth</span>
+                <div className="flex rounded overflow-hidden flex-1" style={{ border: "1px solid #2a2218" }}>
+                  {([
+                    { mode: "claude",      label: "✦ Claude",     color: "#e8c05a", title: "Claude validates & deduplicates research data" },
+                    { mode: "openrouter",  label: "◈ OpenRouter",  color: "#4ade80", title: "OpenRouter ensemble validates research data (4 models + judge)" },
+                  ] as const).map(({ mode, label, color, title }, idx, arr) => {
+                    const active = learnSynthMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => setLearnSynthMode.mutate(mode)}
+                        disabled={setLearnSynthMode.isPending}
+                        title={title}
+                        style={{
+                          flex: 1,
+                          padding: "2px 4px",
+                          fontSize: "0.6rem",
+                          fontFamily: "var(--font-display)",
+                          letterSpacing: "0.04em",
+                          background: active ? `rgba(${mode === "claude" ? "232,192,90" : "74,222,128"},0.12)` : "transparent",
+                          color: active ? color : "var(--color-dim2)",
+                          borderRight: idx < arr.length - 1 ? "1px solid #2a2218" : "none",
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="flex gap-1">
                 <button
                   data-testid="btn-learn"
