@@ -1,5 +1,12 @@
-/* ── Google Fonts: Cinzel (display) + DM Sans (body) ─────────────────────── */
+/* ── Google Fonts ─────────────────────────────────────────────────────────── */
+/* Standard UI fonts */
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap');
+/* Deep theme fonts */
+@import url('https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&family=IM+Fell+English:ital@0;1&display=swap');  /* Grimoire */
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Roboto+Condensed:wght@300;400;700&display=swap'); /* Forge */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap'); /* Void */
+@import url('https://fonts.googleapis.com/css2?family=Philosopher:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap'); /* Faebound */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap'); /* Bloodscript */
 
 @tailwind base;
 @tailwind components;
@@ -370,3 +377,303 @@ button { cursor: pointer; }
   --color-gold:    #f8d870;
   --color-purple:  #e0a820;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   DEEP THEMES — full UI transformation (colors + fonts + textures + decorations)
+   These change the entire personality of the app, not just the palette.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Deep theme keyframes ─────────────────────────────────────────────────── */
+
+/* Grimoire: slow arcane ink bleed on borders */
+@keyframes inkBleed {
+  0%, 100% { box-shadow: inset 0 0 12px rgba(120, 80, 200, 0.12), 0 0 4px rgba(120, 80, 200, 0.08); }
+  50%       { box-shadow: inset 0 0 20px rgba(120, 80, 200, 0.22), 0 0 8px rgba(120, 80, 200, 0.16); }
+}
+/* Forge: ember glow pulse on card edges */
+@keyframes emberPulse {
+  0%, 100% { box-shadow: inset 0 0 8px rgba(232, 90, 26, 0.08), 0 1px 0 rgba(232, 90, 26, 0.15); }
+  50%       { box-shadow: inset 0 0 18px rgba(232, 90, 26, 0.18), 0 1px 0 rgba(232, 90, 26, 0.30); }
+}
+/* Void: slow scan-line drift */
+@keyframes scanDrift {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 100px; }
+}
+/* Faebound: bioluminescent shimmer */
+@keyframes faePulse {
+  0%, 100% { box-shadow: inset 0 0 10px rgba(56, 212, 180, 0.06), 0 0 5px rgba(56, 212, 180, 0.08); }
+  50%       { box-shadow: inset 0 0 22px rgba(56, 212, 180, 0.14), 0 0 10px rgba(56, 212, 180, 0.18); }
+}
+/* Bloodscript: slow crimson drip pulse */
+@keyframes bloodPulse {
+  0%, 100% { box-shadow: inset 0 0 10px rgba(180, 20, 20, 0.12), 0 2px 0 rgba(180, 20, 20, 0.20); }
+  50%       { box-shadow: inset 0 0 24px rgba(180, 20, 20, 0.24), 0 2px 0 rgba(180, 20, 20, 0.40); }
+}
+
+/* ── Grimoire ─────────────────────────────────────────────────────────────────
+   Ancient spellbook. Blackletter headers, aged serif body, parchment-burnt bg.
+   Borders glow with arcane ink. Decorative flourish via ::before pseudo-elements.
+   ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="grimoire"] {
+  --color-bg:      #110e07;
+  --color-card:    #1c1608;
+  --color-card-hi: #251d0c;
+  --color-card-2:  #2e2410;
+  --color-text:    #d4c89a;
+  --color-dim:     #8a7a50;
+  --color-dim2:    #6a5c38;
+  --color-bright:  #f0e8c0;
+  --color-crimson: #9b5de5;
+  --color-gold:    #c9a84c;
+  --color-purple:  #7b2fff;
+  --color-blue:    #6a7fff;
+  --color-green:   #5cba7a;
+  --color-fire:    #c97a2a;
+
+  --font-display: 'UnifrakturMaguntia', 'Palatino Linotype', serif;
+  --font-body:    'IM Fell English', 'Georgia', serif;
+
+  /* Parchment noise texture via SVG data URL */
+  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  --border-deco: 1px solid rgba(160, 120, 40, 0.35);
+  --card-anim:   inkBleed 4s ease-in-out infinite;
+}
+
+[data-theme="grimoire"] body {
+  background-image: var(--bg-texture);
+  background-size: 200px 200px;
+}
+
+/* Grimoire: cards breathe with arcane ink */
+[data-theme="grimoire"] .bg-\[\#171310\],
+[data-theme="grimoire"] .bg-\[\#1f1a14\],
+[data-theme="grimoire"] .bg-\[\#251f17\] {
+  animation: inkBleed 4s ease-in-out infinite;
+  border-color: rgba(160, 120, 40, 0.25) !important;
+}
+
+/* Grimoire: headings get full blackletter treatment */
+[data-theme="grimoire"] h1,
+[data-theme="grimoire"] h2,
+[data-theme="grimoire"] h3 {
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 20px rgba(155, 93, 229, 0.3);
+}
+
+/* Grimoire: scrollbar becomes inkwell */
+[data-theme="grimoire"] ::-webkit-scrollbar-thumb { background: #6a3a90; }
+[data-theme="grimoire"] ::-webkit-scrollbar-thumb:hover { background: #8a50b8; }
+
+/* ── Forge ────────────────────────────────────────────────────────────────────
+   Blacksmith's workshop. Heavy condensed headers, iron-dark bg, molten accents.
+   Cards pulse with ember light along bottom edge.
+   ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="forge"] {
+  --color-bg:      #0c0a07;
+  --color-card:    #171410;
+  --color-card-hi: #211d18;
+  --color-card-2:  #2a2620;
+  --color-text:    #c8bfb0;
+  --color-dim:     #786a58;
+  --color-dim2:    #585048;
+  --color-bright:  #e8dfd0;
+  --color-crimson: #e85a1a;
+  --color-gold:    #f0a020;
+  --color-purple:  #b87840;
+  --color-blue:    #88a0c0;
+  --color-green:   #88a860;
+  --color-fire:    #ff6a00;
+
+  --font-display: 'Oswald', 'Arial Narrow', sans-serif;
+  --font-body:    'Roboto Condensed', 'Arial Narrow', sans-serif;
+
+  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  --border-deco: 1px solid rgba(232, 90, 26, 0.20);
+  --card-anim:   emberPulse 3s ease-in-out infinite;
+}
+
+[data-theme="forge"] body {
+  background-image: var(--bg-texture);
+  background-size: 100px 100px;
+}
+
+[data-theme="forge"] h1,
+[data-theme="forge"] h2,
+[data-theme="forge"] h3 {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(232, 90, 26, 0.25);
+}
+
+[data-theme="forge"] .bg-\[\#171310\],
+[data-theme="forge"] .bg-\[\#1f1a14\],
+[data-theme="forge"] .bg-\[\#251f17\] {
+  animation: emberPulse 3s ease-in-out infinite;
+}
+
+[data-theme="forge"] ::-webkit-scrollbar-thumb { background: #7a4020; }
+[data-theme="forge"] ::-webkit-scrollbar-thumb:hover { background: #a85828; }
+
+/* ── Void ─────────────────────────────────────────────────────────────────────
+   Cosmic horror. Cold geometric mono headers, starless near-black bg, 
+   purple-haze accents, subtle scan-line overlay on the body.
+   ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="void"] {
+  --color-bg:      #03020a;
+  --color-card:    #080614;
+  --color-card-hi: #0e0c1e;
+  --color-card-2:  #131028;
+  --color-text:    #9a90c0;
+  --color-dim:     #4a4470;
+  --color-dim2:    #2e2850;
+  --color-bright:  #cec8f0;
+  --color-crimson: #7858e8;
+  --color-gold:    #a880ff;
+  --color-purple:  #c060ff;
+  --color-blue:    #4080ff;
+  --color-green:   #40c0a0;
+  --color-fire:    #ff40a0;
+
+  --font-display: 'Orbitron', 'Courier New', monospace;
+  --font-body:    'Share Tech Mono', 'Courier New', monospace;
+
+  /* Scan-line overlay */
+  --bg-texture: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(120, 88, 232, 0.025) 2px,
+    rgba(120, 88, 232, 0.025) 4px
+  );
+  --border-deco: 1px solid rgba(120, 88, 232, 0.30);
+  --card-anim:   none;
+}
+
+[data-theme="void"] body {
+  background-image: var(--bg-texture);
+  background-size: auto 4px;
+  animation: scanDrift 8s linear infinite;
+}
+
+[data-theme="void"] h1,
+[data-theme="void"] h2,
+[data-theme="void"] h3 {
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(120, 88, 232, 0.60), 0 0 28px rgba(120, 88, 232, 0.30);
+}
+
+/* Void: glitch-edge on focus */
+[data-theme="void"] :focus-visible {
+  outline: 1px solid #7858e8;
+  box-shadow: 0 0 0 2px rgba(120, 88, 232, 0.30), 3px 0 0 rgba(255, 64, 160, 0.50), -3px 0 0 rgba(64, 128, 255, 0.50);
+}
+
+[data-theme="void"] ::-webkit-scrollbar-thumb { background: #2e2850; }
+[data-theme="void"] ::-webkit-scrollbar-thumb:hover { background: #4a3878; }
+
+/* ── Faebound ──────────────────────────────────────────────────────────────────
+   Enchanted forest. Flowing serif headers, deep forest bg, bioluminescent teal.
+   Cards shimmer with faint fae glow. Organic border radius throughout.
+   ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="faebound"] {
+  --color-bg:      #050d08;
+  --color-card:    #0a1610;
+  --color-card-hi: #101f18;
+  --color-card-2:  #152820;
+  --color-text:    #a8d8b8;
+  --color-dim:     #4a7858;
+  --color-dim2:    #2e5040;
+  --color-bright:  #d0f0d8;
+  --color-crimson: #38d4b0;
+  --color-gold:    #80e898;
+  --color-purple:  #60c8d8;
+  --color-blue:    #40b0e8;
+  --color-green:   #50e880;
+  --color-fire:    #a8e840;
+
+  --font-display: 'Philosopher', 'Georgia', serif;
+  --font-body:    'Lora', 'Georgia', serif;
+
+  /* Organic leaf-vein texture */
+  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.3' numOctaves='5' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  --border-deco: 1px solid rgba(56, 212, 176, 0.20);
+  --card-anim:   faePulse 5s ease-in-out infinite;
+}
+
+[data-theme="faebound"] body {
+  background-image: var(--bg-texture);
+  background-size: 300px 300px;
+}
+
+[data-theme="faebound"] h1,
+[data-theme="faebound"] h2,
+[data-theme="faebound"] h3 {
+  font-style: italic;
+  letter-spacing: 0.03em;
+  text-shadow: 0 0 16px rgba(56, 212, 176, 0.35);
+}
+
+[data-theme="faebound"] .bg-\[\#171310\],
+[data-theme="faebound"] .bg-\[\#1f1a14\],
+[data-theme="faebound"] .bg-\[\#251f17\] {
+  animation: faePulse 5s ease-in-out infinite;
+  border-radius: 10px;
+}
+
+[data-theme="faebound"] ::-webkit-scrollbar-thumb { background: #2a5840; }
+[data-theme="faebound"] ::-webkit-scrollbar-thumb:hover { background: #3a7858; }
+
+/* ── Bloodscript ───────────────────────────────────────────────────────────────
+   Dark ritual. Ornate Cinzel Decorative headers, aged Crimson Text body.
+   Near-black bg with deep crimson accents. Cards pulse with bloodlight.
+   ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="bloodscript"] {
+  --color-bg:      #0a0505;
+  --color-card:    #140808;
+  --color-card-hi: #1e0c0c;
+  --color-card-2:  #281010;
+  --color-text:    #d8b8b8;
+  --color-dim:     #7a4444;
+  --color-dim2:    #5a2c2c;
+  --color-bright:  #f8e0e0;
+  --color-crimson: #cc2020;
+  --color-gold:    #d04040;
+  --color-purple:  #901818;
+  --color-blue:    #a82828;
+  --color-green:   #c03030;
+  --color-fire:    #ff2020;
+
+  --font-display: 'Cinzel Decorative', 'Palatino Linotype', serif;
+  --font-body:    'Crimson Text', 'Georgia', serif;
+
+  /* Blood-grain texture */
+  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='150' height='150' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  --border-deco: 1px solid rgba(180, 20, 20, 0.30);
+  --card-anim:   bloodPulse 3.5s ease-in-out infinite;
+}
+
+[data-theme="bloodscript"] body {
+  background-image: var(--bg-texture);
+  background-size: 150px 150px;
+}
+
+[data-theme="bloodscript"] .bg-\[\#171310\],
+[data-theme="bloodscript"] .bg-\[\#1f1a14\],
+[data-theme="bloodscript"] .bg-\[\#251f17\] {
+  animation: bloodPulse 3.5s ease-in-out infinite;
+  border-color: rgba(180, 20, 20, 0.25) !important;
+}
+
+[data-theme="bloodscript"] h1,
+[data-theme="bloodscript"] h2,
+[data-theme="bloodscript"] h3 {
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 14px rgba(200, 30, 30, 0.50), 0 2px 4px rgba(0, 0, 0, 0.80);
+}
+
+[data-theme="bloodscript"] ::-webkit-scrollbar-thumb { background: #5a1818; }
+[data-theme="bloodscript"] ::-webkit-scrollbar-thumb:hover { background: #7a2020; }
