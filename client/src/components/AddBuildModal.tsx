@@ -343,10 +343,10 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
           </h2>
           <button
             onClick={onClose}
-            disabled={generateMutation.isPending}
             className="text-sm px-2 py-1 rounded hover:bg-white/5 transition-all"
-            style={{ color: "var(--color-dim)" }}
+            style={{ color: generateMutation.isPending ? "var(--color-dim2)" : "var(--color-dim)" }}
             data-testid="btn-close-modal"
+            title={generateMutation.isPending ? "Cancel generation" : "Close"}
           >
             ✕
           </button>

@@ -140,29 +140,29 @@ async function claudeJson<T>(
 }
 
 // ── OpenRouter multi-model ensemble ───────────────────────────────────────────
-// Runs 3 top models IN PARALLEL, then a judge model picks the best response.
-// Strategy: panel produces candidate JSON → judge selects the most complete,
-// accurate, and well-structured one → that winner is returned.
+// Runs panel models IN PARALLEL, then a judge picks the best response.
+// Each call has a hard 60 s timeout to prevent hanging the generation modal.
 //
-// Panel models (parallelised) — updated to latest frontier models April 2026:
-//   • anthropic/claude-4.7-opus-20260416       — best overall, 1M ctx
-//   • google/gemini-3.1-pro-preview-20260219   — strong reasoning + game knowledge, 1M ctx
-//   • openai/gpt-5.4-20260305                  — excellent structured output, 1M ctx
-//   • x-ai/grok-4.20-20260309                  — 2M ctx, very cheap, strong reasoning
+// Panel models — real slugs available on OpenRouter:
+//   • anthropic/claude-3-5-sonnet      — best JSON structuring
+//   • google/gemini-2.0-flash          — fast, strong reasoning
+//   • openai/gpt-4o                    — excellent structured output
 //
-// Judge model:
-//   • anthropic/claude-4.7-opus-20260416  — most capable evaluator, picks the best JSON
+// Judge model: anthropic/claude-3-5-sonnet (most reliable JSON evaluator)
 
 const OR_PANEL: string[] = [
-  "anthropic/claude-4.7-opus-20260416",
-  "google/gemini-3.1-pro-preview-20260219",
-  "openai/gpt-5.4-20260305",
-  "x-ai/grok-4.20-20260309",
+  "anthropic/claude-3-5-sonnet",
+  "google/gemini-2.0-flash",
+  "openai/gpt-4o",
 ];
-const OR_JUDGE = "anthropic/claude-4.7-opus-20260416";
+const OR_JUDGE = "anthropic/claude-3-5-sonnet";
+const OR_CALL_TIMEOUT_MS = 60_000; // 60 s per model call
 
 async function callOrModel(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const completion = await openRouter.chat.completions.create({
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`OR model ${model} timed out after ${OR_CALL_TIMEOUT_MS / 1000}s`)), OR_CALL_TIMEOUT_MS)
+  );
+  const call = openRouter.chat.completions.create({
     model,
     max_tokens: 8000,
     messages: [
@@ -170,6 +170,7 @@ async function callOrModel(model: string, systemPrompt: string, userPrompt: stri
       { role: "user",   content: userPrompt },
     ],
   });
+  const completion = await Promise.race([call, timeout]);
   return completion.choices[0]?.message?.content ?? "";
 }
 

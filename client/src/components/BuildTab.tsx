@@ -124,17 +124,17 @@ function BuildTabInner({ build, game, onDelete }: Props) {
       <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Build phases">
         {PHASE_NAMES.map((name, i) => {
           const ph = build.phases[i];
+          if (!ph) return null; // don't render buttons for phases that don't exist
           const isActive = safePhaseIdx === i;
           return (
             <div key={i} className="flex items-center gap-1">
-              {i > 0 && ph && build.phases[i - 1] && (
+              {i > 0 && build.phases[i - 1] && (
                 <PhaseGain prev={build.phases[i - 1]} curr={ph} accent={accent} />
               )}
               <button
                 data-testid={`phase-btn-${i}`}
                 onClick={() => { setActivePhase(i); setActiveNg(0); }}
-                disabled={!ph}
-                className={cn("px-2.5 py-1.5 rounded text-xs font-medium transition-all", !ph ? "opacity-25 cursor-not-allowed" : "")}
+                className="px-2.5 py-1.5 rounded text-xs font-medium transition-all"
                 style={
                   isActive
                     ? {
