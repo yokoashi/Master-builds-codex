@@ -15,23 +15,34 @@ const SERVER_ENTRY = isPackaged
   ? path.join(process.resourcesPath, "app", "dist", "index.cjs")
   : path.join(__dirname, "..", "dist", "index.cjs");
 
-// Config file lives next to the .exe so the user can edit it.
-// In dev mode it lives in the project root.
-const CONFIG_PATH = isPackaged
-  ? path.join(path.dirname(app.getPath("exe")), "config.json")
-  : path.join(process.cwd(), "config.json");
+// Config + DB live in userData (AppData\Roaming\master-builds-codex\) so they
+// survive EVERY reinstall / update — the installer never touches that folder.
+// In dev mode both live in the project root.
+const USER_DATA = isPackaged ? app.getPath("userData") : process.cwd();
+const CONFIG_PATH = path.join(USER_DATA, "config.json");
 
 interface AppConfig {
   PERPLEXITY_API_KEY?: string;
   CLAUDE_API_KEY?: string;
+  OPEN_ROUTER_API_KEY?: string;
 }
 
 function loadConfig(): AppConfig {
   try {
+    // One-time migration: if old config exists next to exe but not in userData, move it
+    if (isPackaged) {
+      const oldPath = path.join(path.dirname(app.getPath("exe")), "config.json");
+      if (fs.existsSync(oldPath) && !fs.existsSync(CONFIG_PATH)) {
+        fs.mkdirSync(USER_DATA, { recursive: true });
+        fs.renameSync(oldPath, CONFIG_PATH);
+      }
+    }
     if (fs.existsSync(CONFIG_PATH)) {
       return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
     }
-    const placeholder: AppConfig = { PERPLEXITY_API_KEY: "", CLAUDE_API_KEY: "" };
+    // First ever launch — write blank placeholder so POST /api/config knows where to save
+    fs.mkdirSync(USER_DATA, { recursive: true });
+    const placeholder: AppConfig = { PERPLEXITY_API_KEY: "", CLAUDE_API_KEY: "", OPEN_ROUTER_API_KEY: "" };
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(placeholder, null, 2) + "\n", "utf-8");
   } catch { /* ignore write errors */ }
   return {};
@@ -41,13 +52,11 @@ let mainWindow: BrowserWindow | null = null;
 let serverProcess: ChildProcess | null = null;
 
 // ── Start Express server ─────────────────────────────────────────────────────
-function startServer(apiKey: string, claudeKey = ""): Promise<void> {
+function startServer(apiKey: string, claudeKey = "", openRouterKey = ""): Promise<void> {
   return new Promise((resolve, reject) => {
-    // DB lives next to the exe so user data persists across updates.
-    // We must pass this explicitly — process.cwd() inside the spawned
-    // Node process is unpredictable in a packaged Electron app.
+    // DB lives in userData alongside config.json — survives every reinstall.
     const dbPath = isPackaged
-      ? path.join(path.dirname(app.getPath("exe")), "codex.db")
+      ? path.join(USER_DATA, "codex.db")
       : path.join(process.cwd(), "dev.db");
 
     const env: NodeJS.ProcessEnv = {
@@ -56,6 +65,7 @@ function startServer(apiKey: string, claudeKey = ""): Promise<void> {
       PORT: String(SERVER_PORT),
       PERPLEXITY_API_KEY: apiKey,
       CLAUDE_API_KEY: claudeKey,
+      OPEN_ROUTER_API_KEY: openRouterKey,
       DB_PATH: dbPath,
       CONFIG_PATH: CONFIG_PATH,
     };
@@ -145,13 +155,13 @@ function createWindow() {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   const config = loadConfig();
-  const apiKey = config.PERPLEXITY_API_KEY ?? process.env.PERPLEXITY_API_KEY ?? "";
-
-  const claudeKey = config.CLAUDE_API_KEY ?? process.env.CLAUDE_API_KEY ?? "";
+  const apiKey        = config.PERPLEXITY_API_KEY    ?? process.env.PERPLEXITY_API_KEY    ?? "";
+  const claudeKey     = config.CLAUDE_API_KEY        ?? process.env.CLAUDE_API_KEY        ?? "";
+  const openRouterKey = config.OPEN_ROUTER_API_KEY   ?? process.env.OPEN_ROUTER_API_KEY   ?? "";
   // Keys may be empty on first launch — the in-app setup screen handles it.
 
   try {
-    await startServer(apiKey, config.CLAUDE_API_KEY ?? process.env.CLAUDE_API_KEY ?? "");
+    await startServer(apiKey, claudeKey, openRouterKey);
     createWindow();
   } catch (err) {
     dialog.showErrorBox(
