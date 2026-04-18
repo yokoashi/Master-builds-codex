@@ -137,26 +137,96 @@ async function claudeJson<T>(
   }
 }
 
-// ── OpenRouter JSON generator ─────────────────────────────────────────────
-// Mirrors claudeJson but calls the user's chosen OR model via OpenAI-compat SDK.
-// The model slug comes from appSettings.orModel (changeable in settings UI).
+// ── OpenRouter multi-model ensemble ───────────────────────────────────────────
+// Runs 3 top models IN PARALLEL, then a judge model picks the best response.
+// Strategy: panel produces candidate JSON → judge selects the most complete,
+// accurate, and well-structured one → that winner is returned.
+//
+// Panel models (parallelised):
+//   • google/gemini-2.5-pro-preview-03-25  — huge context, strong reasoning
+//   • anthropic/claude-sonnet-4-5          — best JSON structuring
+//   • openai/gpt-4o                         — accurate game knowledge
+//
+// Judge model:
+//   • google/gemini-2.5-pro-preview-03-25  — reads all 3, picks the best one
+
+const OR_PANEL: string[] = [
+  "google/gemini-2.5-pro-preview-03-25",
+  "anthropic/claude-sonnet-4-5",
+  "openai/gpt-4o",
+];
+const OR_JUDGE = "google/gemini-2.5-pro-preview-03-25";
+
+async function callOrModel(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
+  const completion = await openRouter.chat.completions.create({
+    model,
+    max_tokens: 8000,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: userPrompt },
+    ],
+  });
+  return completion.choices[0]?.message?.content ?? "";
+}
+
 async function openrouterJson<T>(
   systemPrompt: string,
   userPrompt: string,
 ): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
   try {
-    const completion = await openRouter.chat.completions.create({
-      model: appSettings.orModel,
-      max_tokens: 8000,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user",   content: userPrompt },
-      ],
-    });
-    const text = completion.choices[0]?.message?.content ?? "";
-    const parsed = parseJsonResponse<T>(text);
+    // 1. Run all panel models in parallel
+    const panelResults = await Promise.allSettled(
+      OR_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt))
+    );
+
+    // 2. Collect fulfilled responses
+    const candidates: { model: string; text: string }[] = [];
+    for (let i = 0; i < OR_PANEL.length; i++) {
+      const r = panelResults[i];
+      if (r.status === "fulfilled" && r.value.trim()) {
+        candidates.push({ model: OR_PANEL[i], text: r.value });
+      }
+    }
+
+    if (candidates.length === 0) {
+      return { ok: false, error: "All OpenRouter panel models failed to respond" };
+    }
+
+    // 3. If only one succeeded, use it directly
+    if (candidates.length === 1) {
+      const parsed = parseJsonResponse<T>(candidates[0].text);
+      if (parsed.ok) return parsed;
+      return { ok: false, error: parsed.error };
+    }
+
+    // 4. Ask the judge to pick the best candidate
+    const judgeSystem = `You are a JSON quality judge. You will receive ${candidates.length} candidate JSON responses from different AI models answering the same prompt.
+Your job: return ONLY the single best candidate as-is — the one that is most complete, accurate, and correctly structured.
+Do NOT modify, merge, or summarise. Output the winning JSON verbatim. No explanation. Pure JSON only.`;
+
+    const judgeUser = candidates
+      .map((c, i) => `=== CANDIDATE ${i + 1} (${c.model}) ===\n${c.text}`)
+      .join("\n\n");
+
+    let winnerText: string;
+    try {
+      winnerText = await callOrModel(OR_JUDGE, judgeSystem, judgeUser);
+    } catch {
+      // Judge failed — fall back to first valid parse
+      winnerText = candidates[0].text;
+    }
+
+    // 5. Parse the winner
+    const parsed = parseJsonResponse<T>(winnerText);
     if (parsed.ok) return parsed;
-    return { ok: false, error: parsed.error };
+
+    // 6. Judge returned garbage — try each candidate in order until one parses
+    for (const c of candidates) {
+      const fallback = parseJsonResponse<T>(c.text);
+      if (fallback.ok) return fallback;
+    }
+
+    return { ok: false, error: "No valid JSON from any panel model or judge" };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
