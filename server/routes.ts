@@ -165,6 +165,8 @@ async function callOrModel(model: string, systemPrompt: string, userPrompt: stri
   const call = openRouter.chat.completions.create({
     model,
     max_tokens: 8000,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    response_format: { type: "json_object" } as any,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user",   content: userPrompt },
@@ -789,9 +791,18 @@ Only include items you found confirmed in search results. Exact in-game names on
           `Search for "${body.gameName} ${body.buildDescription} armor sets" — list every recommended armor piece with defense stats and how to obtain`,
           `Search for "${body.gameName} ${body.buildDescription} accessories rings talismans spells" — list each with effect, numbers, and location`,
         ], 3000);
+        const orCompletenessBlock = `
+
+MANDATORY COMPLETENESS REQUIREMENTS — DO NOT SKIP ANY:
+- stats: Every phase MUST include ALL stat keys used by ${body.gameName} with numeric values. Do NOT include only 2 stats — include every relevant stat (e.g. VIT, END, STR, DEX, INT, FTH, ARC, RAD, INF, AGI — whichever this game uses). Look at the build description and game to determine the full stat list.
+- weapons: Every phase MUST have 2-4 weapons minimum, each with n, ap (number), loc, up, eq, d, tip, wt fields populated.
+- armor: Every phase MUST have 2-4 armor entries (chest/helmet/legs/gauntlets as separate entries) with n, loc, wt, d fields.
+- acc: Every phase MUST have 2-4 accessories (rings/talismans/seals) with n, ef, loc fields populated.
+- dmg: Every phase MUST have dmg.ps, dmg.sp, dmg.bs as real numeric estimates and dmg.n as a note.
+Empty arrays, missing stat keys, or phases with only 1 item in any category are WRONG. Fully populate every array in every phase.`;
         parsed = await openrouterJson<Partial<Build>>(
           systemContent,
-          `${userContent}\n\nWEB RESEARCH (use as ground truth — exact in-game names only):\n${researchCtx.substring(0, 8000)}`,
+          `${userContent}\n\nWEB RESEARCH (use as ground truth — exact in-game names only):\n${researchCtx.substring(0, 8000)}${orCompletenessBlock}`,
         );
       } else {
         // ── Perplexity-only: sonar-pro with JSON schema ───────────────────────
@@ -915,9 +926,17 @@ Be detailed about late-game item locations and NG+ strategy changes. No placehol
           `Search for "${body.gameName} late game endgame weapons upgrades NG+" — list items with exact names and locations`,
           `Search for "${body.gameName} NG+ cycle changes enemy scaling boss drops" — list all relevant late-game details`,
         ], 3000);
+        const s2CompletenessBlock = `
+
+MANDATORY COMPLETENESS REQUIREMENTS — DO NOT SKIP ANY:
+- stats: EVERY phase (4, 5, 6, and NG+) MUST include ALL stat keys for ${body.gameName} with numeric values. Include every stat the game has — not just 2 stats.
+- weapons/armor/acc: EVERY phase must have 2-4 entries minimum in each array. Empty arrays are WRONG.
+- ngCycles: Include all 4 NG+ entries (NG+1, NG+3, NG+5, NG+7) with real strategy notes and stat deltas.
+- dmg: Every phase needs dmg.ps, dmg.sp, dmg.bs as real numbers and dmg.n as a note.
+Phases with only 1-2 stats, empty item arrays, or missing NG+ cycles are incomplete and WRONG.`;
         parsed2 = await openrouterJson<{ phases_4_to_7: Build["phases"] }>(
           systemContent,
-          `${userContent}\n\nWEB RESEARCH (late-game + NG+ ground truth):\n${researchCtx2.substring(0, 6000)}`,
+          `${userContent}\n\nWEB RESEARCH (late-game + NG+ ground truth):\n${researchCtx2.substring(0, 6000)}${s2CompletenessBlock}`,
         );
       } else {
         // sonar-reasoning-pro — CoT, strips <think> tags via parseJsonResponse
@@ -1030,9 +1049,16 @@ Generate 2 sim, 2 oth, 5 ref entries.`;
         const researchCtx3 = await pplxResearch([
           `Search for "${body.gameName} ${body.partialBuild?.label ?? body.buildKey} similar builds alternatives" — list viable alternatives with key differences`,
         ], 2000);
+        const s3CompletenessBlock = `
+
+MANDATORY COMPLETENESS REQUIREMENTS:
+- sim: Include exactly 2 similar build entries. Each MUST have: key, label, icon, sub, diff (3+ sentences explaining differences).
+- oth: Include exactly 2 other OP build entries. Each MUST have: key, label, icon, sub, diff (3+ sentences).
+- ref: Include exactly 5 quick-reference tip entries. Each MUST have: cat, tip (detailed, actionable), src fields.
+Empty arrays or fewer entries than required are WRONG. Populate all arrays fully.`;
         parsed3 = await openrouterJson<Step3Result>(
           systemContent,
-          `${userContent}\n\nWEB RESEARCH (similar/alternative builds):\n${researchCtx3.substring(0, 4000)}`,
+          `${userContent}\n\nWEB RESEARCH (similar/alternative builds):\n${researchCtx3.substring(0, 4000)}${s3CompletenessBlock}`,
         );
       } else {
         const sonarResp = await pplx.chat.completions.create({
