@@ -142,20 +142,22 @@ async function claudeJson<T>(
 // Strategy: panel produces candidate JSON → judge selects the most complete,
 // accurate, and well-structured one → that winner is returned.
 //
-// Panel models (parallelised):
-//   • google/gemini-2.5-pro-preview-03-25  — huge context, strong reasoning
-//   • anthropic/claude-sonnet-4-5          — best JSON structuring
-//   • openai/gpt-4o                         — accurate game knowledge
+// Panel models (parallelised) — updated to latest frontier models April 2026:
+//   • anthropic/claude-4.7-opus-20260416       — best overall, 1M ctx
+//   • google/gemini-3.1-pro-preview-20260219   — strong reasoning + game knowledge, 1M ctx
+//   • openai/gpt-5.4-20260305                  — excellent structured output, 1M ctx
+//   • x-ai/grok-4.20-20260309                  — 2M ctx, very cheap, strong reasoning
 //
 // Judge model:
-//   • google/gemini-2.5-pro-preview-03-25  — reads all 3, picks the best one
+//   • anthropic/claude-4.7-opus-20260416  — most capable evaluator, picks the best JSON
 
 const OR_PANEL: string[] = [
-  "google/gemini-2.5-pro-preview-03-25",
-  "anthropic/claude-sonnet-4-5",
-  "openai/gpt-4o",
+  "anthropic/claude-4.7-opus-20260416",
+  "google/gemini-3.1-pro-preview-20260219",
+  "openai/gpt-5.4-20260305",
+  "x-ai/grok-4.20-20260309",
 ];
-const OR_JUDGE = "google/gemini-2.5-pro-preview-03-25";
+const OR_JUDGE = "anthropic/claude-4.7-opus-20260416";
 
 async function callOrModel(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
   const completion = await openRouter.chat.completions.create({
