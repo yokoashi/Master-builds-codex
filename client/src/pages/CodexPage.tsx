@@ -625,8 +625,15 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
 
       {showTeamLog && (
         <div
-          className="absolute inset-0 z-50 flex items-stretch justify-end"
-          style={{ pointerEvents: "auto" }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "stretch",
+            justifyContent: "flex-end",
+            pointerEvents: "auto",
+          }}
           onClick={() => setShowTeamLog(false)}
         >
           <div

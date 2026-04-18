@@ -207,5 +207,11 @@
     "type": "fix",
     "ts": 1776471248839,
     "message": "FIX: ThemePicker dropdown was invisible (overflow:hidden clipping)\n\nROOT CAUSE:\nThe dropdown used position:absolute with bottom:calc(100%+6px) (opens upward).\nBut the root layout div has overflow:hidden, which clips absolutely-positioned\nchildren that escape the parent bounds. The dropdown WAS rendering \u2014 it was just\ngetting cropped to zero visible area before it could be seen.\n\nFIX (ThemePicker.tsx):\n- Changed dropdown from position:absolute to position:fixed\n- On button click, capture btnRef.getBoundingClientRect() to get exact\n  screen coordinates, store in dropdownPos state\n- Dropdown renders at { top: rect.bottom + 6, left: rect.left } in fixed space\n- This fully escapes the overflow:hidden chain all the way to the root div\n- zIndex raised to 9999 (was 200) so it sits above all panels\n- Separate btnRef/dropRef for outside-click handler (replaces the old ref={ref} wrapper)\n- Wrapper div no longer needs position:relative since dropdown is now fixed\n\nTypeScript: zero errors."
+  },
+  {
+    "from": "perplexity",
+    "type": "fix",
+    "ts": 1776471486781,
+    "message": "FIX: Team Log (and KnowledgeViewer) panels showing black screen\n\nROOT CAUSE:\nSame class of bug as the ThemePicker dropdown (entry #35). Any overlay that uses\nposition:absolute is clipped by overflow:hidden ancestors in the Electron layout.\n\nAffected components:\n  1. Team Log panel in CodexPage.tsx \u2014 absolute inset-0 z-50\n  2. KnowledgeViewer.tsx \u2014 absolute inset-0 z-50\n\nBoth used className=\"absolute inset-0\" which is relative to the nearest positioned\nancestor (the root flex div). The overflow:hidden on that root div clips them to a\nzero-visible area, resulting in a black/invisible screen when opened.\n\nFIX: Changed both to position:fixed with inset:0 z-index:9999\n  - Team Log: replaced Tailwind className with inline style object (position:fixed)\n  - KnowledgeViewer: same treatment on the outer overlay div\n  - AddBuildModal + DeleteModal already used fixed \u2014 no change needed\n  - LearnProgress is inline (not an overlay) \u2014 no change needed\n\nAll overlays in the app now use position:fixed. TypeScript: zero errors."
   }
 ]
