@@ -9,19 +9,22 @@ interface Props {
   asModal?: boolean;
   onClose?: () => void;
   /** Masked existing key values from GET /api/config (shown as placeholders) */
-  savedMasks?: { perplexity: string; claude: string };
+  savedMasks?: { perplexity: string; claude: string; openRouter: string };
 }
 
 export default function SetupScreen({ onComplete, asModal, onClose, savedMasks }: Props) {
   const [perplexityKey, setPerplexityKey] = useState("");
   const [claudeKey, setClaudeKey] = useState("");
+  const [openRouterKey, setOpenRouterKey] = useState("");
   const [showPplx, setShowPplx] = useState(false);
   const [showClaude, setShowClaude] = useState(false);
+  const [showOR, setShowOR] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // True when a key is already saved on disk (mask present) and the field is blank
   const pplxAlreadySaved = Boolean(savedMasks?.perplexity) && !perplexityKey.trim();
   const claudeAlreadySaved = Boolean(savedMasks?.claude) && !claudeKey.trim();
+  const orAlreadySaved = Boolean(savedMasks?.openRouter) && !openRouterKey.trim();
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -29,6 +32,7 @@ export default function SetupScreen({ onComplete, asModal, onClose, savedMasks }
         // Only send if the user typed something new; blank = keep existing
         perplexityKey: perplexityKey.trim() || undefined,
         claudeKey: claudeKey.trim() || undefined,
+        openRouterKey: openRouterKey.trim() || undefined,
       }),
     onSuccess: () => {
       setError(null);
@@ -41,7 +45,8 @@ export default function SetupScreen({ onComplete, asModal, onClose, savedMasks }
     // In modal mode a key may already be saved — blank fields mean "keep existing"
     const wouldSavePplx = perplexityKey.trim() || pplxAlreadySaved;
     const wouldSaveClaude = claudeKey.trim() || claudeAlreadySaved;
-    if (!wouldSavePplx && !wouldSaveClaude) {
+    const wouldSaveOR = openRouterKey.trim() || orAlreadySaved;
+    if (!wouldSavePplx && !wouldSaveClaude && !wouldSaveOR) {
       setError("Enter at least one API key.");
       return;
     }
@@ -126,6 +131,23 @@ export default function SetupScreen({ onComplete, asModal, onClose, savedMasks }
         onToggleShow={() => setShowClaude((v) => !v)}
         savedMask={savedMasks?.claude}
         alreadySaved={claudeAlreadySaved}
+      />
+
+      <div style={{ marginTop: 20 }} />
+
+      {/* OpenRouter key */}
+      <KeyField
+        label="OpenRouter API Key"
+        hint="Optional — enables the OpenRouter mode with access to Gemini, GPT-4o, Llama, Mistral, and more"
+        linkText="Get one at openrouter.ai/keys"
+        linkHref="https://openrouter.ai/keys"
+        prefix="sk-or-"
+        value={openRouterKey}
+        onChange={setOpenRouterKey}
+        show={showOR}
+        onToggleShow={() => setShowOR((v) => !v)}
+        savedMask={savedMasks?.openRouter}
+        alreadySaved={orAlreadySaved}
       />
 
       {error && (

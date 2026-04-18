@@ -20,7 +20,7 @@ const TABS = ["Your Build", "Materials", "Similar", "Other OP", "Quick Ref"] as 
 type Tab = typeof TABS[number];
 
 interface CodexPageProps {
-  configMasks?: { perplexity: string; claude: string };
+  configMasks?: { perplexity: string; claude: string; openRouter: string };
   onConfigUpdate?: () => void;
 }
 

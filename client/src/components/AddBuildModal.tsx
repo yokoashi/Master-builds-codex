@@ -121,13 +121,13 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
     queryKey: [`/api/knowledge/${game.key}`],
   });
 
-  const settingsQuery = useQuery<{ aiMode: "dual" | "perplexity" | "claude" }>({
+  const settingsQuery = useQuery<{ aiMode: "dual" | "perplexity" | "claude" | "openrouter" }>({
     queryKey: ["/api/settings"],
   });
   const aiMode = settingsQuery.data?.aiMode ?? "dual";
 
   const setAiMode = useMutation({
-    mutationFn: (mode: "dual" | "perplexity" | "claude") =>
+    mutationFn: (mode: "dual" | "perplexity" | "claude" | "openrouter") =>
       apiRequest<{ aiMode: string }>("PATCH", "/api/settings", { aiMode: mode }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings"] }),
   });
@@ -383,12 +383,14 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
           >
             {(
               [
-                { mode: "dual",       label: "Claude+Pplx", icon: "⚡", color: "#a78bfa", title: "Perplexity researches, Claude structures" },
-                { mode: "perplexity", label: "Pplx only",   icon: "🔭", color: "#5591c7", title: "Perplexity sonar-pro only" },
-                { mode: "claude",     label: "Claude only",  icon: "✦",  color: "#e8c05a", title: "Claude only — no web research, fastest" },
+                { mode: "dual",        label: "Claude+Pplx", icon: "⚡", color: "#a78bfa", title: "Perplexity researches, Claude structures" },
+                { mode: "perplexity",  label: "Pplx only",   icon: "🔭", color: "#5591c7", title: "Perplexity sonar-pro only" },
+                { mode: "claude",      label: "Claude only",  icon: "✦",  color: "#e8c05a", title: "Claude + Pplx web research, no OR" },
+                { mode: "openrouter",  label: "OpenRouter",   icon: "◈",  color: "#4ade80", title: "Perplexity researches, OpenRouter model structures" },
               ] as const
-            ).map(({ mode, label, icon, color, title }) => {
+            ).map(({ mode, label, icon, color, title }, idx, arr) => {
               const active = aiMode === mode;
+              const isLast = idx === arr.length - 1;
               return (
                 <button
                   key={mode}
@@ -399,7 +401,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
                   style={{
                     background: active ? hexToRgba(color, 0.14) : "transparent",
                     color: active ? color : "var(--color-dim2)",
-                    borderRight: mode !== "claude" ? "1px solid #3a3028" : "none",
+                    borderRight: !isLast ? "1px solid #3a3028" : "none",
                     cursor: "pointer",
                   }}
                 >

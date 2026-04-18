@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import Perplexity from "@perplexity-ai/perplexity_ai";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { storage } from "./storage";
 import {
   extractFactsFromBuild,
@@ -34,11 +35,21 @@ let pplx = new Perplexity({
 let claude = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY ?? "",
 });
+let openRouter = new OpenAI({
+  apiKey: process.env.OPEN_ROUTER_API_KEY ?? "",
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": "https://github.com/yokoashi/Master-builds-codex",
+    "X-Title": "Master Builds Codex",
+  },
+});
 
 // Perplexity models
 const SONAR_PRO = "sonar-pro";           // 200K ctx, live web search
 const SONAR_REASONING = "sonar-reasoning-pro"; // CoT, used only as fallback
 const CLAUDE_MODEL = "claude-sonnet-4-6"; // JSON structuring + extended thinking
+// OpenRouter — default model (user can change in settings)
+const OR_DEFAULT_MODEL = "google/gemini-2.5-pro-preview-03-25";
 
 // ── Learn progress broadcaster ───────────────────────────────────────────────
 // Emits {gameKey, stage, detail, done} events that the SSE endpoint forwards
@@ -55,7 +66,10 @@ learnEmitter.setMaxListeners(20);
 const SONAR_DEEP = "sonar-deep-research";
 
 // ── App settings (persisted to settings.json next to the DB) ─────────────────
-interface AppSettings { aiMode: "dual" | "perplexity" | "claude"; }
+interface AppSettings {
+  aiMode: "dual" | "perplexity" | "claude" | "openrouter";
+  orModel: string; // OpenRouter model slug, e.g. "google/gemini-2.5-pro-preview-03-25"
+}
 const SETTINGS_PATH = process.env.DB_PATH
   ? join(dirname(process.env.DB_PATH), "settings.json")
   : join(process.cwd(), "settings.json");
@@ -63,10 +77,10 @@ const SETTINGS_PATH = process.env.DB_PATH
 function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
-      return { aiMode: "dual", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
     }
   } catch { /* ignore */ }
-  return { aiMode: "dual" };
+  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL };
 }
 function saveSettings(s: AppSettings) {
   try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
@@ -115,6 +129,31 @@ async function claudeJson<T>(
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("");
+    const parsed = parseJsonResponse<T>(text);
+    if (parsed.ok) return parsed;
+    return { ok: false, error: parsed.error };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ── OpenRouter JSON generator ─────────────────────────────────────────────
+// Mirrors claudeJson but calls the user's chosen OR model via OpenAI-compat SDK.
+// The model slug comes from appSettings.orModel (changeable in settings UI).
+async function openrouterJson<T>(
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  try {
+    const completion = await openRouter.chat.completions.create({
+      model: appSettings.orModel,
+      max_tokens: 8000,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user",   content: userPrompt },
+      ],
+    });
+    const text = completion.choices[0]?.message?.content ?? "";
     const parsed = parseJsonResponse<T>(text);
     if (parsed.ok) return parsed;
     return { ok: false, error: parsed.error };
@@ -355,6 +394,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
   app.get("/api/config", (_req, res) => {
     const hasPerplexity = Boolean(process.env.PERPLEXITY_API_KEY);
     const hasClaude = Boolean(process.env.CLAUDE_API_KEY);
+    const hasOpenRouter = Boolean(process.env.OPEN_ROUTER_API_KEY);
     // Mask key: show first 8 + last 4 chars so user can verify which key is loaded
     function mask(k: string | undefined): string {
       if (!k || k.length < 12) return k ? "••••••••" : "";
@@ -363,25 +403,34 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json({
       hasPerplexity,
       hasClaude,
+      hasOpenRouter,
       perplexityMask: mask(process.env.PERPLEXITY_API_KEY),
       claudeMask: mask(process.env.CLAUDE_API_KEY),
+      openRouterMask: mask(process.env.OPEN_ROUTER_API_KEY),
     });
   });
 
   // ── POST /api/config — write keys to config.json + hot-reload env vars ───
   app.post("/api/config", (req, res) => {
-    const { perplexityKey, claudeKey } = req.body as {
+    const { perplexityKey, claudeKey, openRouterKey } = req.body as {
       perplexityKey?: string;
       claudeKey?: string;
+      openRouterKey?: string;
     };
     const configPath = process.env.CONFIG_PATH;
     if (!configPath) {
       // In dev mode CONFIG_PATH isn't set — update env vars in-memory only
       if (perplexityKey) process.env.PERPLEXITY_API_KEY = perplexityKey;
       if (claudeKey) process.env.CLAUDE_API_KEY = claudeKey;
+      if (openRouterKey) process.env.OPEN_ROUTER_API_KEY = openRouterKey;
       // Refresh SDK instances
       if (perplexityKey) pplx = new Perplexity({ apiKey: perplexityKey });
       if (claudeKey) claude = new Anthropic({ apiKey: claudeKey });
+      if (openRouterKey) openRouter = new OpenAI({
+        apiKey: openRouterKey,
+        baseURL: "https://openrouter.ai/api/v1",
+        defaultHeaders: { "HTTP-Referer": "https://github.com/yokoashi/Master-builds-codex", "X-Title": "Master Builds Codex" },
+      });
       return res.json({ ok: true, persisted: false });
     }
     try {
@@ -393,6 +442,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
         ...existing,
         ...(perplexityKey ? { PERPLEXITY_API_KEY: perplexityKey } : {}),
         ...(claudeKey ? { CLAUDE_API_KEY: claudeKey } : {}),
+        ...(openRouterKey ? { OPEN_ROUTER_API_KEY: openRouterKey } : {}),
       };
       writeFileSync(configPath, JSON.stringify(updated, null, 2) + "\n", "utf-8");
       // Hot-reload into current process
@@ -403,6 +453,14 @@ export function registerRoutes(httpServer: Server, app: Express) {
       if (claudeKey) {
         process.env.CLAUDE_API_KEY = claudeKey;
         claude = new Anthropic({ apiKey: claudeKey });
+      }
+      if (openRouterKey) {
+        process.env.OPEN_ROUTER_API_KEY = openRouterKey;
+        openRouter = new OpenAI({
+          apiKey: openRouterKey,
+          baseURL: "https://openrouter.ai/api/v1",
+          defaultHeaders: { "HTTP-Referer": "https://github.com/yokoashi/Master-builds-codex", "X-Title": "Master Builds Codex" },
+        });
       }
       res.json({ ok: true, persisted: true });
     } catch (err) {
@@ -415,8 +473,9 @@ export function registerRoutes(httpServer: Server, app: Express) {
 
   // ── PATCH /api/settings ───────────────────────────────────────────────────
   app.patch("/api/settings", (req, res) => {
-    const { aiMode } = req.body as Partial<AppSettings>;
-    if (aiMode === "dual" || aiMode === "perplexity" || aiMode === "claude") appSettings.aiMode = aiMode;
+    const { aiMode, orModel } = req.body as Partial<AppSettings>;
+    if (aiMode === "dual" || aiMode === "perplexity" || aiMode === "claude" || aiMode === "openrouter") appSettings.aiMode = aiMode;
+    if (typeof orModel === "string" && orModel.trim()) appSettings.orModel = orModel.trim();
     saveSettings(appSettings);
     res.json(appSettings);
   });
@@ -592,6 +651,17 @@ Only include items you found confirmed in search results. Exact in-game names on
           `${userContent}\n\nWEB RESEARCH (use as ground truth — exact in-game names only):\n${researchCtx.substring(0, 8000)}`,
           false
         );
+      } else if (appSettings.aiMode === "openrouter") {
+        // ── OpenRouter: Perplexity researches → chosen OR model structures ───────
+        const researchCtx = await pplxResearch([
+          `Search for "${body.gameName} ${body.buildDescription} build guide" — list every recommended weapon with AP, location, and upgrade path`,
+          `Search for "${body.gameName} ${body.buildDescription} armor sets" — list every recommended armor piece with defense stats and how to obtain`,
+          `Search for "${body.gameName} ${body.buildDescription} accessories rings talismans spells" — list each with effect, numbers, and location`,
+        ], 3000);
+        parsed = await openrouterJson<Partial<Build>>(
+          systemContent,
+          `${userContent}\n\nWEB RESEARCH (use as ground truth — exact in-game names only):\n${researchCtx.substring(0, 8000)}`,
+        );
       } else {
         // ── Perplexity-only: sonar-pro with JSON schema ───────────────────────
         const sonarResp = await pplx.chat.completions.create({
@@ -708,6 +778,16 @@ Be detailed about late-game item locations and NG+ strategy changes. No placehol
           s2UserContent = `${userContent}\n\nWEB RESEARCH (late-game + NG+ ground truth):\n${researchCtx2.substring(0, 6000)}`;
         }
         parsed2 = await claudeJson<{ phases_4_to_7: Build["phases"] }>(systemContent, s2UserContent, true);
+      } else if (appSettings.aiMode === "openrouter") {
+        // OpenRouter: Perplexity researches late-game → OR model structures
+        const researchCtx2 = await pplxResearch([
+          `Search for "${body.gameName} late game endgame weapons upgrades NG+" — list items with exact names and locations`,
+          `Search for "${body.gameName} NG+ cycle changes enemy scaling boss drops" — list all relevant late-game details`,
+        ], 3000);
+        parsed2 = await openrouterJson<{ phases_4_to_7: Build["phases"] }>(
+          systemContent,
+          `${userContent}\n\nWEB RESEARCH (late-game + NG+ ground truth):\n${researchCtx2.substring(0, 6000)}`,
+        );
       } else {
         // sonar-reasoning-pro — CoT, strips <think> tags via parseJsonResponse
         const sonarResp = await pplx.chat.completions.create({
@@ -814,6 +894,15 @@ Generate 2 sim, 2 oth, 5 ref entries.`;
           s3UserContent = `${userContent}\n\nWEB RESEARCH (similar/alternative builds):\n${researchCtx3.substring(0, 4000)}`;
         }
         parsed3 = await claudeJson<Step3Result>(systemContent, s3UserContent, false);
+      } else if (appSettings.aiMode === "openrouter") {
+        // OpenRouter: research alternatives → OR model structures
+        const researchCtx3 = await pplxResearch([
+          `Search for "${body.gameName} ${body.partialBuild?.label ?? body.buildKey} similar builds alternatives" — list viable alternatives with key differences`,
+        ], 2000);
+        parsed3 = await openrouterJson<Step3Result>(
+          systemContent,
+          `${userContent}\n\nWEB RESEARCH (similar/alternative builds):\n${researchCtx3.substring(0, 4000)}`,
+        );
       } else {
         const sonarResp = await pplx.chat.completions.create({
           model: SONAR_PRO,
