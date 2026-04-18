@@ -263,8 +263,25 @@ async function parseWikiPage(
   gameKey: string,
   sourceType: "fextralife" | "fandom" | "generic"
 ): Promise<KnowledgeFact[]> {
-  const html = await safeFetch(url, 15000);
+  let html = await safeFetch(url, 15000);
   if (!html) return [];
+
+  // ── Step 1: strip chrome sections entirely before any content parsing ────────
+  // Remove <nav>, <header>, <aside>, <footer>, <script>, <style>, <noscript>,
+  // and common wiki sidebar/navbox class patterns so their <li>/<a> tags
+  // never reach the item-extraction logic.
+  html = html
+    .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+    .replace(/<header[\s\S]*?<\/header>/gi, "")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, "")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
+    // Fextralife-specific sidebar/navbox patterns
+    .replace(/<div[^>]+class="[^"]*(?:sidebar|navbox|wiki-nav|site-nav|toc|breadcrumb|footer-nav|global-nav|left-menu|right-menu|top-nav|bottom-nav|ad-|advertisement|cookie|banner|notification)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "")
+    // Fandom-specific chrome
+    .replace(/<div[^>]+class="[^"]*(?:page-header|wds-global-navigation|global-footer|mw-navigation|mw-head|mw-panel|catlinks|printfooter|siteSub|contentSub|jump-to-nav)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
 
   const facts: KnowledgeFact[] = [];
 
@@ -295,25 +312,31 @@ async function parseWikiPage(
 
   const urlType = inferTypeFromUrl(url);
 
-  // Strategy 1: extract <li> and <td> text, filter for item-like lines
+  // ── Nav/UI text blocklist ─────────────────────────────────────────────────
+  // Anything matching this regex is UI chrome, not a game item name.
+  // NOTE: TypeScript does not support the `x` (verbose/extended) flag or
+  // multi-line regex literals. Must be a single-line pattern or new RegExp().
+  const NAV_BLOCK = /^(level|stat|str|dex|int|fth|arc|vig|end|agl|atk|def|weight|location|description|effect|name|type|upgrade|notes?|source|how\s+to|where|wiki|edit|sign\s*in|log\s*(?:in|out)|search|navigation|contents?|categories?|home|back|next|prev|top|menu|header|footer|sidebar|share|tweet|discord|reddit|youtube|facebook|twitter|instagram|twitch|privacy|terms|contact|about|advertis\w*|cookie|vip|chat|forum|news|reviews|guides|patch|dlc|blog|hub|shop|to-?do|gestures?|controls?|combat|faq|classes?|builds?|pve|pvp|general|character|creation|respec|stats?|status|effects?|items?|equipment|weapons?\s+damage|damage\s+types?|wikis?|all\s+wikis?|wiki\s+home|sign\s+in\s+now|new\s+new|secrets?|pumpkin|patch\s+event|mirror|distortion|patchnotes?|community|trending|popular|recent|changes?|history|discussion|talk|user|special|file|template|help|project|portal|main\s+page|random|donate|toolbox|print|permanent|cite|create|account|watch|view|source|read|classic|mobile|desktop|accessibility|preferences|watchlist|contributions|upload|logs?|version)$/i;
+
+  // Additional multi-word nav patterns
+  const NAV_PHRASE = /^(\w+\s+){3,}(wiki|guide|info|page|list|hub|home|news|blog)$/i;
+
+  const seen = new Set<string>();
+
+  // ── Strategy 1: extract <li> and <td> text ───────────────────────────────
   const cellPattern = /<(?:li|td|th)[^>]*>([\s\S]*?)<\/(?:li|td|th)>/gi;
   let match: RegExpExecArray | null;
-  const seen = new Set<string>();
 
   while ((match = cellPattern.exec(html)) !== null) {
     const text = stripHtml(match[1]);
-    // Item names are typically 3-80 chars, mixed case, no purely numeric
     if (
       text.length < 3 ||
       text.length > 80 ||
-      /^\d+$/.test(text) || // pure number
-      /^(level|stat|str|dex|int|fth|arc|vig|end|agl|atk|def|weight|location|description|effect|name|type|upgrade|notes?|source|how to|where|wiki|edit|sign in|log in|search|navigation|contents?|categories?)$/i.test(text)
+      /^\d+$/.test(text) ||
+      NAV_BLOCK.test(text.trim()) ||
+      NAV_PHRASE.test(text.trim())
     ) continue;
-
-    // Require at least one uppercase letter (item names have capitals)
     if (!/[A-Z]/.test(text)) continue;
-    // Reject pure navigation text
-    if (/^\s*(home|back|next|prev|top|menu|header|footer)\s*$/i.test(text)) continue;
 
     const name = text.slice(0, 80).trim();
     if (seen.has(name.toLowerCase())) continue;
@@ -323,24 +346,36 @@ async function parseWikiPage(
     facts.push({ type: urlType, name, raw });
   }
 
-  // Strategy 2: For Fextralife specifically, also grab h2/h3 section headers
-  // as category context and any following item links
+  // ── Strategy 2: Fextralife item page links ───────────────────────────────
+  // Only pick up links whose href looks like a real item page:
+  //   - relative URL (starts with /)
+  //   - has at least 2 path segments (e.g. /Lords-of-the-Fallen/Pieta-Sword)
+  //   - path does NOT match common wiki nav patterns
   if (sourceType === "fextralife") {
-    const linkPattern = /<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const linkPattern = /<a[^>]+href="([^"#?]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const navPathBlock = /\/(wiki|home|blog|forum|news|guides?|reviews?|shop|vip|search|login|logout|register|account|user|special|help|chat|discord|twitch|youtube|facebook|twitter|instagram|reddit|patch|dlc|edit|history|talk|upload|file|template|portal|project|main[-_]page|random|donate|preferences|watchlist|contributions|accessibility|version)/i;
+
     while ((match = linkPattern.exec(html)) !== null) {
-      const href = match[1];
+      const href = match[1].trim();
       const text = stripHtml(match[2]).trim();
-      // Fextralife item links are usually /[GameName]/[ItemName]
+
+      // Must be a relative link with depth ≥ 2 (e.g. /GameName/ItemName)
+      if (!href.startsWith("/")) continue;
+      const pathParts = href.split("/").filter(Boolean);
+      if (pathParts.length < 2) continue;
+      // Block obvious nav paths
+      if (navPathBlock.test(href)) continue;
+
       if (
         text.length > 3 &&
         text.length < 60 &&
         /[A-Z]/.test(text) &&
         !seen.has(text.toLowerCase()) &&
-        href.includes("/") &&
-        !href.startsWith("http") // relative links only (same-wiki items)
+        !NAV_BLOCK.test(text.trim()) &&
+        !NAV_PHRASE.test(text.trim())
       ) {
         seen.add(text.toLowerCase());
-        const raw = `${urlType}: ${text} | Loc:wiki`;
+        const raw = `${urlType}: ${text} | Loc:${pathParts[0]}`;
         facts.push({ type: urlType, name: text, raw });
       }
       if (facts.length > 800) break;
