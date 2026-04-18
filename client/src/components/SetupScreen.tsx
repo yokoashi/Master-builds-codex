@@ -8,18 +8,25 @@ interface Props {
   /** If true, shows as a settings modal overlay instead of full-screen */
   asModal?: boolean;
   onClose?: () => void;
+  /** Masked existing key values from GET /api/config (shown as placeholders) */
+  savedMasks?: { perplexity: string; claude: string };
 }
 
-export default function SetupScreen({ onComplete, asModal, onClose }: Props) {
+export default function SetupScreen({ onComplete, asModal, onClose, savedMasks }: Props) {
   const [perplexityKey, setPerplexityKey] = useState("");
   const [claudeKey, setClaudeKey] = useState("");
   const [showPplx, setShowPplx] = useState(false);
   const [showClaude, setShowClaude] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // True when a key is already saved on disk (mask present) and the field is blank
+  const pplxAlreadySaved = Boolean(savedMasks?.perplexity) && !perplexityKey.trim();
+  const claudeAlreadySaved = Boolean(savedMasks?.claude) && !claudeKey.trim();
+
   const saveMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", "/api/config", {
+        // Only send if the user typed something new; blank = keep existing
         perplexityKey: perplexityKey.trim() || undefined,
         claudeKey: claudeKey.trim() || undefined,
       }),
@@ -31,7 +38,10 @@ export default function SetupScreen({ onComplete, asModal, onClose }: Props) {
   });
 
   function handleSave() {
-    if (!perplexityKey.trim() && !claudeKey.trim()) {
+    // In modal mode a key may already be saved — blank fields mean "keep existing"
+    const wouldSavePplx = perplexityKey.trim() || pplxAlreadySaved;
+    const wouldSaveClaude = claudeKey.trim() || claudeAlreadySaved;
+    if (!wouldSavePplx && !wouldSaveClaude) {
       setError("Enter at least one API key.");
       return;
     }
@@ -97,6 +107,8 @@ export default function SetupScreen({ onComplete, asModal, onClose }: Props) {
         onChange={setPerplexityKey}
         show={showPplx}
         onToggleShow={() => setShowPplx((v) => !v)}
+        savedMask={savedMasks?.perplexity}
+        alreadySaved={pplxAlreadySaved}
       />
 
       <div style={{ marginTop: 20 }} />
@@ -112,6 +124,8 @@ export default function SetupScreen({ onComplete, asModal, onClose }: Props) {
         onChange={setClaudeKey}
         show={showClaude}
         onToggleShow={() => setShowClaude((v) => !v)}
+        savedMask={savedMasks?.claude}
+        alreadySaved={claudeAlreadySaved}
       />
 
       {error && (
@@ -196,11 +210,22 @@ interface KeyFieldProps {
   onChange: (v: string) => void;
   show: boolean;
   onToggleShow: () => void;
+  /** Masked representation of the currently saved key (e.g. "pplx-78Ea••••••••3A") */
+  savedMask?: string;
+  /** True when a key is already saved and the field is blank — blank means "keep" */
+  alreadySaved?: boolean;
 }
 
-function KeyField({ label, hint, linkText, linkHref, prefix, value, onChange, show, onToggleShow }: KeyFieldProps) {
+function KeyField({ label, hint, linkText, linkHref, prefix, value, onChange, show, onToggleShow, savedMask, alreadySaved }: KeyFieldProps) {
   const hasValue = value.trim().length > 0;
   const looksValid = value.trim().startsWith(prefix) && value.trim().length > 20;
+
+  // Label color: gold=saved/valid, red=bad format, dim=empty
+  const labelColor = alreadySaved
+    ? "var(--color-gold)"
+    : hasValue
+    ? looksValid ? "var(--color-gold)" : "#d64545"
+    : "var(--color-dim)";
 
   return (
     <div>
@@ -211,11 +236,16 @@ function KeyField({ label, hint, linkText, linkHref, prefix, value, onChange, sh
             fontSize: "0.7rem",
             letterSpacing: "0.1em",
             textTransform: "uppercase",
-            color: hasValue ? (looksValid ? "var(--color-gold)" : "#d64545") : "var(--color-dim)",
+            color: labelColor,
           }}
         >
           {label}
-          {hasValue && (
+          {alreadySaved && (
+            <span style={{ marginLeft: 6, fontSize: "0.6rem", opacity: 0.8 }}>
+              ✓ saved
+            </span>
+          )}
+          {!alreadySaved && hasValue && (
             <span style={{ marginLeft: 6, fontSize: "0.6rem", opacity: 0.7 }}>
               {looksValid ? "✓" : "⚠ unexpected format"}
             </span>
@@ -235,14 +265,17 @@ function KeyField({ label, hint, linkText, linkHref, prefix, value, onChange, sh
           type={show ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={`${prefix}…`}
+          placeholder={alreadySaved && savedMask ? `${savedMask} (leave blank to keep)` : `${prefix}…`}
           autoComplete="off"
           spellCheck={false}
           style={{
             width: "100%",
             padding: "9px 40px 9px 12px",
             background: "var(--color-bg)",
-            border: `1px solid ${hasValue && !looksValid ? "#d64545" : "#3a3028"}`,
+            border: `1px solid ${
+              alreadySaved ? "rgba(232,192,90,0.35)" :
+              hasValue && !looksValid ? "#d64545" : "#3a3028"
+            }`,
             borderRadius: 5,
             color: "var(--color-text)",
             fontSize: "0.8rem",
@@ -251,7 +284,11 @@ function KeyField({ label, hint, linkText, linkHref, prefix, value, onChange, sh
             transition: "border-color 0.15s",
           }}
           onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-gold)"; }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = hasValue && !looksValid ? "#d64545" : "#3a3028"; }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = alreadySaved
+              ? "rgba(232,192,90,0.35)"
+              : hasValue && !looksValid ? "#d64545" : "#3a3028";
+          }}
         />
         <button
           type="button"

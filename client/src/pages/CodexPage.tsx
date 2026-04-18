@@ -19,7 +19,12 @@ import SetupScreen from "@/components/SetupScreen";
 const TABS = ["Your Build", "Materials", "Similar", "Other OP", "Quick Ref"] as const;
 type Tab = typeof TABS[number];
 
-export default function CodexPage() {
+interface CodexPageProps {
+  configMasks?: { perplexity: string; claude: string };
+  onConfigUpdate?: () => void;
+}
+
+export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProps) {
   const { toast } = useToast();
   const [selectedGameKey, setSelectedGameKey] = useState<string>("lotf");
   const [selectedBuildKey, setSelectedBuildKey] = useState<string>("crimson-reaper");
@@ -603,8 +608,9 @@ export default function CodexPage() {
       {showSettings && (
         <SetupScreen
           asModal
-          onComplete={() => setShowSettings(false)}
+          onComplete={() => { setShowSettings(false); onConfigUpdate?.(); }}
           onClose={() => setShowSettings(false)}
+          savedMasks={configMasks}
         />
       )}
 

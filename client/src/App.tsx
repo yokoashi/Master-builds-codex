@@ -10,6 +10,8 @@ import SetupScreen from "./components/SetupScreen";
 interface ConfigStatus {
   hasPerplexity: boolean;
   hasClaude: boolean;
+  perplexityMask: string;
+  claudeMask: string;
 }
 
 function AppInner() {
@@ -26,15 +28,16 @@ function AppInner() {
     return (
       <SetupScreen
         onComplete={() => refetch()}
+        savedMasks={{ perplexity: data.perplexityMask, claude: data.claudeMask }}
       />
     );
   }
 
-  // Keys present — show the app
+  // Keys present — show the app (pass masks so settings modal can show them)
   return (
     <Router hook={useHashLocation}>
       <Switch>
-        <Route path="/" component={CodexPage} />
+        <Route path="/" component={() => <CodexPage configMasks={{ perplexity: data.perplexityMask, claude: data.claudeMask }} onConfigUpdate={refetch} />} />
         <Route component={NotFound} />
       </Switch>
     </Router>
