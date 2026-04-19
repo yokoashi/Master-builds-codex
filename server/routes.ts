@@ -791,10 +791,15 @@ Only include items you found confirmed in search results. Exact in-game names on
           `Search for "${body.gameName} ${body.buildDescription} armor sets" — list every recommended armor piece with defense stats and how to obtain`,
           `Search for "${body.gameName} ${body.buildDescription} accessories rings talismans spells" — list each with effect, numbers, and location`,
         ], 3000);
+        // Derive expected stat keys: use seedStats keys if provided (semi-mode),
+        // otherwise instruct model to use only this game's native stats.
+        const s1StatConstraint = body.seedStats && Object.keys(body.seedStats).length > 0
+          ? `EXACTLY these stat keys (no others): ${Object.keys(body.seedStats).join(", ")}`
+          : `ONLY the stat keys native to ${body.gameName}. Do NOT add stats from other games — look at the web research and game name to determine the correct keys.`;
         const orCompletenessBlock = `
 
 MANDATORY COMPLETENESS REQUIREMENTS — DO NOT SKIP ANY:
-- stats: Every phase MUST include ALL stat keys used by ${body.gameName} with numeric values. Do NOT include only 2 stats — include every relevant stat (e.g. VIT, END, STR, DEX, INT, FTH, ARC, RAD, INF, AGI — whichever this game uses). Look at the build description and game to determine the full stat list.
+- stats: Every phase MUST include ${s1StatConstraint}
 - weapons: Every phase MUST have 2-4 weapons minimum, each with n, ap (number), loc, up, eq, d, tip, wt fields populated.
 - armor: Every phase MUST have 2-4 armor entries (chest/helmet/legs/gauntlets as separate entries) with n, loc, wt, d fields.
 - acc: Every phase MUST have 2-4 accessories (rings/talismans/seals) with n, ef, loc fields populated.
@@ -926,10 +931,15 @@ Be detailed about late-game item locations and NG+ strategy changes. No placehol
           `Search for "${body.gameName} late game endgame weapons upgrades NG+" — list items with exact names and locations`,
           `Search for "${body.gameName} NG+ cycle changes enemy scaling boss drops" — list all relevant late-game details`,
         ], 3000);
+        // Extract stat keys from step1 output so step2 uses the exact same keys
+        const phase0Stats = body.partialBuild?.phases?.[0]?.stats;
+        const s2StatConstraint = phase0Stats && Object.keys(phase0Stats).length > 0
+          ? `EXACTLY these stat keys — copy from step1, do not add or remove any: ${Object.keys(phase0Stats).join(", ")}`
+          : `ONLY the stat keys native to ${body.gameName} — do NOT add stats from other games`;
         const s2CompletenessBlock = `
 
 MANDATORY COMPLETENESS REQUIREMENTS — DO NOT SKIP ANY:
-- stats: EVERY phase (4, 5, 6, and NG+) MUST include ALL stat keys for ${body.gameName} with numeric values. Include every stat the game has — not just 2 stats.
+- stats: EVERY phase (4, 5, 6, and NG+) MUST include ${s2StatConstraint}.
 - weapons/armor/acc: EVERY phase must have 2-4 entries minimum in each array. Empty arrays are WRONG.
 - ngCycles: Include all 4 NG+ entries (NG+1, NG+3, NG+5, NG+7) with real strategy notes and stat deltas.
 - dmg: Every phase needs dmg.ps, dmg.sp, dmg.bs as real numbers and dmg.n as a note.
