@@ -143,25 +143,46 @@ async function claudeJson<T>(
 // Runs panel models IN PARALLEL, then a judge picks the best response.
 // Each call has a hard 60 s timeout to prevent hanging the generation modal.
 //
-// Panel models — real slugs available on OpenRouter, all flagship-tier:
-//   • anthropic/claude-3.7-sonnet      — Anthropic's newer reasoning model (best JSON)
-//   • openai/gpt-4o-2024-11-20         — latest GPT-4o, excellent structured output
+// BUILDER panel — flagship models optimised for complex JSON generation
+//   • anthropic/claude-3.7-sonnet      — newer Anthropic reasoning (best JSON)
+//   • openai/gpt-4o                    — reliable structured output
 //   • google/gemini-pro-1.5            — Google's reasoning-capable Pro tier
-//   • deepseek/deepseek-r1             — strong reasoning, great for complex schemas
-//
-// Judge model: anthropic/claude-3.7-sonnet (most accurate JSON evaluator)
-// Ensemble uses Promise.allSettled — if any model is unavailable, the rest still vote.
+//   • deepseek/deepseek-r1             — strong reasoning for complex schemas
+// Judge: claude-3.7-sonnet (most accurate JSON evaluator)
 
-const OR_PANEL: string[] = [
+const OR_BUILDER_PANEL: string[] = [
   "anthropic/claude-3.7-sonnet",
   "openai/gpt-4o",
   "google/gemini-pro-1.5",
   "deepseek/deepseek-r1",
 ];
-const OR_JUDGE = "anthropic/claude-3.7-sonnet";
+const OR_BUILDER_JUDGE = "anthropic/claude-3.7-sonnet";
+
+// LEARN panel — different models optimised for classification/dedup of item
+// lines (a simpler mechanical task). Distinct providers and faster tiers so
+// the learn pipeline doesn't share confirmation bias with the builder pipeline.
+//   • anthropic/claude-3-5-sonnet      — proven classification workhorse
+//   • openai/gpt-4o-mini               — fast, accurate for mechanical tasks
+//   • google/gemini-2.0-flash          — speed-optimised alternative
+//   • mistralai/mistral-large-2411     — different provider for diversity
+// Judge: claude-3-5-sonnet (classification-focused)
+
+const OR_LEARN_PANEL: string[] = [
+  "anthropic/claude-3-5-sonnet",
+  "openai/gpt-4o-mini",
+  "google/gemini-2.0-flash",
+  "mistralai/mistral-large-2411",
+];
+const OR_LEARN_JUDGE = "anthropic/claude-3-5-sonnet";
+
 const OR_CALL_TIMEOUT_MS = 90_000; // 90 s per model call (reasoning models are slower)
 
-async function callOrModel(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
+async function callOrModel(
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  jsonMode: boolean = true,
+): Promise<string> {
   const timeout = () => new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error(`OR model ${model} timed out after ${OR_CALL_TIMEOUT_MS / 1000}s`)), OR_CALL_TIMEOUT_MS)
   );
@@ -169,7 +190,15 @@ async function callOrModel(model: string, systemPrompt: string, userPrompt: stri
     { role: "system" as const, content: systemPrompt },
     { role: "user"   as const, content: userPrompt },
   ];
-  // Try with json_object mode first (forces clean JSON on supporting models).
+  // Text-mode (synth/judge over plain text): no response_format.
+  if (!jsonMode) {
+    const completion = await Promise.race([
+      openRouter.chat.completions.create({ model, max_tokens: 8000, messages }),
+      timeout(),
+    ]);
+    return completion.choices[0]?.message?.content ?? "";
+  }
+  // JSON mode: try with json_object first (forces clean JSON on supporting models).
   try {
     const completion = await Promise.race([
       openRouter.chat.completions.create({
@@ -202,17 +231,17 @@ async function openrouterJson<T>(
   userPrompt: string,
 ): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
   try {
-    // 1. Run all panel models in parallel
+    // 1. Run all BUILDER panel models in parallel (JSON mode)
     const panelResults = await Promise.allSettled(
-      OR_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt))
+      OR_BUILDER_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt, true))
     );
 
     // 2. Collect fulfilled responses
     const candidates: { model: string; text: string }[] = [];
-    for (let i = 0; i < OR_PANEL.length; i++) {
+    for (let i = 0; i < OR_BUILDER_PANEL.length; i++) {
       const r = panelResults[i];
       if (r.status === "fulfilled" && r.value.trim()) {
-        candidates.push({ model: OR_PANEL[i], text: r.value });
+        candidates.push({ model: OR_BUILDER_PANEL[i], text: r.value });
       }
     }
 
@@ -227,7 +256,7 @@ async function openrouterJson<T>(
       return { ok: false, error: parsed.error };
     }
 
-    // 4. Ask the judge to pick the best candidate
+    // 4. Ask the builder judge to pick the best candidate
     const judgeSystem = `You are a JSON quality judge. You will receive ${candidates.length} candidate JSON responses from different AI models answering the same prompt.
 Your job: return ONLY the single best candidate as-is — the one that is most complete, accurate, and correctly structured.
 Do NOT modify, merge, or summarise. Output the winning JSON verbatim. No explanation. Pure JSON only.`;
@@ -238,7 +267,7 @@ Do NOT modify, merge, or summarise. Output the winning JSON verbatim. No explana
 
     let winnerText: string;
     try {
-      winnerText = await callOrModel(OR_JUDGE, judgeSystem, judgeUser);
+      winnerText = await callOrModel(OR_BUILDER_JUDGE, judgeSystem, judgeUser, true);
     } catch {
       // Judge failed — fall back to first valid parse
       winnerText = candidates[0].text;
@@ -261,24 +290,25 @@ Do NOT modify, merge, or summarise. Output the winning JSON verbatim. No explana
 }
 
 // ── OpenRouter text-mode ensemble (for synthesis pass) ──────────────────────
-// Same panel as openrouterJson but returns plain text (item lines), not JSON.
-// Judge picks the candidate with the most well-classified item lines.
+// Uses the LEARN panel (distinct from builder panel) in text mode — the task
+// is mechanical classification/dedup of item lines, not JSON generation.
+// Different providers + faster tiers avoid shared bias with the builder pipeline.
 async function openrouterSynth(systemPrompt: string, userPrompt: string): Promise<string> {
-  // Run all panel models in parallel
+  // Run all LEARN panel models in parallel (text mode, no response_format)
   const panelResults = await Promise.allSettled(
-    OR_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt))
+    OR_LEARN_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt, false))
   );
   const candidates: { model: string; text: string }[] = [];
-  for (let i = 0; i < OR_PANEL.length; i++) {
+  for (let i = 0; i < OR_LEARN_PANEL.length; i++) {
     const r = panelResults[i];
     if (r.status === "fulfilled" && r.value.trim()) {
-      candidates.push({ model: OR_PANEL[i], text: r.value });
+      candidates.push({ model: OR_LEARN_PANEL[i], text: r.value });
     }
   }
   if (candidates.length === 0) return "";
   if (candidates.length === 1) return candidates[0].text;
 
-  // Judge picks the best cleaned fact list
+  // Learn judge picks the best cleaned fact list (text mode)
   const judgeSystem = `You are a game item database quality judge. You will receive ${candidates.length} cleaned item line lists from different AI models.
 Your job: return ONLY the single best list verbatim — the one with the most items, best prefix classification (WEAPON:/ARMOR:/etc.), and most numeric data.
 Do NOT modify, merge, or summarise. Return the winning list exactly as-is.`;
@@ -286,7 +316,7 @@ Do NOT modify, merge, or summarise. Return the winning list exactly as-is.`;
     .map((c, i) => `=== CANDIDATE ${i + 1} (${c.model}) ===\n${c.text}`)
     .join("\n\n");
   try {
-    const winner = await callOrModel(OR_JUDGE, judgeSystem, judgeUser);
+    const winner = await callOrModel(OR_LEARN_JUDGE, judgeSystem, judgeUser, false);
     return winner.trim() || candidates[0].text;
   } catch {
     return candidates[0].text;
