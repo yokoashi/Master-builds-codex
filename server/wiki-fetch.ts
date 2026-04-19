@@ -253,6 +253,167 @@ async function parseTrello(
   return facts;
 }
 
+// ─── Detail-page extraction ───────────────────────────────────────────────────
+//
+// After parsing the index page, we fetch up to DETAIL_PAGE_BUDGET individual
+// item pages (e.g. /Lords-of-the-Fallen/Pieta-Sword) in batches. Each page is
+// mined for its infobox (AP, weight, scaling, location, effect) and first
+// paragraph of description, producing a much richer KnowledgeFact than the
+// bare item name that strategy 2 used to collect.
+
+const DETAIL_PAGE_BUDGET = 60;            // cap per source to bound crawl time
+const DETAIL_BATCH_SIZE = 5;              // concurrent detail-page fetches
+const DETAIL_PAGE_TIMEOUT_MS = 8000;      // per-page fetch timeout
+
+// Strip tags + decode common HTML entities. Hoisted to module scope so both
+// parseWikiPage and extractDetailInfo can use it.
+function stripHtml(s: string): string {
+  return s
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#\d+;/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Extract infobox-like key/value pairs and a short description from a wiki
+// detail page. Works on both Fextralife table infoboxes and Fandom aside
+// portable-infoboxes.
+interface DetailInfo {
+  title: string;                  // real article title
+  description: string;            // first paragraph, trimmed
+  fields: Record<string, string>; // infobox key/value pairs
+  inferredType: KnowledgeFact["type"] | null; // from Type/Category fields
+}
+
+function extractDetailInfo(html: string): DetailInfo {
+  // ── Title ────────────────────────────────────────────────────────────────
+  let title = "";
+  const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (h1) title = stripHtml(h1[1]).slice(0, 120);
+  if (!title) {
+    const ttl = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (ttl) title = stripHtml(ttl[1]).split(/[|\-—–]/)[0].trim().slice(0, 120);
+  }
+
+  // ── Infobox key/value scrape ─────────────────────────────────────────────
+  // Fextralife uses tables: <tr><th>Key</th><td>Value</td></tr>
+  // Fandom uses aside.portable-infobox with h3.pi-data-label + div.pi-data-value
+  const fields: Record<string, string> = {};
+
+  const trPattern = /<tr[^>]*>[\s\S]*?<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = trPattern.exec(html)) !== null) {
+    const k = stripHtml(m[1]).toLowerCase().replace(/[:\s]+$/, "");
+    const v = stripHtml(m[2]);
+    if (k && v && k.length < 30 && v.length < 200) fields[k] = v;
+  }
+
+  const pPattern = /<h3[^>]*class="[^"]*pi-data-label[^"]*"[^>]*>([\s\S]*?)<\/h3>[\s\S]*?<div[^>]*class="[^"]*pi-data-value[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;
+  while ((m = pPattern.exec(html)) !== null) {
+    const k = stripHtml(m[1]).toLowerCase().replace(/[:\s]+$/, "");
+    const v = stripHtml(m[2]);
+    if (k && v && k.length < 30 && v.length < 200) fields[k] = v;
+  }
+
+  // ── Description: first <p> in the article body ──────────────────────────
+  let description = "";
+  const pMatch = html.match(/<p[^>]*>([\s\S]{40,600}?)<\/p>/i);
+  if (pMatch) description = stripHtml(pMatch[1]).slice(0, 300);
+
+  // ── Infer type from Type/Category fields ────────────────────────────────
+  const typeText = (fields.type ?? fields.category ?? fields["weapon type"] ?? fields["armor type"] ?? "").toLowerCase();
+  let inferredType: KnowledgeFact["type"] | null = null;
+  if (typeText) {
+    if (/shield|block/.test(typeText)) inferredType = "SHIELD";
+    else if (/staff|catalyst|seal|wand|talisman-?of|chalice|tome/.test(typeText)) inferredType = "CATALYST";
+    else if (/ring|amulet|pendant|charm|necklace|accessor/.test(typeText)) inferredType = "RING";
+    else if (/helm|chest|gauntlet|leg|armor|armour|robe|set|hood|mask|plate/.test(typeText)) inferredType = "ARMOR";
+    else if (/spell|sorcery|miracle|pyromancy|incantation|hex/.test(typeText)) inferredType = "SPELL";
+    else if (/buff|heal|support|utility/.test(typeText)) inferredType = "BUFF";
+    else if (/sword|axe|bow|crossbow|spear|lance|hammer|dagger|fist|claw|katana|scythe|whip|flail|gun|rifle|greatsword|greataxe|halberd|pike/.test(typeText)) inferredType = "WEAPON";
+  }
+
+  return { title, description, fields, inferredType };
+}
+
+// Fetch one detail page and convert it into an enriched KnowledgeFact.
+// Returns null on error (caller just skips it).
+async function fetchDetailPage(
+  url: string,
+  fallbackName: string,
+  fallbackType: KnowledgeFact["type"]
+): Promise<KnowledgeFact | null> {
+  const html = await safeFetch(url, DETAIL_PAGE_TIMEOUT_MS);
+  if (!html) return null;
+
+  const info = extractDetailInfo(html);
+  const name = (info.title || fallbackName).trim();
+  if (!name || name.length < 2 || name.length > 120) return null;
+
+  const type = info.inferredType ?? fallbackType;
+
+  // Compose rich raw line with the most useful infobox fields first
+  const parts: string[] = [`${type}: ${name}`];
+  const importantKeys = [
+    "attack", "attack rating", "ap", "damage",
+    "weight", "wt",
+    "scaling", "requirement", "requirements",
+    "type", "weapon type", "armor type",
+    "physical", "magic", "fire", "lightning", "dark", "holy",
+    "bleed", "poison", "frostbite", "rot",
+    "fp cost", "fp", "stamina",
+    "location", "loc", "how to find", "acquired", "drops from",
+    "effect", "description",
+  ];
+  const usedKeys = new Set<string>();
+  for (const k of importantKeys) {
+    const v = info.fields[k];
+    if (v && !usedKeys.has(k)) {
+      parts.push(`${k}: ${v.slice(0, 80)}`);
+      usedKeys.add(k);
+    }
+  }
+  if (info.description) {
+    const desc = info.description.slice(0, 160);
+    parts.push(`desc: ${desc}`);
+  }
+
+  // Location hint: try the URL segment as a fallback
+  let locHint = "";
+  try {
+    const u = new URL(url);
+    locHint = u.pathname.split("/").filter(Boolean).slice(-2, -1)[0] ?? "";
+  } catch { /* ignore */ }
+  if (locHint) parts.push(`src: ${locHint}`);
+
+  const raw = parts.join(" | ").slice(0, 500);
+  const location = info.fields.location ?? info.fields.loc ?? info.fields["how to find"] ?? undefined;
+
+  return { type, name, raw, ...(location ? { location } : {}) };
+}
+
+// Fetch many detail pages in parallel batches so one slow server doesn't stall
+// the entire crawl.
+async function fetchDetailPagesBatched(
+  targets: { url: string; fallbackName: string; fallbackType: KnowledgeFact["type"] }[]
+): Promise<KnowledgeFact[]> {
+  const results: KnowledgeFact[] = [];
+  for (let i = 0; i < targets.length; i += DETAIL_BATCH_SIZE) {
+    const slice = targets.slice(i, i + DETAIL_BATCH_SIZE);
+    const settled = await Promise.allSettled(
+      slice.map((t) => fetchDetailPage(t.url, t.fallbackName, t.fallbackType))
+    );
+    for (const s of settled) {
+      if (s.status === "fulfilled" && s.value) results.push(s.value);
+    }
+  }
+  return results;
+}
+
 /**
  * Parse a Fextralife or Fandom wiki page.
  * These pages list items in <li>, <tr>, or heading patterns — we extract
@@ -284,18 +445,6 @@ async function parseWikiPage(
     .replace(/<div[^>]+class="[^"]*(?:page-header|wds-global-navigation|global-footer|mw-navigation|mw-head|mw-panel|catlinks|printfooter|siteSub|contentSub|jump-to-nav)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
 
   const facts: KnowledgeFact[] = [];
-
-  // Strip HTML tags, decode entities
-  const stripHtml = (s: string) =>
-    s
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&#\d+;/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
 
   // Infer type from URL path
   function inferTypeFromUrl(u: string): KnowledgeFact["type"] {
@@ -346,43 +495,67 @@ async function parseWikiPage(
     facts.push({ type: urlType, name, raw });
   }
 
-  // ── Strategy 2: Fextralife item page links ───────────────────────────────
-  // Only pick up links whose href looks like a real item page:
-  //   - relative URL (starts with /)
-  //   - has at least 2 path segments (e.g. /Lords-of-the-Fallen/Pieta-Sword)
-  //   - path does NOT match common wiki nav patterns
-  if (sourceType === "fextralife") {
+  // ── Strategy 2: collect detail-page links from Fextralife + Fandom ───────
+  // On both wikis, item pages live at predictable URL patterns. We collect
+  // up to DETAIL_PAGE_BUDGET URLs here, then deep-crawl them below.
+  const detailTargets: { url: string; fallbackName: string; fallbackType: KnowledgeFact["type"] }[] = [];
+  const detailSeen = new Set<string>();
+
+  if (sourceType === "fextralife" || sourceType === "fandom") {
     const linkPattern = /<a[^>]+href="([^"#?]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-    const navPathBlock = /\/(wiki|home|blog|forum|news|guides?|reviews?|shop|vip|search|login|logout|register|account|user|special|help|chat|discord|twitch|youtube|facebook|twitter|instagram|reddit|patch|dlc|edit|history|talk|upload|file|template|portal|project|main[-_]page|random|donate|preferences|watchlist|contributions|accessibility|version)/i;
+    const navPathBlock = /\/(wiki|home|blog|forum|news|guides?|reviews?|shop|vip|search|login|logout|register|account|user|special|help|chat|discord|twitch|youtube|facebook|twitter|instagram|reddit|patch|dlc|edit|history|talk|upload|file|template|portal|project|main[-_]page|random|donate|preferences|watchlist|contributions|accessibility|version|category)/i;
+
+    const baseUrl = new URL(url);
 
     while ((match = linkPattern.exec(html)) !== null) {
       const href = match[1].trim();
       const text = stripHtml(match[2]).trim();
 
-      // Must be a relative link with depth ≥ 2 (e.g. /GameName/ItemName)
-      if (!href.startsWith("/")) continue;
-      const pathParts = href.split("/").filter(Boolean);
-      if (pathParts.length < 2) continue;
-      // Block obvious nav paths
-      if (navPathBlock.test(href)) continue;
+      // Normalise to absolute URL
+      let absolute: string;
+      try {
+        absolute = new URL(href, baseUrl).toString();
+      } catch { continue; }
 
+      // Stay on the same host (don't wander off the wiki)
+      let absUrl: URL;
+      try { absUrl = new URL(absolute); } catch { continue; }
+      if (absUrl.hostname !== baseUrl.hostname) continue;
+
+      const pathParts = absUrl.pathname.split("/").filter(Boolean);
+      if (pathParts.length < 2) continue;
+      if (navPathBlock.test(absUrl.pathname)) continue;
+
+      // Text must look like an item name (not UI chrome)
       if (
-        text.length > 3 &&
-        text.length < 60 &&
-        /[A-Z]/.test(text) &&
-        !seen.has(text.toLowerCase()) &&
-        !NAV_BLOCK.test(text.trim()) &&
-        !NAV_PHRASE.test(text.trim())
-      ) {
-        seen.add(text.toLowerCase());
-        const raw = `${urlType}: ${text} | Loc:${pathParts[0]}`;
-        facts.push({ type: urlType, name: text, raw });
-      }
-      if (facts.length > 800) break;
+        text.length < 3 ||
+        text.length > 60 ||
+        !/[A-Z]/.test(text) ||
+        NAV_BLOCK.test(text.trim()) ||
+        NAV_PHRASE.test(text.trim())
+      ) continue;
+
+      const dedupKey = absUrl.pathname.toLowerCase();
+      if (detailSeen.has(dedupKey)) continue;
+      detailSeen.add(dedupKey);
+
+      detailTargets.push({ url: absolute, fallbackName: text, fallbackType: urlType });
+      if (detailTargets.length >= DETAIL_PAGE_BUDGET) break;
     }
   }
 
-  return facts.slice(0, 600);
+  // ── Strategy 3: deep-crawl each detail page for infobox + description ────
+  if (detailTargets.length > 0) {
+    const enriched = await fetchDetailPagesBatched(detailTargets);
+    for (const f of enriched) {
+      const key = f.name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      facts.push(f);
+    }
+  }
+
+  return facts.slice(0, 800);
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
