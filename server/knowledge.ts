@@ -1,9 +1,9 @@
 import type { Build, KnowledgeFact } from "@shared/types";
 import { storage } from "./storage";
 
-const MAX_FACTS = 1500;       // storage cap: 8 categories × 150+ items each
-const DISPLAY_PER_CAT = 150;  // UI viewer: show up to 150 per category
-const INJECT_PER_CAT = 60;    // prompt injection cap: 60×14 cats = 840 max lines (~85K chars, safe for 200K ctx)
+const MAX_FACTS = 5000;       // storage cap: deep wiki crawls return 800+ items per source × 4 sources
+const DISPLAY_PER_CAT = 300;  // UI viewer: show up to 300 per category
+const INJECT_PER_CAT = 80;    // prompt injection cap: 80×14 cats = 1120 max lines (~110K chars, safe for 200K ctx)
 const DEDUP_PREFIX_LEN = 40;
 
 const CAT_ORDER = ["WEAPON", "SHIELD", "CATALYST", "ARMOR", "RING", "SPELL", "BUFF", "BUILD", "ITEM", "MECHANIC", "GEM", "UPGRADE", "MAP", "LORE"] as const;

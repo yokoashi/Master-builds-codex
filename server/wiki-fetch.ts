@@ -462,15 +462,24 @@ async function parseWikiPage(
   const urlType = inferTypeFromUrl(url);
 
   // ── Nav/UI text blocklist ─────────────────────────────────────────────────
-  // Anything matching this regex is UI chrome, not a game item name.
-  // NOTE: TypeScript does not support the `x` (verbose/extended) flag or
-  // multi-line regex literals. Must be a single-line pattern or new RegExp().
-  const NAV_BLOCK = /^(level|stat|str|dex|int|fth|arc|vig|end|agl|atk|def|weight|location|description|effect|name|type|upgrade|notes?|source|how\s+to|where|wiki|edit|sign\s*in|log\s*(?:in|out)|search|navigation|contents?|categories?|home|back|next|prev|top|menu|header|footer|sidebar|share|tweet|discord|reddit|youtube|facebook|twitter|instagram|twitch|privacy|terms|contact|about|advertis\w*|cookie|vip|chat|forum|news|reviews|guides|patch|dlc|blog|hub|shop|to-?do|gestures?|controls?|combat|faq|classes?|builds?|pve|pvp|general|character|creation|respec|stats?|status|effects?|items?|equipment|weapons?\s+damage|damage\s+types?|wikis?|all\s+wikis?|wiki\s+home|sign\s+in\s+now|new\s+new|secrets?|pumpkin|patch\s+event|mirror|distortion|patchnotes?|community|trending|popular|recent|changes?|history|discussion|talk|user|special|file|template|help|project|portal|main\s+page|random|donate|toolbox|print|permanent|cite|create|account|watch|view|source|read|classic|mobile|desktop|accessibility|preferences|watchlist|contributions|upload|logs?|version)$/i;
+  // Single-word blocklist — anything matching this is wiki chrome, not an item.
+  const NAV_BLOCK = /^(level|stat|str|dex|int|fth|arc|vig|end|agl|atk|def|weight|location|description|effect|name|type|upgrade|notes?|source|how\s+to|where|wiki|edit|sign\s*in|log\s*(?:in|out)|search|navigation|contents?|categories?|home|back|next|prev|top|menu|header|footer|sidebar|share|tweet|discord|reddit|youtube|facebook|twitter|instagram|twitch|privacy|terms|contact|about|advertis\w*|cookie|vip|chat|forum|news|reviews|guides|patch|dlc|blog|hub|shop|to-?do|gestures?|controls?|combat|faq|classes?|builds?|pve|pvp|general|character|creation|respec|stats?|status|effects?|items?|equipment|weapons?\s+damage|damage\s+types?|wikis?|all\s+wikis?|wiki\s+home|sign\s+in\s+now|new\s+new|secrets?|pumpkin|patch\s+event|mirror|distortion|patchnotes?|community|trending|popular|recent|changes?|history|discussion|talk|user|special|file|template|help|project|portal|main\s+page|random|donate|toolbox|print|permanent|cite|create|account|watch|view|source|read|classic|mobile|desktop|accessibility|preferences|watchlist|contributions|upload|logs?|version|redirect|lock|unlock|permissions?|javascript|tags?|members?|settings?|platforms?|rename|delete|javascript|feeds?|rss|atom|sitemap|robots|favicon|manifest|service[-\s]worker|sw\.js|login|logout|signin|signout|register|password|forgot|reset|verify|confirm|subscribe|unsubscribe|newsletter|captcha|recaptcha|token|session|csrf|nonce|api|json|xml|rdf|sparql|query|endpoint)$/i;
 
-  // Additional multi-word nav patterns
+  // Multi-word wiki admin/nav phrases that slip past the single-word filter
+  const NAV_PHRASE_MULTI = /^(visit\s+discord|create\s+new\s+page|recent\s+changes|edit\s+open\s+graph|clear\s+page\s+cache|clear\s+comments\s+cache|file\s+manager|page\s+manager|wiki\s+templates?|comments?\s+approval|wiki\s+settings?|wiki\s+manager|create\s+wiki|release\s+date|new\s+page|sign\s+in|log\s+in|sign\s+out|log\s+out|all\s+wikis?|wiki\s+home|main\s+page|edit\s+source|view\s+history|read\s+more|see\s+also|external\s+links?|related\s+pages?|quick\s+nav|table\s+of\s+contents|jump\s+to\s+nav|jump\s+to\s+search|get\s+help|what\s+links\s+here|special\s+pages?|printable\s+version|permanent\s+link|cite\s+this\s+page|wikidata\s+item|in\s+other\s+languages?|on\s+this\s+page|new\s+section|add\s+topic|leave\s+message|user\s+contributions?|talk\s+page|user\s+talk|upload\s+file|my\s+talk|my\s+contributions?|my\s+preferences|my\s+watchlist|how\s+to\s+edit|getting\s+started|community\s+portal|village\s+pump|help\s+centre|help\s+center|about\s+(?:the\s+)?wiki|disclaimer|terms\s+of\s+(?:use|service)|privacy\s+policy|cookie\s+policy|manage\s+cookies?|contact\s+us|advertise\s+with\s+us|fan\s+feed|explore\s+properties?|fandom\s+(?:apps?|home|store|studio|university)|trending\s+pages?)$/i;
+
+  // Multi-word nav/meta patterns: 3+ words ending in wiki/guide/page/etc.
   const NAV_PHRASE = /^(\w+\s+){3,}(wiki|guide|info|page|list|hub|home|news|blog)$/i;
 
-  const seen = new Set<string>();
+  // Date patterns: "October 13, 2023", "2023-10-13", "13/10/2023", etc.
+  const DATE_PATTERN = /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d|\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}/i;
+
+  // Use a map so Strategy 3 (rich detail pages) can overwrite Strategy 1 (thin names).
+  // Key = lowercased item name. Final output comes from this map.
+  const factMap = new Map<string, KnowledgeFact>();
+
+  // Hoist URL parse — used in every Strategy 1 iteration
+  const pageSlug = (() => { try { return new URL(url).pathname.split("/").pop() ?? "wiki"; } catch { return "wiki"; } })();
 
   // ── Strategy 1: extract <li> and <td> text ───────────────────────────────
   const cellPattern = /<(?:li|td|th)[^>]*>([\s\S]*?)<\/(?:li|td|th)>/gi;
@@ -478,21 +487,25 @@ async function parseWikiPage(
 
   while ((match = cellPattern.exec(html)) !== null) {
     const text = stripHtml(match[1]);
+    const trimmed = text.trim();
     if (
       text.length < 3 ||
       text.length > 80 ||
       /^\d+$/.test(text) ||
-      NAV_BLOCK.test(text.trim()) ||
-      NAV_PHRASE.test(text.trim())
+      NAV_BLOCK.test(trimmed) ||
+      NAV_PHRASE.test(trimmed) ||
+      NAV_PHRASE_MULTI.test(trimmed) ||
+      DATE_PATTERN.test(trimmed)
     ) continue;
     if (!/[A-Z]/.test(text)) continue;
 
     const name = text.slice(0, 80).trim();
-    if (seen.has(name.toLowerCase())) continue;
-    seen.add(name.toLowerCase());
-
-    const raw = `${urlType}: ${name} | Loc:${new URL(url).pathname.split("/").pop() ?? "wiki"}`;
-    facts.push({ type: urlType, name, raw });
+    const nameKey = name.toLowerCase();
+    // Only add if not already present — Strategy 3 will overwrite with richer version
+    if (!factMap.has(nameKey)) {
+      const raw = `${urlType}: ${name} | Loc:${pageSlug}`;
+      factMap.set(nameKey, { type: urlType, name, raw });
+    }
   }
 
   // ── Strategy 2: collect detail-page links from Fextralife + Fandom ───────
@@ -503,7 +516,12 @@ async function parseWikiPage(
 
   if (sourceType === "fextralife" || sourceType === "fandom") {
     const linkPattern = /<a[^>]+href="([^"#?]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-    const navPathBlock = /\/(wiki|home|blog|forum|news|guides?|reviews?|shop|vip|search|login|logout|register|account|user|special|help|chat|discord|twitch|youtube|facebook|twitter|instagram|reddit|patch|dlc|edit|history|talk|upload|file|template|portal|project|main[-_]page|random|donate|preferences|watchlist|contributions|accessibility|version|category)/i;
+    // Block nav/admin paths. NOTE: "wiki" is intentionally NOT in this list —
+    // Fandom item pages live at /wiki/ItemName and must be allowed through.
+    // Fandom special namespaces are blocked via the colon-namespace pattern below.
+    const navPathBlock = /\/(home|blog|forum|news|guides?|reviews?|shop|vip|search|login|logout|register|account|special|help|chat|discord|twitch|youtube|facebook|twitter|instagram|reddit|patch|dlc|edit|history|talk|upload|file|template|portal|project|main[-_]page|random|donate|preferences|watchlist|contributions|accessibility|version|category)(?:\/|$)/i;
+    // Fandom colon-namespaces: /wiki/Special:RandomPage, /wiki/User:foo, etc.
+    const fandomNsBlock = /\/wiki\/(?:Special|User|Talk|File|Template|Help|Forum|Category|Portal|Project|MediaWiki|Module):/i;
 
     const baseUrl = new URL(url);
 
@@ -525,6 +543,7 @@ async function parseWikiPage(
       const pathParts = absUrl.pathname.split("/").filter(Boolean);
       if (pathParts.length < 2) continue;
       if (navPathBlock.test(absUrl.pathname)) continue;
+      if (fandomNsBlock.test(absUrl.pathname)) continue;
 
       // Text must look like an item name (not UI chrome)
       if (
@@ -532,7 +551,9 @@ async function parseWikiPage(
         text.length > 60 ||
         !/[A-Z]/.test(text) ||
         NAV_BLOCK.test(text.trim()) ||
-        NAV_PHRASE.test(text.trim())
+        NAV_PHRASE.test(text.trim()) ||
+        NAV_PHRASE_MULTI.test(text.trim()) ||
+        DATE_PATTERN.test(text.trim())
       ) continue;
 
       const dedupKey = absUrl.pathname.toLowerCase();
@@ -545,17 +566,16 @@ async function parseWikiPage(
   }
 
   // ── Strategy 3: deep-crawl each detail page for infobox + description ────
+  // Strategy 3 overwrites Strategy 1 thin facts — infobox data is richer.
   if (detailTargets.length > 0) {
     const enriched = await fetchDetailPagesBatched(detailTargets);
     for (const f of enriched) {
-      const key = f.name.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      facts.push(f);
+      // Always set — overwrites any thin Strategy 1 fact for the same name
+      factMap.set(f.name.toLowerCase(), f);
     }
   }
 
-  return facts.slice(0, 800);
+  return Array.from(factMap.values()).slice(0, 800);
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
@@ -588,7 +608,31 @@ export async function fetchWikiPrePass(
       : hintUrl.includes("fandom.com") || hintUrl.includes("gamepedia.com")
       ? "fandom"
       : "generic";
-    sources.push({ url: hintUrl, type, label: "User-supplied link" });
+
+    // Skip wiki homepages — they contain only navigation chrome, not item data.
+    // Patterns: /Game+Name+Wiki, /wiki/Main_Page, /, /index, etc.
+    // When a homepage is detected, let discoverSources find the real item pages.
+    const isHomepage = (() => {
+      try {
+        const p = new URL(hintUrl).pathname.replace(/\+/g, " ").toLowerCase().trim();
+        return (
+          p === "/" || p === "" ||
+          p.endsWith("wiki") || p.endsWith("wiki/") ||
+          p.endsWith("main_page") || p.endsWith("main page") ||
+          p.endsWith("index") || p.endsWith("home") ||
+          // Fextralife style: /The+Lords+of+the+Fallen+Wiki
+          /\/[a-z0-9 +_-]+ wiki\/?$/.test(p) ||
+          // Fandom style: /wiki/Main_Page
+          /\/wiki\/main.?page\/?$/i.test(p)
+        );
+      } catch { return false; }
+    })();
+
+    if (!isHomepage) {
+      sources.push({ url: hintUrl, type, label: "User-supplied link" });
+    }
+    // If it IS a homepage, still use it as a hint for source discovery below
+    // but don't try to parse it for items.
   }
 
   // 2. Discover additional sources via sonar-pro (always run — finds extras)

@@ -50,7 +50,8 @@ function BuildTabInner({ build, game, onDelete }: Props) {
   const accentGlow = hexToRgba(accent, 0.2);
 
   const safePhaseIdx = Math.min(activePhase, (build.phases?.length ?? 1) - 1);
-  const phase: Phase = build.phases[safePhaseIdx];
+  const phase: Phase | undefined = build.phases?.[safePhaseIdx];
+  if (!phase) return null;
   const safeLoadoutIdx = Math.min(activeLoadout, (build.loadouts?.length ?? 1) - 1);
   const prevPhase: Phase | undefined = build.phases[safePhaseIdx - 1];
 
