@@ -143,37 +143,58 @@ async function claudeJson<T>(
 // Runs panel models IN PARALLEL, then a judge picks the best response.
 // Each call has a hard 60 s timeout to prevent hanging the generation modal.
 //
-// Panel models — real slugs available on OpenRouter:
-//   • anthropic/claude-3-5-sonnet      — best JSON structuring
-//   • google/gemini-2.0-flash          — fast, strong reasoning
-//   • openai/gpt-4o                    — excellent structured output
+// Panel models — real slugs available on OpenRouter, all flagship-tier:
+//   • anthropic/claude-3.7-sonnet      — Anthropic's newer reasoning model (best JSON)
+//   • openai/gpt-4o-2024-11-20         — latest GPT-4o, excellent structured output
+//   • google/gemini-pro-1.5            — Google's reasoning-capable Pro tier
+//   • deepseek/deepseek-r1             — strong reasoning, great for complex schemas
 //
-// Judge model: anthropic/claude-3-5-sonnet (most reliable JSON evaluator)
+// Judge model: anthropic/claude-3.7-sonnet (most accurate JSON evaluator)
+// Ensemble uses Promise.allSettled — if any model is unavailable, the rest still vote.
 
 const OR_PANEL: string[] = [
-  "anthropic/claude-3-5-sonnet",
-  "google/gemini-2.0-flash",
+  "anthropic/claude-3.7-sonnet",
   "openai/gpt-4o",
+  "google/gemini-pro-1.5",
+  "deepseek/deepseek-r1",
 ];
-const OR_JUDGE = "anthropic/claude-3-5-sonnet";
-const OR_CALL_TIMEOUT_MS = 60_000; // 60 s per model call
+const OR_JUDGE = "anthropic/claude-3.7-sonnet";
+const OR_CALL_TIMEOUT_MS = 90_000; // 90 s per model call (reasoning models are slower)
 
 async function callOrModel(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const timeout = new Promise<never>((_, reject) =>
+  const timeout = () => new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error(`OR model ${model} timed out after ${OR_CALL_TIMEOUT_MS / 1000}s`)), OR_CALL_TIMEOUT_MS)
   );
-  const call = openRouter.chat.completions.create({
-    model,
-    max_tokens: 8000,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    response_format: { type: "json_object" } as any,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user",   content: userPrompt },
-    ],
-  });
-  const completion = await Promise.race([call, timeout]);
-  return completion.choices[0]?.message?.content ?? "";
+  const messages = [
+    { role: "system" as const, content: systemPrompt },
+    { role: "user"   as const, content: userPrompt },
+  ];
+  // Try with json_object mode first (forces clean JSON on supporting models).
+  try {
+    const completion = await Promise.race([
+      openRouter.chat.completions.create({
+        model,
+        max_tokens: 8000,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        response_format: { type: "json_object" } as any,
+        messages,
+      }),
+      timeout(),
+    ]);
+    return completion.choices[0]?.message?.content ?? "";
+  } catch (err) {
+    // Some models (reasoning models, older Gemini, etc.) reject response_format.
+    // Retry once without it — parseJsonResponse's multi-strategy parser will
+    // recover markdown-fenced or think-tagged output.
+    const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    const isUnsupportedFormat = msg.includes("response_format") || msg.includes("json_object") || msg.includes("not supported");
+    if (!isUnsupportedFormat) throw err;
+    const completion = await Promise.race([
+      openRouter.chat.completions.create({ model, max_tokens: 8000, messages }),
+      timeout(),
+    ]);
+    return completion.choices[0]?.message?.content ?? "";
+  }
 }
 
 async function openrouterJson<T>(
