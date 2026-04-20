@@ -613,11 +613,12 @@ async function parseWikiPage(
     const p = u.toLowerCase();
     if (/shield|offhand/.test(p)) return "SHIELD";
     if (/catalyst|staff|seal|wand/.test(p)) return "CATALYST";
-    if (/armor|armour|helm|chest/.test(p)) return "ARMOR";
-    if (/ring|accessory|talisman|amulet/.test(p)) return "RING";
-    if (/spell|sorcery|incantation|pyro|miracle/.test(p)) return "SPELL";
+    if (/armor|armour|helm|chest|gauntlet|legging/.test(p)) return "ARMOR";
+    if (/ring|accessor|talisman|amulet|necklace|pendant/.test(p)) return "RING";
+    if (/spell|sorcery|incantation|pyro|miracle|magic|enchant/.test(p)) return "SPELL";
     if (/buff|support|heal/.test(p)) return "BUFF";
-    if (/boss|enemy/.test(p)) return "BUILD";
+    if (/boss|enemy|mob|creature/.test(p)) return "BUILD";
+    if (/rune|gem|upgrade|material|consumable|key\s*item/.test(p)) return "ITEM";
     return "WEAPON";
   }
 
@@ -806,7 +807,10 @@ async function parseWikiPage(
       if (absUrl.hostname !== baseUrl.hostname) continue;
 
       const pathParts = absUrl.pathname.split("/").filter(Boolean);
-      if (pathParts.length < 2) continue;
+      // Fextralife item pages are at /{ItemName} (1 segment).
+      // Fandom item pages are at /wiki/{ItemName} (2 segments).
+      // Block root-only paths but allow both depths.
+      if (pathParts.length < 1) continue;
       if (navPathBlock.test(absUrl.pathname)) continue;
       if (fandomNsBlock.test(absUrl.pathname)) continue;
 
