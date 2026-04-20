@@ -279,14 +279,146 @@ function stripHtml(s: string): string {
     .trim();
 }
 
-// Extract infobox-like key/value pairs and a short description from a wiki
+// ─── Generic HTML Table Parser ───────────────────────────────────────────────
+// Parses <table> elements into typed row/cell structures. Works across
+// Fextralife (wiki_table class), Fandom (wikitable), and generic wikis.
+
+interface RawTable {
+  headers: string[];
+  rows: Array<{ cells: string[]; links: Array<string | null> }>;
+}
+
+function parseCellContent(cellHtml: string): { text: string; link: string | null } {
+  const linkMatch = cellHtml.match(/href="([^"#][^"]*)"/);
+  return { text: stripHtml(cellHtml).trim(), link: linkMatch ? linkMatch[1] : null };
+}
+
+function parseTableBlock(tableHtml: string): RawTable | null {
+  const headers: string[] = [];
+  const rows: RawTable["rows"] = [];
+
+  const trPat = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let tr: RegExpExecArray | null;
+  while ((tr = trPat.exec(tableHtml)) !== null) {
+    const rowHtml = tr[1];
+    if (/<th[^>]*>/i.test(rowHtml)) {
+      if (headers.length === 0) {
+        const thPat = /<th[^>]*>([\s\S]*?)<\/th>/gi;
+        let th: RegExpExecArray | null;
+        while ((th = thPat.exec(rowHtml)) !== null) {
+          headers.push(stripHtml(th[1]).trim().slice(0, 60));
+          if (headers.length > 35) break;
+        }
+      }
+      continue;
+    }
+    const cells: string[] = [];
+    const links: Array<string | null> = [];
+    const tdPat = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let td: RegExpExecArray | null;
+    while ((td = tdPat.exec(rowHtml)) !== null) {
+      const { text, link } = parseCellContent(td[1]);
+      cells.push(text);
+      links.push(link);
+      if (cells.length > 35) break;
+    }
+    if (cells.some(c => c.length > 0)) rows.push({ cells, links });
+  }
+
+  return rows.length >= 1 ? { headers, rows } : null;
+}
+
+/**
+ * Extract all content tables from an HTML string.
+ * Targets wiki_table/wikitable/article-table classes first (Fextralife/Fandom).
+ * Falls back to leaf tables (no nested <table>) for generic wikis.
+ */
+function extractWikiTables(html: string): RawTable[] {
+  const tables: RawTable[] = [];
+  const seen = new Set<string>();
+
+  const classPat = /<table[^>]*class="[^"]*(?:wiki[_-]?table|wikitable|article-table)[^"]*"[^>]*>([\s\S]*?)<\/table>/gi;
+  let tm: RegExpExecArray | null;
+  while ((tm = classPat.exec(html)) !== null) {
+    const sig = tm[1].slice(0, 80);
+    if (!seen.has(sig)) {
+      seen.add(sig);
+      const parsed = parseTableBlock(tm[1]);
+      if (parsed) tables.push(parsed);
+    }
+  }
+
+  if (tables.length === 0) {
+    // Leaf table: no nested <table> inside — avoids capturing layout wrapper tables
+    const leafPat = /<table[^>]*>((?:(?!<table)[\s\S])*?)<\/table>/gi;
+    while ((tm = leafPat.exec(html)) !== null) {
+      const sig = tm[1].slice(0, 80);
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        const parsed = parseTableBlock(tm[1]);
+        if (parsed) tables.push(parsed);
+      }
+    }
+  }
+
+  return tables;
+}
+
+/**
+ * Find an upgrade-progression table (rows whose first cell ends "+N") and
+ * return a compact string like "Phys: +0→104 +5→156 +10→209 | Holy: +0→78 +10→119".
+ * Returns null if no upgrade table is found.
+ */
+function extractUpgradeProgression(tables: RawTable[]): string | null {
+  for (const table of tables) {
+    const upgradeRows = table.rows.filter(r => /\+\d+\s*$/.test(r.cells[0] ?? ""));
+    if (upgradeRows.length < 3) continue;
+
+    const maxLevel = Math.max(0, ...upgradeRows.map(r => {
+      const m = r.cells[0].match(/\+(\d+)\s*$/);
+      return m ? parseInt(m[1]) : 0;
+    }));
+    const midLevel = Math.round(maxLevel / 2);
+    const keyLevels = Array.from(new Set([0, midLevel > 0 && midLevel !== maxLevel ? midLevel : -1, maxLevel].filter(l => l >= 0)));
+
+    const progressions: string[] = [];
+    const colCount = Math.min(table.headers.length, (upgradeRows[0]?.cells.length ?? 1));
+    for (let col = 1; col <= colCount; col++) {
+      const header = (table.headers[col - 1] ?? "").trim();
+      if (!header) continue;
+      if (!/physic|phy|fire|holy|magic|light|dark|wither|smite|thrust|slash|strike|bleed|frost|poison|inferno|radiance|crit|arcane/i.test(header)) continue;
+      if (/def|block|resist|req|weight|wt|durabil/i.test(header)) continue;
+
+      const steps: string[] = [];
+      for (const level of keyLevels) {
+        const row = upgradeRows.find(r => {
+          const m = r.cells[0].match(/\+(\d+)\s*$/);
+          return m ? parseInt(m[1]) === level : false;
+        });
+        if (!row) continue;
+        const val = (row.cells[col] ?? "").replace(/[^\d.]/g, "");
+        if (val && parseFloat(val) > 0) steps.push(`+${level}→${val}`);
+      }
+      if (steps.length >= 2) {
+        const short = header.replace(/\s*(damage|attack|dmg|atk)\s*/gi, "").trim().slice(0, 10);
+        progressions.push(`${short}: ${steps.join(" ")}`);
+      }
+    }
+
+    if (progressions.length > 0) return progressions.join(" | ");
+  }
+  return null;
+}
+
+
 // detail page. Works on both Fextralife table infoboxes and Fandom aside
 // portable-infoboxes.
 interface DetailInfo {
-  title: string;                  // real article title
-  description: string;            // first paragraph, trimmed
-  fields: Record<string, string>; // infobox key/value pairs
-  inferredType: KnowledgeFact["type"] | null; // from Type/Category fields
+  title: string;
+  description: string;
+  fields: Record<string, string>;
+  inferredType: KnowledgeFact["type"] | null;
+  upgradeProgression: string | null; // e.g. "Phys: +0→104 +5→156 +10→209"
 }
 
 function extractDetailInfo(html: string): DetailInfo {
@@ -337,7 +469,11 @@ function extractDetailInfo(html: string): DetailInfo {
     else if (/sword|axe|bow|crossbow|spear|lance|hammer|dagger|fist|claw|katana|scythe|whip|flail|gun|rifle|greatsword|greataxe|halberd|pike/.test(typeText)) inferredType = "WEAPON";
   }
 
-  return { title, description, fields, inferredType };
+  // ── Upgrade progression table (+0 → +max) ───────────────────────────────
+  const allTables = extractWikiTables(html);
+  const upgradeProgression = extractUpgradeProgression(allTables);
+
+  return { title, description, fields, inferredType, upgradeProgression };
 }
 
 // Fetch one detail page and convert it into an enriched KnowledgeFact.
@@ -359,30 +495,56 @@ async function fetchDetailPage(
   // Compose rich raw line with the most useful infobox fields first
   const parts: string[] = [`${type}: ${name}`];
   const importantKeys = [
-    "attack", "attack rating", "ap", "damage",
-    "weight", "wt",
-    "scaling", "requirement", "requirements",
-    "type", "weapon type", "armor type",
-    "physical", "magic", "fire", "lightning", "dark", "holy",
-    "bleed", "poison", "frostbite", "rot",
-    "fp cost", "fp", "stamina",
-    "location", "loc", "how to find", "acquired", "drops from",
-    "effect", "description",
+    // Base attack / damage
+    "attack", "attack rating", "ap", "damage", "base damage",
+    "physical attack", "magic attack", "fire attack", "lightning attack",
+    "dark attack", "holy attack", "wither attack", "smite attack",
+    // Weapon properties
+    "weight", "wt", "scaling", "requirement", "requirements",
+    "strength scaling", "dexterity scaling", "intelligence scaling",
+    "faith scaling", "arcane scaling", "str scaling", "dex scaling",
+    "type", "weapon type", "attack type",
+    // Armor defense stats
+    "armor type",
+    "physical defense", "physical def", "physical",
+    "magic defense", "magic def", "magic",
+    "fire defense", "fire def", "fire",
+    "lightning defense", "lightning def", "lightning",
+    "dark defense", "dark def", "dark",
+    "holy defense", "holy def", "holy",
+    "wither defense", "wither def", "wither",
+    "poise",
+    // Status / effects
+    "bleed", "poison", "frostbite", "rot", "sleep", "madness",
+    "holy damage", "fire damage",
+    // Spell / skill fields
+    "fp cost", "fp", "stamina", "spell slots used", "slots used",
+    "intelligence required", "faith required", "radiance required", "inferno required",
+    // Location
+    "location", "loc", "how to find", "acquired", "drops from", "found",
+    // Effect / description
+    "effect", "special effect", "passive", "description",
   ];
   const usedKeys = new Set<string>();
   for (const k of importantKeys) {
     const v = info.fields[k];
     if (v && !usedKeys.has(k)) {
-      parts.push(`${k}: ${v.slice(0, 80)}`);
+      parts.push(`${k}: ${v.slice(0, 100)}`);
       usedKeys.add(k);
     }
   }
+
+  // Upgrade progression table (+0 → max level)
+  if (info.upgradeProgression) {
+    parts.push(`upgrades: ${info.upgradeProgression}`);
+  }
+
   if (info.description) {
     const desc = info.description.slice(0, 160);
     parts.push(`desc: ${desc}`);
   }
 
-  // Location hint: try the URL segment as a fallback
+  // Location hint: URL segment as last-resort fallback
   let locHint = "";
   try {
     const u = new URL(url);
@@ -390,7 +552,7 @@ async function fetchDetailPage(
   } catch { /* ignore */ }
   if (locHint) parts.push(`src: ${locHint}`);
 
-  const raw = parts.join(" | ").slice(0, 500);
+  const raw = parts.join(" | ").slice(0, 600);
   const location = info.fields.location ?? info.fields.loc ?? info.fields["how to find"] ?? undefined;
 
   return { type, name, raw, ...(location ? { location } : {}) };
@@ -488,8 +650,102 @@ async function parseWikiPage(
   // Key = lowercased item name. Final output comes from this map.
   const factMap = new Map<string, KnowledgeFact>();
 
+  // Hoisted — Strategy 0 and Strategy 2 both contribute targets for Strategy 3.
+  const detailTargets: { url: string; fallbackName: string; fallbackType: KnowledgeFact["type"] }[] = [];
+  const detailSeen = new Set<string>();
+
   // Hoist URL parse — used in every Strategy 1 iteration
   const pageSlug = (() => { try { return new URL(url).pathname.split("/").pop() ?? "wiki"; } catch { return "wiki"; } })();
+
+  // ── Strategy 0: structured inline list tables ─────────────────────────────
+  // For category pages (/Magic, /Shields, /Weapons, /Armor) that already have
+  // all stats in a table, parse column-aligned data directly. This produces
+  // facts with full inline stats (FP cost, block%, defense values, etc.)
+  // without waiting for detail page fetches. Links found here also feed
+  // Strategy 3 so individual pages still enrich with infobox + upgrade data.
+  {
+    const listBaseUrl = (() => { try { return new URL(url); } catch { return null; } })();
+    const listTables = extractWikiTables(html);
+
+    const isJunkName = (n: string) =>
+      NAV_BLOCK.test(n) || NAV_PHRASE.test(n) || NAV_PHRASE_MULTI.test(n) ||
+      DATE_PATTERN.test(n) || COMMENT_PATTERN.test(n) ||
+      BREADCRUMB_PATTERN.test(n) || DESCRIPTION_PATTERN.test(n) ||
+      /^\d+$/.test(n) || !/[A-Za-z]/.test(n);
+
+    for (const table of listTables) {
+      if (table.headers.length < 2 || table.rows.length < 2) continue;
+      const headerStr = table.headers.join(" ").toLowerCase();
+
+      // Skip metadata / TOC tables
+      if (/contents?|toc|navigation|changelog|version\s+history|patch\s+note/i.test(headerStr)) continue;
+
+      // Infer category from column headers (overrides URL path heuristic)
+      let tableType: KnowledgeFact["type"] = urlType;
+      if (/fp\s*cost|mana\s*cost|spell\s*slot|slots?\s*used|radiance\s*req|inferno\s*req|catalyst\s*type/i.test(headerStr)) tableType = "SPELL";
+      else if (/stability|block\s*%|guard\s*absorb|phys.*block|block\s+absorb|shield\s+type/i.test(headerStr)) tableType = "SHIELD";
+      else if (/phys.*def|physical\s+def|fir.*def|hol.*def|armor\s+type|poise\s/i.test(headerStr)) tableType = "ARMOR";
+      else if (/str.*scal|dex.*scal|attack\s*rat|weapon\s+type/i.test(headerStr)) tableType = "WEAPON";
+      else if (/ring\s+effect|amulet\s+effect|talisman\s+effect/i.test(headerStr)) tableType = "RING";
+
+      // Find name column: explicit header match → most-linked column → col 0
+      let nameColIdx = 0;
+      const namedCol = table.headers.findIndex(h =>
+        /^(name|spell|magic|shield|weapon|armor|ring|item|skill|ability|catalyst|sorcery|incantation|buff|technique|art|talisman|rune|gem)$/i.test(h.trim())
+      );
+      if (namedCol >= 0) {
+        nameColIdx = namedCol;
+      } else {
+        let bestCol = 0, bestCount = 0;
+        for (let col = 0; col < Math.min(4, table.rows[0]?.cells.length ?? 0); col++) {
+          const cnt = table.rows.slice(0, 6).filter(r => r.links[col] !== null).length;
+          if (cnt > bestCount) { bestCount = cnt; bestCol = col; }
+        }
+        if (bestCount > 0) nameColIdx = bestCol;
+      }
+
+      let addedFromTable = 0;
+      for (const row of table.rows) {
+        const rawName = row.cells[nameColIdx]?.trim() ?? "";
+        if (rawName.length < 2 || rawName.length > 80) continue;
+        if (isJunkName(rawName)) continue;
+
+        // Build stat columns (all columns except name)
+        const statParts: string[] = [];
+        for (let i = 0; i < Math.min(table.headers.length, row.cells.length); i++) {
+          if (i === nameColIdx) continue;
+          const h = (table.headers[i] ?? "").trim();
+          const v = (row.cells[i] ?? "").trim();
+          if (!h || !v || v === "—" || v === "-" || v === "N/A") continue;
+          statParts.push(`${h}: ${v.slice(0, 80)}`);
+        }
+
+        const name = rawName.slice(0, 80);
+        const nameKey = name.toLowerCase();
+        const raw = `${tableType}: ${name}${statParts.length ? " | " + statParts.join(" | ") : ""}`.slice(0, 600);
+
+        if (!factMap.has(nameKey)) {
+          factMap.set(nameKey, { type: tableType, name, raw });
+          addedFromTable++;
+        }
+
+        // Also queue for detail-page enrichment
+        const link = row.links[nameColIdx];
+        if (link && listBaseUrl) {
+          try {
+            const abs = new URL(link, listBaseUrl);
+            const dk = abs.pathname.toLowerCase();
+            if (!detailSeen.has(dk) && detailTargets.length < DETAIL_PAGE_BUDGET) {
+              detailSeen.add(dk);
+              detailTargets.push({ url: abs.href, fallbackName: name, fallbackType: tableType });
+            }
+          } catch { /* ignore */ }
+        }
+      }
+      // Use only the first content table that yields items
+      if (addedFromTable >= 3) break;
+    }
+  }
 
   // ── Strategy 1: extract <li> and <td> text ───────────────────────────────
   const cellPattern = /<(?:li|td|th)[^>]*>([\s\S]*?)<\/(?:li|td|th)>/gi;
@@ -522,11 +778,7 @@ async function parseWikiPage(
   }
 
   // ── Strategy 2: collect detail-page links from Fextralife + Fandom ───────
-  // On both wikis, item pages live at predictable URL patterns. We collect
-  // up to DETAIL_PAGE_BUDGET URLs here, then deep-crawl them below.
-  const detailTargets: { url: string; fallbackName: string; fallbackType: KnowledgeFact["type"] }[] = [];
-  const detailSeen = new Set<string>();
-
+  // detailTargets/detailSeen are hoisted above Strategy 0 — add to them here.
   if (sourceType === "fextralife" || sourceType === "fandom") {
     const linkPattern = /<a[^>]+href="([^"#?]+)"[^>]*>([\s\S]*?)<\/a>/gi;
     // Block nav/admin paths. NOTE: "wiki" is intentionally NOT in this list —
