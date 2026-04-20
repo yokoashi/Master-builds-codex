@@ -474,6 +474,16 @@ async function parseWikiPage(
   // Date patterns: "October 13, 2023", "2023-10-13", "13/10/2023", etc.
   const DATE_PATTERN = /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d|\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}/i;
 
+  // Wiki comment entries: "Anonymous 14 Oct 2023 02:54 ... Reply Replies (3) ..."
+  const COMMENT_PATTERN = /^anonymous\b|\breply\s+replies\b|\+\d+\s+-\d+\s+submit/i;
+
+  // Breadcrumb navigation: "Weapons | Lords of the Fallen Wiki --> Home"
+  const BREADCRUMB_PATTERN = /\|.*(wiki|home|-->)|-->.*\|/i;
+
+  // Description sentences — wiki body text that slips through (not item names):
+  // "See Shields for a list of...", "Runes that possess this shape are related to..."
+  const DESCRIPTION_PATTERN = /^see\s+\w+(?:\s+\w+)?\s+for\s+(?:a\s+list|information|details?|more)|\bthat\s+possess\b|\bare\s+related\s+to\b|\bfor\s+(?:a\s+list|information)\s+on\b/i;
+
   // Use a map so Strategy 3 (rich detail pages) can overwrite Strategy 1 (thin names).
   // Key = lowercased item name. Final output comes from this map.
   const factMap = new Map<string, KnowledgeFact>();
@@ -495,7 +505,10 @@ async function parseWikiPage(
       NAV_BLOCK.test(trimmed) ||
       NAV_PHRASE.test(trimmed) ||
       NAV_PHRASE_MULTI.test(trimmed) ||
-      DATE_PATTERN.test(trimmed)
+      DATE_PATTERN.test(trimmed) ||
+      COMMENT_PATTERN.test(trimmed) ||
+      BREADCRUMB_PATTERN.test(trimmed) ||
+      DESCRIPTION_PATTERN.test(trimmed)
     ) continue;
     if (!/[A-Z]/.test(text)) continue;
 
@@ -553,7 +566,10 @@ async function parseWikiPage(
         NAV_BLOCK.test(text.trim()) ||
         NAV_PHRASE.test(text.trim()) ||
         NAV_PHRASE_MULTI.test(text.trim()) ||
-        DATE_PATTERN.test(text.trim())
+        DATE_PATTERN.test(text.trim()) ||
+        COMMENT_PATTERN.test(text.trim()) ||
+        BREADCRUMB_PATTERN.test(text.trim()) ||
+        DESCRIPTION_PATTERN.test(text.trim())
       ) continue;
 
       const dedupKey = absUrl.pathname.toLowerCase();
