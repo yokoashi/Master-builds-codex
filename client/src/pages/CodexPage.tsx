@@ -421,9 +421,9 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                 <span style={{ fontSize: "0.6rem", color: "var(--color-dim2)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)", flexShrink: 0 }}>Research</span>
                 <div className="flex rounded overflow-hidden flex-1" style={{ border: "1px solid #2a2218" }}>
                   {([
-                    { mode: "perplexity", label: "⚡ Pplx",       color: "#5591c7", title: "Perplexity sonar-deep-research (native API — best for web search)" },
-                    { mode: "openrouter", label: "◈ OpenRouter", color: "#4ade80", title: "Perplexity sonar-deep-research via OpenRouter (uses OR credits)" },
-                    { mode: "claude",     label: "✦ Claude",      color: "#c084fc", title: "Claude extracts from your supplied category URLs — best with specific wiki pages (weapons, armor, rings, etc.)" },
+                    { mode: "perplexity", label: "⚡ Pplx",   color: "#5591c7", title: "Perplexity sonar-deep-research (native API — best for web search)" },
+                    { mode: "openrouter", label: "◈ OR",     color: "#4ade80", title: "Perplexity sonar-deep-research via OpenRouter (uses OR credits)" },
+                    { mode: "claude",     label: "✦ Claude", color: "#c084fc", title: "Claude extracts from your supplied category URLs — best with specific wiki pages (weapons, armor, rings, etc.)" },
                   ] as const).map(({ mode, label, color, title }, idx, arr) => {
                     const active = learnResearchMode === mode;
                     return (
