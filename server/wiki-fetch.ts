@@ -425,7 +425,8 @@ function extractDetailInfo(html: string): DetailInfo {
   // ── Title ────────────────────────────────────────────────────────────────
   let title = "";
   const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-  if (h1) title = stripHtml(h1[1]).slice(0, 120);
+  // Split on | – — so "Axes | Lords of the Fallen Wiki" → "Axes"
+  if (h1) title = stripHtml(h1[1]).split(/[|\-—–]/)[0].trim().slice(0, 120);
   if (!title) {
     const ttl = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     if (ttl) title = stripHtml(ttl[1]).split(/[|\-—–]/)[0].trim().slice(0, 120);
@@ -476,12 +477,43 @@ function extractDetailInfo(html: string): DetailInfo {
   return { title, description, fields, inferredType, upgradeProgression };
 }
 
+/**
+ * Collect item-page links from a sub-hub page (e.g. /Axes listing individual axes).
+ * Skips nav paths and already-seen URLs. Returns up to 150 unique links.
+ */
+function extractSubHubLinks(html: string, baseUrl: string, seen: Set<string>): string[] {
+  const links: string[] = [];
+  const base = (() => { try { return new URL(baseUrl); } catch { return null; } })();
+  if (!base) return links;
+  const navBlock = /\/(home|blog|forum|news|guides?|reviews?|shop|vip|search|login|logout|register|account|special|help|chat|discord|twitch|youtube|facebook|twitter|instagram|reddit|patch|dlc|edit|history|talk|upload|file|template|portal|project|main[-_]page|random|donate|preferences|watchlist|contributions|accessibility|version|category)(?:\/|$)/i;
+  const fandomNs = /\/wiki\/(?:Special|User|Talk|File|Template|Help|Forum|Category|Portal|Project|MediaWiki|Module):/i;
+  const linkPat = /<a[^>]+href="([^"#?]+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = linkPat.exec(html)) !== null) {
+    try {
+      const abs = new URL(m[1], base);
+      if (abs.hostname !== base.hostname) continue;
+      if (abs.pathname.split("/").filter(Boolean).length < 1) continue;
+      if (navBlock.test(abs.pathname) || fandomNs.test(abs.pathname)) continue;
+      const dk = abs.pathname.toLowerCase();
+      if (seen.has(dk)) continue;
+      seen.add(dk);
+      links.push(abs.href);
+      if (links.length >= 150) break;
+    } catch { /* ignore */ }
+  }
+  return links;
+}
+
 // Fetch one detail page and convert it into an enriched KnowledgeFact.
-// Returns null on error (caller just skips it).
+// If the page has no infobox (it's a hub/category page), returns null and
+// populates subHubLinksOut with links to the actual item pages inside it.
 async function fetchDetailPage(
   url: string,
   fallbackName: string,
-  fallbackType: KnowledgeFact["type"]
+  fallbackType: KnowledgeFact["type"],
+  detailSeen: Set<string>,
+  subHubLinksOut: string[]
 ): Promise<KnowledgeFact | null> {
   const html = await safeFetch(url, DETAIL_PAGE_TIMEOUT_MS);
   if (!html) return null;
@@ -489,6 +521,18 @@ async function fetchDetailPage(
   const info = extractDetailInfo(html);
   const name = (info.title || fallbackName).trim();
   if (!name || name.length < 2 || name.length > 120) return null;
+
+  // If this page has NO infobox fields and no upgrade table it's almost certainly
+  // a hub/sub-category page (e.g. /Axes, /Grand+Swords, /Abbess+Set listing pieces).
+  // Collect its item links for a second crawl pass (Strategy 3b) instead of
+  // storing a useless thin fact.
+  if (Object.keys(info.fields).length === 0 && !info.upgradeProgression) {
+    const subLinks = extractSubHubLinks(html, url, detailSeen);
+    if (subLinks.length >= 3) {
+      subHubLinksOut.push(...subLinks);
+      return null;
+    }
+  }
 
   const type = info.inferredType ?? fallbackType;
 
@@ -559,15 +603,18 @@ async function fetchDetailPage(
 }
 
 // Fetch many detail pages in parallel batches so one slow server doesn't stall
-// the entire crawl.
+// the entire crawl. Sub-hub links discovered along the way are collected into
+// subHubLinksOut so the caller can schedule a second crawl pass.
 async function fetchDetailPagesBatched(
-  targets: { url: string; fallbackName: string; fallbackType: KnowledgeFact["type"] }[]
+  targets: { url: string; fallbackName: string; fallbackType: KnowledgeFact["type"] }[],
+  detailSeen: Set<string>,
+  subHubLinksOut: string[]
 ): Promise<KnowledgeFact[]> {
   const results: KnowledgeFact[] = [];
   for (let i = 0; i < targets.length; i += DETAIL_BATCH_SIZE) {
     const slice = targets.slice(i, i + DETAIL_BATCH_SIZE);
     const settled = await Promise.allSettled(
-      slice.map((t) => fetchDetailPage(t.url, t.fallbackName, t.fallbackType))
+      slice.map((t) => fetchDetailPage(t.url, t.fallbackName, t.fallbackType, detailSeen, subHubLinksOut))
     );
     for (const s of settled) {
       if (s.status === "fulfilled" && s.value) results.push(s.value);
@@ -619,6 +666,8 @@ async function parseWikiPage(
     if (/buff|support|heal/.test(p)) return "BUFF";
     if (/boss|enemy|mob|creature/.test(p)) return "BUILD";
     if (/rune|gem|upgrade|material|consumable|key\s*item/.test(p)) return "ITEM";
+    if (/lore|legend|history|story|note|journal|codex/.test(p)) return "LORE" as KnowledgeFact["type"];
+    if (/mechanic|system|guide|tip|tutorial|how\s*to/.test(p)) return "MECHANIC" as KnowledgeFact["type"];
     return "WEAPON";
   }
 
@@ -644,8 +693,9 @@ async function parseWikiPage(
   const BREADCRUMB_PATTERN = /\|.*(wiki|home|-->)|-->.*\|/i;
 
   // Description sentences — wiki body text that slips through (not item names):
-  // "See Shields for a list of...", "Runes that possess this shape are related to..."
-  const DESCRIPTION_PATTERN = /^see\s+\w+(?:\s+\w+)?\s+for\s+(?:a\s+list|information|details?|more)|\bthat\s+possess\b|\bare\s+related\s+to\b|\bfor\s+(?:a\s+list|information)\s+on\b/i;
+  // "See Shields for a list of...", "Runes that possess this shape..."
+  // "Reduce the mana cost of...", "Increases your Strength by..."
+  const DESCRIPTION_PATTERN = /^see\s+\w+(?:\s+\w+)?\s+for\s+(?:a\s+list|information|details?|more)|\bthat\s+possess\b|\bare\s+related\s+to\b|\bfor\s+(?:a\s+list|information)\s+on\b|^(?:reduce[sd]?|increase[sd]?|decrease[sd]?|boost[sd]?|grant[sd]?|deal[sd]?|cause[sd]?|apply|applies|heal[sd]?|restore[sd]?|add[sd]?|remove[sd]?|allow[sd]?|prevent[sd]?|convert[sd]?|absorb[sd]?|reflect[sd]?|enhance[sd]?|improve[sd]?|provide[sd]?|give[sd]?|enable[sd]?|trigger[sd]?|consume[sd]?|require[sd]?|activate[sd]?)\s+/i;
 
   // Use a map so Strategy 3 (rich detail pages) can overwrite Strategy 1 (thin names).
   // Key = lowercased item name. Final output comes from this map.
@@ -707,12 +757,24 @@ async function parseWikiPage(
 
       let addedFromTable = 0;
       for (const row of table.rows) {
-        const rawName = row.cells[nameColIdx]?.trim() ?? "";
+        const cellText = row.cells[nameColIdx]?.trim() ?? "";
+        if (cellText.length < 2 || cellText.length > 200) continue;
+
+        // "Princess' Sting – Boosts your damage..." → split on em/en-dash
+        // Take only the item name part; push effect text into stat columns
+        let rawName = cellText;
+        let inlineEffect = "";
+        const dashMatch = cellText.match(/^(.+?)\s*[–—]\s*(.+)$/);
+        if (dashMatch && dashMatch[1].length >= 2 && dashMatch[1].length <= 80 && dashMatch[2].length >= 5) {
+          rawName = dashMatch[1].trim();
+          inlineEffect = dashMatch[2].trim();
+        }
         if (rawName.length < 2 || rawName.length > 80) continue;
         if (isJunkName(rawName)) continue;
 
         // Build stat columns (all columns except name)
         const statParts: string[] = [];
+        if (inlineEffect) statParts.push(`effect: ${inlineEffect.slice(0, 140)}`);
         for (let i = 0; i < Math.min(table.headers.length, row.cells.length); i++) {
           if (i === nameColIdx) continue;
           const h = (table.headers[i] ?? "").trim();
@@ -837,13 +899,43 @@ async function parseWikiPage(
     }
   }
 
-  // ── Strategy 3: deep-crawl each detail page for infobox + description ────
-  // Strategy 3 overwrites Strategy 1 thin facts — infobox data is richer.
+  // ── Strategy 3: deep-crawl each detail page for infobox + upgrade table ──
+  // Pages with no infobox are sub-hubs (e.g. /Axes, /Grand+Swords, /Abbess+Set).
+  // Their item links are collected into subHubLinks for Strategy 3b.
+  const subHubLinks: string[] = [];
   if (detailTargets.length > 0) {
-    const enriched = await fetchDetailPagesBatched(detailTargets);
+    const enriched = await fetchDetailPagesBatched(detailTargets, detailSeen, subHubLinks);
     for (const f of enriched) {
-      // Always set — overwrites any thin Strategy 1 fact for the same name
       factMap.set(f.name.toLowerCase(), f);
+    }
+  }
+
+  // ── Strategy 3b: follow sub-hub links one level deeper ───────────────────
+  // Covers hub-of-hubs like /Weapons → /Axes → individual weapon pages, and
+  // armor-sets like /Armor → /Abbess+Set → /Abbess+Helm, /Abbess+Chest, etc.
+  if (subHubLinks.length > 0) {
+    const subTargets: typeof detailTargets = [];
+    for (const subUrl of subHubLinks) {
+      try {
+        const u = new URL(subUrl);
+        const dk = u.pathname.toLowerCase();
+        if (detailSeen.has(dk)) continue; // already queued or fetched
+        detailSeen.add(dk);
+        const subName = decodeURIComponent(u.pathname.split("/").filter(Boolean).pop() ?? "").replace(/\+/g, " ");
+        if (!subName) continue;
+        subTargets.push({ url: subUrl, fallbackName: subName, fallbackType: inferTypeFromUrl(subUrl) });
+        if (subTargets.length >= DETAIL_PAGE_BUDGET) break;
+      } catch { /* ignore */ }
+    }
+    if (subTargets.length > 0) {
+      const dummy: string[] = []; // no third level
+      const subEnriched = await fetchDetailPagesBatched(subTargets, detailSeen, dummy);
+      for (const f of subEnriched) {
+        const existing = factMap.get(f.name.toLowerCase());
+        if (!existing || f.raw.length > existing.raw.length) {
+          factMap.set(f.name.toLowerCase(), f);
+        }
+      }
     }
   }
 
