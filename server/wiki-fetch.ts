@@ -625,7 +625,7 @@ async function parseWikiPage(
 
   // ── Nav/UI text blocklist ─────────────────────────────────────────────────
   // Single-word blocklist — anything matching this is wiki chrome, not an item.
-  const NAV_BLOCK = /^(level|stat|str|dex|int|fth|arc|vig|end|agl|atk|def|weight|location|description|effect|name|type|upgrade|notes?|source|how\s+to|where|wiki|edit|sign\s*in|log\s*(?:in|out)|search|navigation|contents?|categories?|home|back|next|prev|top|menu|header|footer|sidebar|share|tweet|discord|reddit|youtube|facebook|twitter|instagram|twitch|privacy|terms|contact|about|advertis\w*|cookie|vip|chat|forum|news|reviews|guides|patch|dlc|blog|hub|shop|to-?do|gestures?|controls?|combat|faq|classes?|builds?|pve|pvp|general|character|creation|respec|stats?|status|effects?|items?|equipment|weapons?\s+damage|damage\s+types?|wikis?|all\s+wikis?|wiki\s+home|sign\s+in\s+now|new\s+new|secrets?|pumpkin|patch\s+event|mirror|distortion|patchnotes?|community|trending|popular|recent|changes?|history|discussion|talk|user|special|file|template|help|project|portal|main\s+page|random|donate|toolbox|print|permanent|cite|create|account|watch|view|source|read|classic|mobile|desktop|accessibility|preferences|watchlist|contributions|upload|logs?|version|redirect|lock|unlock|permissions?|javascript|tags?|members?|settings?|platforms?|rename|delete|javascript|feeds?|rss|atom|sitemap|robots|favicon|manifest|service[-\s]worker|sw\.js|login|logout|signin|signout|register|password|forgot|reset|verify|confirm|subscribe|unsubscribe|newsletter|captcha|recaptcha|token|session|csrf|nonce|api|json|xml|rdf|sparql|query|endpoint)$/i;
+  const NAV_BLOCK = /^(level|stat|str|dex|int|fth|arc|vig|end|agl|atk|def|weight|location|description|effect|name|type|upgrade|profile|image|icon|picture|photo|thumbnail|notes?|source|how\s+to|where|wiki|edit|sign\s*in|log\s*(?:in|out)|search|navigation|contents?|categories?|home|back|next|prev|top|menu|header|footer|sidebar|share|tweet|discord|reddit|youtube|facebook|twitter|instagram|twitch|privacy|terms|contact|about|advertis\w*|cookie|vip|chat|forum|news|reviews|guides|patch|dlc|blog|hub|shop|to-?do|gestures?|controls?|combat|faq|classes?|builds?|pve|pvp|general|character|creation|respec|stats?|status|effects?|items?|equipment|weapons?\s+damage|damage\s+types?|wikis?|all\s+wikis?|wiki\s+home|sign\s+in\s+now|new\s+new|secrets?|pumpkin|patch\s+event|mirror|distortion|patchnotes?|community|trending|popular|recent|changes?|history|discussion|talk|user|special|file|template|help|project|portal|main\s+page|random|donate|toolbox|print|permanent|cite|create|account|watch|view|source|read|classic|mobile|desktop|accessibility|preferences|watchlist|contributions|upload|logs?|version|redirect|lock|unlock|permissions?|javascript|tags?|members?|settings?|platforms?|rename|delete|javascript|feeds?|rss|atom|sitemap|robots|favicon|manifest|service[-\s]worker|sw\.js|login|logout|signin|signout|register|password|forgot|reset|verify|confirm|subscribe|unsubscribe|newsletter|captcha|recaptcha|token|session|csrf|nonce|api|json|xml|rdf|sparql|query|endpoint)$/i;
 
   // Multi-word wiki admin/nav phrases that slip past the single-word filter
   const NAV_PHRASE_MULTI = /^(visit\s+discord|create\s+new\s+page|recent\s+changes|edit\s+open\s+graph|clear\s+page\s+cache|clear\s+comments\s+cache|file\s+manager|page\s+manager|wiki\s+templates?|comments?\s+approval|wiki\s+settings?|wiki\s+manager|create\s+wiki|release\s+date|new\s+page|sign\s+in|log\s+in|sign\s+out|log\s+out|all\s+wikis?|wiki\s+home|main\s+page|edit\s+source|view\s+history|read\s+more|see\s+also|external\s+links?|related\s+pages?|quick\s+nav|table\s+of\s+contents|jump\s+to\s+nav|jump\s+to\s+search|get\s+help|what\s+links\s+here|special\s+pages?|printable\s+version|permanent\s+link|cite\s+this\s+page|wikidata\s+item|in\s+other\s+languages?|on\s+this\s+page|new\s+section|add\s+topic|leave\s+message|user\s+contributions?|talk\s+page|user\s+talk|upload\s+file|my\s+talk|my\s+contributions?|my\s+preferences|my\s+watchlist|how\s+to\s+edit|getting\s+started|community\s+portal|village\s+pump|help\s+centre|help\s+center|about\s+(?:the\s+)?wiki|disclaimer|terms\s+of\s+(?:use|service)|privacy\s+policy|cookie\s+policy|manage\s+cookies?|contact\s+us|advertise\s+with\s+us|fan\s+feed|explore\s+properties?|fandom\s+(?:apps?|home|store|studio|university)|trending\s+pages?)$/i;
@@ -893,46 +893,44 @@ export async function fetchWikiPrePass(
     ? (Array.isArray(hintUrls) ? hintUrls : [hintUrls]).filter((u) => u?.trim())
     : [];
 
-  // 1. Build source list — start with any user-supplied hint URLs.
-  // Category-specific pages (weapons, armor, rings…) each become their own
-  // source with the correct type inferred from the URL. Homepages are skipped
-  // (they contain only navigation chrome — source discovery finds the real pages).
-  let sources: DiscoveredSource[] = [];
+  // 1. User-supplied hint URLs — keep ALL of them (each is a different category page).
+  // Domain dedup intentionally NOT applied here: a user supplying /Weapons, /Magic,
+  // /Shields all from fextralife.com wants all three fetched.
+  const userSources: DiscoveredSource[] = [];
+  const userDomains = new Set<string>();
 
   for (const hintUrl of hintList) {
-    if (isWikiHomepage(hintUrl)) continue; // skip homepage — let discoverSources find item pages
-    sources.push({
+    if (isWikiHomepage(hintUrl)) continue;
+    userSources.push({
       url: hintUrl,
       type: classifyHintUrl(hintUrl),
       label: "User-supplied link",
     });
+    try { userDomains.add(new URL(hintUrl).hostname); } catch { /* ignore */ }
   }
 
-  // 2. Discover additional sources via sonar-pro (always run — finds extras)
-  // When orClient is provided, source discovery uses OR's perplexity/sonar-pro instead.
+  // 2. Discover additional sources — skip any domain the user already covered.
+  // This prevents auto-discovery from adding a generic fextralife weapons page
+  // when the user already gave us 6 specific pages on that domain.
   const discovered = await discoverSources(gameName, pplx, orClient);
+  const extraSources: DiscoveredSource[] = [];
+  const seenExtraDomains = new Set<string>(userDomains);
   for (const s of discovered) {
-    // Don't add if we already have the same URL
-    if (!sources.some((x) => x.url === s.url)) {
-      sources.push(s);
-    }
-  }
-
-  // Deduplicate by domain (don't hit fextralife 3 times)
-  const seenDomains = new Set<string>();
-  sources = sources.filter((s) => {
     try {
       const host = new URL(s.url).hostname;
-      if (seenDomains.has(host)) return false;
-      seenDomains.add(host);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+      if (seenExtraDomains.has(host)) continue; // user already covers this wiki
+      seenExtraDomains.add(host);
+      extraSources.push(s);
+    } catch { /* ignore */ }
+  }
 
-  // Cap at 4 sources (avoid very long pre-pass)
-  sources = sources.slice(0, 4);
+  // Combine: all user URLs first, then up to 2 auto-discovered extras from other wikis.
+  // Cap total at 10 to keep pre-pass duration reasonable.
+  const sources: DiscoveredSource[] = [
+    ...userSources,
+    ...extraSources.slice(0, 2),
+  ].slice(0, 10);
+
 
   // 3. Fetch and parse all sources in parallel
   const allFacts: KnowledgeFact[] = [];
