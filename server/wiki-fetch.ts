@@ -590,49 +590,54 @@ async function parseWikiPage(
  * @param hintUrl    Optional user-supplied URL (e.g. a Trello link pasted in UI)
  * @returns          Array of facts + list of sources that were used
  */
+function classifyHintUrl(url: string): DiscoveredSource["type"] {
+  if (url.includes("trello.com")) return "trello";
+  if (url.includes("fextralife.com")) return "fextralife";
+  if (url.includes("fandom.com") || url.includes("gamepedia.com")) return "fandom";
+  return "generic";
+}
+
+function isWikiHomepage(url: string): boolean {
+  try {
+    const p = new URL(url).pathname.replace(/\+/g, " ").toLowerCase().trim();
+    return (
+      p === "/" || p === "" ||
+      p.endsWith("wiki") || p.endsWith("wiki/") ||
+      p.endsWith("main_page") || p.endsWith("main page") ||
+      p.endsWith("index") || p.endsWith("home") ||
+      /\/[a-z0-9 +_-]+ wiki\/?$/.test(p) ||
+      /\/wiki\/main.?page\/?$/i.test(p)
+    );
+  } catch { return false; }
+}
+
 export async function fetchWikiPrePass(
   gameName: string,
   gameKey: string,
   pplx: Perplexity,
-  hintUrl?: string,
+  /** One or more category-specific URLs (weapons page, armor page, etc.)
+   *  or a legacy single URL string — both forms accepted. */
+  hintUrls?: string | string[],
   orClient?: OaiCompatClient
 ): Promise<{ facts: KnowledgeFact[]; sourcesUsed: string[] }> {
-  // 1. Build source list — start with any user-supplied hint
+  // Normalise to array
+  const hintList: string[] = hintUrls
+    ? (Array.isArray(hintUrls) ? hintUrls : [hintUrls]).filter((u) => u?.trim())
+    : [];
+
+  // 1. Build source list — start with any user-supplied hint URLs.
+  // Category-specific pages (weapons, armor, rings…) each become their own
+  // source with the correct type inferred from the URL. Homepages are skipped
+  // (they contain only navigation chrome — source discovery finds the real pages).
   let sources: DiscoveredSource[] = [];
 
-  if (hintUrl) {
-    const type = hintUrl.includes("trello.com")
-      ? "trello"
-      : hintUrl.includes("fextralife.com")
-      ? "fextralife"
-      : hintUrl.includes("fandom.com") || hintUrl.includes("gamepedia.com")
-      ? "fandom"
-      : "generic";
-
-    // Skip wiki homepages — they contain only navigation chrome, not item data.
-    // Patterns: /Game+Name+Wiki, /wiki/Main_Page, /, /index, etc.
-    // When a homepage is detected, let discoverSources find the real item pages.
-    const isHomepage = (() => {
-      try {
-        const p = new URL(hintUrl).pathname.replace(/\+/g, " ").toLowerCase().trim();
-        return (
-          p === "/" || p === "" ||
-          p.endsWith("wiki") || p.endsWith("wiki/") ||
-          p.endsWith("main_page") || p.endsWith("main page") ||
-          p.endsWith("index") || p.endsWith("home") ||
-          // Fextralife style: /The+Lords+of+the+Fallen+Wiki
-          /\/[a-z0-9 +_-]+ wiki\/?$/.test(p) ||
-          // Fandom style: /wiki/Main_Page
-          /\/wiki\/main.?page\/?$/i.test(p)
-        );
-      } catch { return false; }
-    })();
-
-    if (!isHomepage) {
-      sources.push({ url: hintUrl, type, label: "User-supplied link" });
-    }
-    // If it IS a homepage, still use it as a hint for source discovery below
-    // but don't try to parse it for items.
+  for (const hintUrl of hintList) {
+    if (isWikiHomepage(hintUrl)) continue; // skip homepage — let discoverSources find item pages
+    sources.push({
+      url: hintUrl,
+      type: classifyHintUrl(hintUrl),
+      label: "User-supplied link",
+    });
   }
 
   // 2. Discover additional sources via sonar-pro (always run — finds extras)

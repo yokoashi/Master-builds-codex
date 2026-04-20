@@ -69,8 +69,8 @@ const SONAR_DEEP = "sonar-deep-research";
 interface AppSettings {
   aiMode: "dual" | "perplexity" | "claude" | "openrouter";
   orModel: string;             // OpenRouter model slug (single-model fallback, unused in ensemble)
-  learnSynthMode: "claude" | "openrouter";      // Who runs the synthesis/dedup pass
-  learnResearchMode: "perplexity" | "openrouter"; // Who runs the 18-category deep research phase
+  learnSynthMode: "claude" | "openrouter";                      // Who runs the synthesis/dedup pass
+  learnResearchMode: "perplexity" | "openrouter" | "claude";    // Who runs the 18-category deep research phase
 }
 const SETTINGS_PATH = process.env.DB_PATH
   ? join(dirname(process.env.DB_PATH), "settings.json")
@@ -659,7 +659,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
     if (aiMode === "dual" || aiMode === "perplexity" || aiMode === "claude" || aiMode === "openrouter") appSettings.aiMode = aiMode;
     if (typeof orModel === "string" && orModel.trim()) appSettings.orModel = orModel.trim();
     if (learnSynthMode === "claude" || learnSynthMode === "openrouter") appSettings.learnSynthMode = learnSynthMode;
-    if (learnResearchMode === "perplexity" || learnResearchMode === "openrouter") appSettings.learnResearchMode = learnResearchMode;
+    if (learnResearchMode === "perplexity" || learnResearchMode === "openrouter" || learnResearchMode === "claude") appSettings.learnResearchMode = learnResearchMode;
     saveSettings(appSettings);
     res.json(appSettings);
   });
@@ -1360,14 +1360,68 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
     });
   });
 
+  // ── Helper: strip HTML to plain text for Claude's page-content injection ──
+  function htmlToText(html: string): string {
+    return html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+      .replace(/<header[\s\S]*?<\/header>/gi, "")
+      .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+      .replace(/<aside[\s\S]*?<\/aside>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  // Map a category name to the best-matching user-supplied URL from hintUrls.
+  // Returns undefined if no URL matches.
+  function matchCategoryUrl(catName: string, hintUrls: string[]): string | undefined {
+    if (!hintUrls.length) return undefined;
+    const n = catName.toLowerCase();
+    const isWeapon  = /weapon|polearm|halberd|spear|colossal|ranged|bow|crossbow|status|elemental/.test(n);
+    const isShield  = /shield|offhand/.test(n);
+    const isCat     = /catalyst|staff|seal|wand/.test(n);
+    const isArmor   = /armor|armour/.test(n);
+    const isRing    = /ring|talisman|accessory/.test(n);
+    const isSpell   = /spell|sorcery|incantation|pyro|miracle|buff|support/.test(n);
+    const isBoss    = /boss|enemy|ng\+|endgame/.test(n);
+    const isGem     = /gem|ash|infusion|upgrade|material|map|lore/.test(n);
+
+    for (const url of hintUrls) {
+      const p = url.toLowerCase();
+      if (isWeapon  && /weapon/.test(p)) return url;
+      if (isShield  && /shield/.test(p)) return url;
+      if (isCat     && /catalyst|staff|seal/.test(p)) return url;
+      if (isArmor   && /armor|armour/.test(p)) return url;
+      if (isRing    && /ring|accessory|talisman/.test(p)) return url;
+      if (isSpell   && /spell|sorcery|incantation|magic/.test(p)) return url;
+      if (isBoss    && /boss|enemy/.test(p)) return url;
+      if (isGem     && /gem|ash|upgrade|material/.test(p)) return url;
+    }
+    // Fallback: if only one URL supplied, use it for everything
+    if (hintUrls.length === 1) return hintUrls[0];
+    return undefined;
+  }
+
   app.post("/api/learn", async (req, res) => {
     try {
-      const { gameKey, gameName, hintUrl } = req.body as {
+      const body = req.body as {
         gameKey: string;
         gameName: string;
-        /** Optional URL supplied by user (e.g. a Trello board link) — used as priority source */
+        /** Single URL (legacy) or array of category-specific URLs */
         hintUrl?: string;
+        hintUrls?: string[];
       };
+      const { gameKey, gameName } = body;
+      // Normalise hintUrls: merge legacy hintUrl + hintUrls array, deduplicate
+      const rawHintUrls = [
+        ...(body.hintUrl ? [body.hintUrl] : []),
+        ...(body.hintUrls ?? []),
+      ].filter((u) => u && u.trim());
+      const hintUrls = Array.from(new Set(rawHintUrls.map((u) => u.trim())));
+
       if (!gameKey || !gameName) return res.status(400).json({ error: "gameKey and gameName required" });
 
       const emit = (stage: string, detail?: string) =>
@@ -1384,11 +1438,11 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
       if (existingCache) {
         try { existingCount = (JSON.parse(existingCache.facts) as unknown[]).length; } catch { /* ignore */ }
       }
-      if (existingCount < 50 || hintUrl) {
+      if (existingCount < 50 || hintUrls.length > 0) {
         try {
           emit("Wiki pre-pass", `Finding real item sources for ${gameName}...`);
           const prePass = await fetchWikiPrePass(
-            gameName, gameKey, pplx, hintUrl,
+            gameName, gameKey, pplx, hintUrls,
             appSettings.learnResearchMode === "openrouter"
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               ? (openRouter as any)
@@ -1464,26 +1518,77 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
           batch.map((c) => c.name).join(" · ")
         );
         const LEARN_TIMEOUT_MS = 300_000; // 5 min per category
-        const useOrResearch = appSettings.learnResearchMode === "openrouter";
+        const useOrResearch    = appSettings.learnResearchMode === "openrouter";
+        const useClaudeResearch = appSettings.learnResearchMode === "claude";
         const results = await Promise.allSettled(
-          batch.map((cat) => {
+          batch.map(async (cat) => {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), LEARN_TIMEOUT_MS);
-            if (useOrResearch) {
-              // Route through OpenRouter's perplexity/sonar-deep-research
-              return orDeepResearch(cat.prompt, controller.signal)
-                .finally(() => clearTimeout(timer));
+
+            try {
+              if (useClaudeResearch) {
+                // ── Claude research: fetch category page + extract with Claude ──
+                // Match this category to a user-supplied URL (e.g. weapons page).
+                // If a match is found, fetch its HTML and inject as page content.
+                // Claude is excellent at strict format compliance and extraction
+                // from real page content — no hallucination when grounded in HTML.
+                const catUrl = matchCategoryUrl(cat.name, hintUrls);
+                let pageContent = "";
+                if (catUrl) {
+                  try {
+                    const resp = await fetch(catUrl, {
+                      signal: controller.signal,
+                      headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" },
+                    });
+                    if (resp.ok) {
+                      const rawHtml = await resp.text();
+                      pageContent = htmlToText(rawHtml).slice(0, 28000);
+                    }
+                  } catch { /* page fetch failed — fall through to knowledge-only */ }
+                }
+
+                const claudeSystem = `You are an expert ${gameName} game database compiler. Extract items and format each as a single line using the exact prefix format shown. Output ONLY item lines — no headers, no commentary, no markdown.`;
+
+                const claudeUser = pageContent
+                  ? `Extract EVERY item from the following ${gameName} wiki page content and format as item lines.\n\nPAGE CONTENT (use this as ground truth — exact in-game names only):\n${pageContent}\n\n${cat.prompt}`
+                  : `Using your knowledge of ${gameName}, ${cat.prompt}`;
+
+                const claudeResp = await claude.messages.create({
+                  model: CLAUDE_MODEL,
+                  max_tokens: 8000,
+                  system: claudeSystem,
+                  messages: [{ role: "user", content: claudeUser }],
+                });
+                clearTimeout(timer);
+                return claudeResp.content
+                  .filter((b) => b.type === "text")
+                  .map((b) => (b as { type: "text"; text: string }).text)
+                  .join("\n");
+              }
+
+              if (useOrResearch) {
+                // Route through OpenRouter's perplexity/sonar-deep-research
+                const result = await orDeepResearch(cat.prompt, controller.signal);
+                clearTimeout(timer);
+                return result;
+              }
+
+              // Default: native Perplexity sonar-deep-research
+              const result = await pplx.chat.completions.create(
+                {
+                  model: SONAR_DEEP,
+                  stream: false as const,
+                  max_tokens: 8000,
+                  messages: [{ role: "user", content: cat.prompt }],
+                },
+                { signal: controller.signal }
+              );
+              clearTimeout(timer);
+              return result;
+            } catch (err) {
+              clearTimeout(timer);
+              throw err;
             }
-            // Default: native Perplexity SDK
-            return pplx.chat.completions.create(
-              {
-                model: SONAR_DEEP,
-                stream: false as const,
-                max_tokens: 8000,
-                messages: [{ role: "user", content: cat.prompt }],
-              },
-              { signal: controller.signal }
-            ).finally(() => clearTimeout(timer));
           })
         );
         for (let j = 0; j < results.length; j++) {

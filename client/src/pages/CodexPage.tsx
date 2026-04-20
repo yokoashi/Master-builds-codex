@@ -32,7 +32,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
   const [showAddModal, setShowAddModal] = useState(false);
   const [deletePending, setDeletePending] = useState<Build | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
-  const [learnHintUrl, setLearnHintUrl] = useState("");
+  const [learnHintUrls, setLearnHintUrls] = useState<string[]>([]);
   const [showLearnInput, setShowLearnInput] = useState(false);
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [showLearnProgress, setShowLearnProgress] = useState(false);
@@ -52,7 +52,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
   const { data: settingsData, refetch: refetchSettings } = useQuery<{
     aiMode: string;
     learnSynthMode: "claude" | "openrouter";
-    learnResearchMode: "perplexity" | "openrouter";
+    learnResearchMode: "perplexity" | "openrouter" | "claude";
   }>({ queryKey: ["/api/settings"] });
   const learnSynthMode = settingsData?.learnSynthMode ?? "claude";
   const learnResearchMode = settingsData?.learnResearchMode ?? "perplexity";
@@ -64,7 +64,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
   });
 
   const setLearnResearchMode = useMutation({
-    mutationFn: (mode: "perplexity" | "openrouter") =>
+    mutationFn: (mode: "perplexity" | "openrouter" | "claude") =>
       apiRequest("PATCH", "/api/settings", { learnResearchMode: mode }),
     onSuccess: () => refetchSettings(),
   });
@@ -125,7 +125,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
       }>("POST", "/api/learn", {
         gameKey: selectedGameKey,
         gameName: currentGame?.name ?? selectedGameKey,
-        ...(learnHintUrl.trim() ? { hintUrl: learnHintUrl.trim() } : {}),
+        ...(learnHintUrls.length > 0 ? { hintUrls: learnHintUrls } : {}),
       }),
     onMutate: () => {
       setShowLearnInput(false);
@@ -421,8 +421,9 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                 <span style={{ fontSize: "0.6rem", color: "var(--color-dim2)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)", flexShrink: 0 }}>Research</span>
                 <div className="flex rounded overflow-hidden flex-1" style={{ border: "1px solid #2a2218" }}>
                   {([
-                    { mode: "perplexity", label: "⚡ Pplx",       color: "#5591c7", title: "Perplexity sonar-deep-research (native API — uses Perplexity credits)" },
+                    { mode: "perplexity", label: "⚡ Pplx",       color: "#5591c7", title: "Perplexity sonar-deep-research (native API — best for web search)" },
                     { mode: "openrouter", label: "◈ OpenRouter", color: "#4ade80", title: "Perplexity sonar-deep-research via OpenRouter (uses OR credits)" },
+                    { mode: "claude",     label: "✦ Claude",      color: "#c084fc", title: "Claude extracts from your supplied category URLs — best with specific wiki pages (weapons, armor, rings, etc.)" },
                   ] as const).map(({ mode, label, color, title }, idx, arr) => {
                     const active = learnResearchMode === mode;
                     return (
@@ -437,7 +438,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                           fontSize: "0.6rem",
                           fontFamily: "var(--font-display)",
                           letterSpacing: "0.04em",
-                          background: active ? `rgba(${mode === "perplexity" ? "85,145,199" : "74,222,128"},0.12)` : "transparent",
+                          background: active ? `rgba(${mode === "perplexity" ? "85,145,199" : mode === "openrouter" ? "74,222,128" : "192,132,252"},0.12)` : "transparent",
                           color: active ? color : "var(--color-dim2)",
                           borderRight: idx < arr.length - 1 ? "1px solid #2a2218" : "none",
                           cursor: "pointer",
@@ -489,7 +490,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
               <div className="flex gap-1">
                 <button
                   data-testid="btn-learn"
-                  onClick={() => { showLearnInput ? learnMutation.mutate() : setShowLearnInput(v => !v); }}
+                  onClick={() => { showLearnInput ? learnMutation.mutate() : setShowLearnInput(true); }}
                   disabled={learnMutation.isPending || updateMutation.isPending}
                   className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
                   style={{ border: "1px solid #302820", color: "var(--color-dim)" }}
@@ -509,22 +510,49 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                 </button>
               </div>
               {showLearnInput && (
-                <div className="flex gap-1">
-                  <input
-                    data-testid="input-learn-hint-url"
-                    type="url"
-                    value={learnHintUrl}
-                    onChange={(e) => setLearnHintUrl(e.target.value)}
-                    placeholder="Wiki URL (optional)"
-                    className="flex-1 min-w-0 px-2 py-1 rounded text-xs"
-                    style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-text)", outline: "none" }}
-                    onKeyDown={(e) => { if (e.key === "Enter") learnMutation.mutate(); }}
-                  />
-                  <button
-                    onClick={() => { setShowLearnInput(false); setLearnHintUrl(""); }}
-                    className="px-1.5 py-1 rounded text-xs hover:bg-white/5"
-                    style={{ color: "var(--color-dim)", border: "1px solid #302820" }}
-                  >✕</button>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-dim2)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)" }}>
+                      Category URLs <span style={{ color: "var(--color-dim2)", fontWeight: 400 }}>(optional — weapons page, armor page, etc.)</span>
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setLearnHintUrls(u => [...u, ""])}
+                        className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
+                        style={{ color: "var(--color-dim)", border: "1px solid #302820", fontSize: "0.65rem" }}
+                        title="Add URL"
+                      >+ Add URL</button>
+                      <button
+                        onClick={() => { setShowLearnInput(false); setLearnHintUrls([]); }}
+                        className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
+                        style={{ color: "var(--color-dim)", border: "1px solid #302820" }}
+                      >✕</button>
+                    </div>
+                  </div>
+                  {learnHintUrls.map((url, i) => (
+                    <div key={i} className="flex gap-1">
+                      <input
+                        data-testid={`input-learn-hint-url-${i}`}
+                        type="url"
+                        value={url}
+                        onChange={(e) => setLearnHintUrls(u => u.map((v, j) => j === i ? e.target.value : v))}
+                        placeholder={i === 0 ? "https://wiki.fextralife.com/Weapons" : i === 1 ? "https://wiki.fextralife.com/Armor" : "https://wiki.fextralife.com/Rings..."}
+                        className="flex-1 min-w-0 px-2 py-1 rounded text-xs"
+                        style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-text)", outline: "none" }}
+                        onKeyDown={(e) => { if (e.key === "Enter") learnMutation.mutate(); }}
+                      />
+                      <button
+                        onClick={() => setLearnHintUrls(u => u.filter((_, j) => j !== i))}
+                        className="px-1.5 py-1 rounded text-xs hover:bg-white/5"
+                        style={{ color: "var(--color-dim)", border: "1px solid #302820", flexShrink: 0 }}
+                      >✕</button>
+                    </div>
+                  ))}
+                  {learnHintUrls.length === 0 && (
+                    <p style={{ fontSize: "0.6rem", color: "var(--color-dim2)" }}>
+                      No URLs added — AI will search the web. Add category pages for more accurate extraction.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
