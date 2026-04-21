@@ -426,10 +426,10 @@ function extractDetailInfo(html: string): DetailInfo {
   let title = "";
   const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   // Split on | – — so "Axes | Lords of the Fallen Wiki" → "Axes"
-  if (h1) title = stripHtml(h1[1]).split(/[|\-—–]/)[0].trim().slice(0, 120);
+  if (h1) title = stripHtml(h1[1]).split(/\s*[|—–]\s*|\s+-\s+/)[0].trim().slice(0, 120);
   if (!title) {
     const ttl = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (ttl) title = stripHtml(ttl[1]).split(/[|\-—–]/)[0].trim().slice(0, 120);
+    if (ttl) title = stripHtml(ttl[1]).split(/\s*[|—–]\s*|\s+-\s+/)[0].trim().slice(0, 120);
   }
 
   // ── Infobox key/value scrape ─────────────────────────────────────────────
@@ -782,8 +782,6 @@ async function parseWikiPage(
     .replace(/<div[^>]+class="[^"]*(?:sidebar|navbox|wiki-nav|site-nav|toc|breadcrumb|footer-nav|global-nav|left-menu|right-menu|top-nav|bottom-nav|ad-|advertisement|cookie|banner|notification)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "")
     // Fandom-specific chrome
     .replace(/<div[^>]+class="[^"]*(?:page-header|wds-global-navigation|global-footer|mw-navigation|mw-head|mw-panel|catlinks|printfooter|siteSub|contentSub|jump-to-nav)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
-
-  const facts: KnowledgeFact[] = [];
 
   // Infer type from URL path
   function inferTypeFromUrl(u: string): KnowledgeFact["type"] {
