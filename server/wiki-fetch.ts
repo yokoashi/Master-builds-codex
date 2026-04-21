@@ -505,6 +505,24 @@ function extractSubHubLinks(html: string, baseUrl: string, seen: Set<string>): s
   return links;
 }
 
+// Extract first numeric value from an infobox field string (e.g. "12.5", "120 (Fire)", "45 / 30")
+function parseNum(s: string | undefined): number | undefined {
+  if (!s) return undefined;
+  const m = s.match(/\d+(?:\.\d+)?/);
+  if (!m) return undefined;
+  const n = parseFloat(m[0]);
+  return isNaN(n) ? undefined : n;
+}
+
+// Return the first non-empty, non-placeholder value from the given field keys
+function pickField(fields: Record<string, string>, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = fields[k];
+    if (v && v.trim() && v !== "—" && v !== "-" && v !== "N/A" && v !== "n/a") return v.trim();
+  }
+  return undefined;
+}
+
 // Fetch one detail page and convert it into an enriched KnowledgeFact.
 // If the page has no infobox (it's a hub/category page), returns null and
 // populates subHubLinksOut with links to the actual item pages inside it.
@@ -528,7 +546,9 @@ async function fetchDetailPage(
   // storing a useless thin fact.
   if (Object.keys(info.fields).length === 0 && !info.upgradeProgression) {
     const subLinks = extractSubHubLinks(html, url, detailSeen);
-    if (subLinks.length >= 3) {
+    // Threshold of 10: individual item pages have a handful of nav/related links,
+    // but genuine sub-hubs (e.g. /Axes listing 20 axes) will have many more.
+    if (subLinks.length >= 10) {
       subHubLinksOut.push(...subLinks);
       return null;
     }
@@ -597,9 +617,119 @@ async function fetchDetailPage(
   if (locHint) parts.push(`src: ${locHint}`);
 
   const raw = parts.join(" | ").slice(0, 600);
-  const location = info.fields.location ?? info.fields.loc ?? info.fields["how to find"] ?? undefined;
 
-  return { type, name, raw, ...(location ? { location } : {}) };
+  // ── Populate structured KnowledgeFact fields ─────────────────────────────
+  // KnowledgeViewer reads these pre-computed fields directly — not `raw`.
+  const f = info.fields;
+
+  // Attack power / base damage (weapons, catalysts, spells)
+  const apNum = parseNum(pickField(f,
+    "attack", "attack rating", "ap", "physical attack", "base physical attack",
+    "base damage", "base attack", "damage",
+  ));
+
+  // Armor defense stats
+  const physDefNum      = parseNum(pickField(f, "physical defense", "physical def", "phys def"));
+  const magicDefNum     = parseNum(pickField(f, "magic defense",    "magic def",    "mag def"));
+  const fireDefNum      = parseNum(pickField(f, "fire defense",     "fire def",     "fir def"));
+  const lightningDefNum = parseNum(pickField(f, "lightning defense","lightning def","lgt def", "lit def"));
+  const holyDefNum      = parseNum(pickField(f,
+    "holy defense", "holy def",
+    "dark defense", "dark def",
+    "wither defense", "wither def",
+  ));
+
+  // Poise (armor) / stability (shields)
+  const poiseNum  = parseNum(pickField(f, "poise", "stability"));
+  // Weight
+  const weightNum = parseNum(pickField(f, "weight", "wt", "equip load"));
+
+  // Damage upgrade table — from the +0→+max progression extracted by extractUpgradeProgression
+  const damageTable = info.upgradeProgression ?? undefined;
+
+  // Scaling grades: combine per-stat scaling fields into one compact string
+  const scalingEntries: string[] = [];
+  const SCALING_MAP: Array<[string, string]> = [
+    ["scaling",             ""],
+    ["strength scaling",    "STR"], ["str scaling",     "STR"],
+    ["dexterity scaling",   "DEX"], ["dex scaling",     "DEX"],
+    ["intelligence scaling","INT"], ["int scaling",     "INT"],
+    ["faith scaling",       "FTH"], ["fth scaling",     "FTH"],
+    ["arcane scaling",      "ARC"], ["arc scaling",     "ARC"],
+    ["radiance scaling",    "RAD"], ["inferno scaling", "INF"],
+  ];
+  for (const [key, label] of SCALING_MAP) {
+    const v = f[key];
+    if (v && v !== "—" && v !== "-" && v !== "N/A") {
+      scalingEntries.push(label ? `${label}:${v}` : v);
+      if (!label) break; // bare "scaling" field already contains all grades
+    }
+  }
+  const scalingTable = scalingEntries.length > 0 ? scalingEntries.join(" ") : undefined;
+
+  // Status effects (bleed, poison, frostbite, etc.)
+  const statusParts: string[] = [];
+  for (const sk of ["bleed", "poison", "frostbite", "frost", "scarlet rot", "rot", "sleep", "madness", "death blight"]) {
+    const v = f[sk];
+    if (v && v !== "0" && v !== "—" && v !== "-") statusParts.push(`${sk}:${v}`);
+  }
+  const status = statusParts.length > 0
+    ? statusParts.join(", ")
+    : pickField(f, "status effect", "status", "ailment");
+
+  // Effect text (rings, accessories, spells, buffs, runes)
+  const effect = pickField(f, "effect", "special effect", "passive", "passive effect", "skill effect", "description");
+
+  // Stat requirements; also FP cost for spells (shown as "FP:47 / RAD 30")
+  let requirements = pickField(f, "requirement", "requirements");
+  if (!requirements) {
+    const reqParts: string[] = [];
+    const fpCost = pickField(f, "fp cost", "fp", "mana cost", "slots used", "spell slots used");
+    if (fpCost) reqParts.push(`FP:${fpCost}`);
+    const seenStats = new Set<string>();
+    for (const [rk, rl] of [
+      ["strength", "STR"], ["str", "STR"], ["str requirement", "STR"],
+      ["dexterity", "DEX"], ["dex", "DEX"],
+      ["intelligence", "INT"], ["int", "INT"], ["intelligence required", "INT"],
+      ["faith", "FTH"], ["fth", "FTH"], ["faith required", "FTH"],
+      ["arcane", "ARC"], ["arc", "ARC"],
+      ["radiance", "RAD"], ["radiance required", "RAD"],
+      ["inferno", "INF"], ["inferno required", "INF"],
+    ] as Array<[string, string]>) {
+      if (seenStats.has(rl)) continue;
+      const v = f[rk];
+      if (v && v !== "0" && v !== "—" && v !== "-") {
+        reqParts.push(`${rl} ${v}`);
+        seenStats.add(rl);
+      }
+    }
+    requirements = reqParts.length > 0 ? reqParts.join(" / ") : undefined;
+  }
+
+  // Upgrade path name (e.g. "Standard", "Infusable", "Whetblade")
+  const upgrade = pickField(f, "upgrade", "upgrade type", "infusion", "infusable");
+
+  // Location
+  const location = pickField(f, "location", "loc", "how to find", "acquired", "drops from", "found");
+
+  return {
+    type, name, raw,
+    ...(location         ? { location }                              : {}),
+    ...(upgrade          ? { upgrade }                               : {}),
+    ...(apNum !== undefined           ? { ap: apNum }                : {}),
+    ...(status           ? { status }                                : {}),
+    ...(effect           ? { effect }                                : {}),
+    ...(damageTable      ? { damageTable }                           : {}),
+    ...(scalingTable     ? { scalingTable }                          : {}),
+    ...(requirements     ? { requirements }                          : {}),
+    ...(physDefNum !== undefined       ? { physDef: physDefNum }       : {}),
+    ...(magicDefNum !== undefined      ? { magicDef: magicDefNum }     : {}),
+    ...(fireDefNum !== undefined       ? { fireDef: fireDefNum }       : {}),
+    ...(lightningDefNum !== undefined  ? { lightningDef: lightningDefNum } : {}),
+    ...(holyDefNum !== undefined       ? { holyDef: holyDefNum }       : {}),
+    ...(poiseNum !== undefined         ? { poise: poiseNum }           : {}),
+    ...(weightNum !== undefined        ? { weight: weightNum }         : {}),
+  };
 }
 
 // Fetch many detail pages in parallel batches so one slow server doesn't stall
