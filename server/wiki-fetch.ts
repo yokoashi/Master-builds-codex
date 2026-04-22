@@ -437,12 +437,20 @@ function extractDetailInfo(html: string): DetailInfo {
   // Fandom uses aside.portable-infobox with h3.pi-data-label + div.pi-data-value
   const fields: Record<string, string> = {};
 
+  // Pattern 1: <tr><th>key</th><td>value</td></tr> (standard HTML tables)
   const trPattern = /<tr[^>]*>[\s\S]*?<th[^>]*>([\s\S]*?)<\/th>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
   let m: RegExpExecArray | null;
   while ((m = trPattern.exec(html)) !== null) {
     const k = stripHtml(m[1]).toLowerCase().replace(/[:\s]+$/, "");
     const v = stripHtml(m[2]);
     if (k && v && k.length < 30 && v.length < 200) fields[k] = v;
+  }
+  // Pattern 2: Fextralife uses <td><b>key</b></td><td>value</td> (both <td>, key is bolded)
+  const tdBoldPattern = /<tr[^>]*>[\s\S]*?<td[^>]*>\s*<(?:b|strong)[^>]*>([\s\S]*?)<\/(?:b|strong)>\s*<\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
+  while ((m = tdBoldPattern.exec(html)) !== null) {
+    const k = stripHtml(m[1]).toLowerCase().replace(/[:\s]+$/, "");
+    const v = stripHtml(m[2]);
+    if (k && v && k.length < 30 && v.length < 200 && !fields[k]) fields[k] = v;
   }
 
   const pPattern = /<h3[^>]*class="[^"]*pi-data-label[^"]*"[^>]*>([\s\S]*?)<\/h3>[\s\S]*?<div[^>]*class="[^"]*pi-data-value[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;
@@ -900,23 +908,67 @@ async function parseWikiPage(
         if (rawName.length < 2 || rawName.length > 80) continue;
         if (isJunkName(rawName)) continue;
 
-        // Build stat columns (all columns except name)
+        // Build stat columns (all columns except name) and extract structured fields
         const statParts: string[] = [];
         if (inlineEffect) statParts.push(`effect: ${inlineEffect.slice(0, 140)}`);
+        const sf: Partial<KnowledgeFact> = {};
+        const scalingCols: string[] = [];
+        const reqCols: string[] = [];
+        const statusCols: string[] = [];
         for (let i = 0; i < Math.min(table.headers.length, row.cells.length); i++) {
           if (i === nameColIdx) continue;
           const h = (table.headers[i] ?? "").trim();
           const v = (row.cells[i] ?? "").trim();
           if (!h || !v || v === "—" || v === "-" || v === "N/A") continue;
           statParts.push(`${h}: ${v.slice(0, 80)}`);
+          // Map column header → structured field
+          const hl = h.toLowerCase();
+          const n = parseNum(v);
+          if (/attack\s*rat|base\s*(attack|damage|physical)|physical\s*atk|^\batk\b$|^\bap\b$/.test(hl)) {
+            if (n !== undefined && sf.ap === undefined) sf.ap = n;
+          } else if (/physical\s*def|phys\s*def/.test(hl) || hl === "physical") {
+            if (n !== undefined && sf.physDef === undefined) sf.physDef = n;
+          } else if (/magic\s*def|mag\s*def/.test(hl) || hl === "magic") {
+            if (n !== undefined && sf.magicDef === undefined) sf.magicDef = n;
+          } else if (/fire\s*def|fir\s*def/.test(hl) || hl === "fire") {
+            if (n !== undefined && sf.fireDef === undefined) sf.fireDef = n;
+          } else if (/lightning\s*def|lgt\s*def|lit\s*def/.test(hl) || hl === "lightning") {
+            if (n !== undefined && sf.lightningDef === undefined) sf.lightningDef = n;
+          } else if (/holy\s*def|hol\s*def|dark\s*def|wither\s*def/.test(hl) || hl === "holy" || hl === "dark" || hl === "wither") {
+            if (n !== undefined && sf.holyDef === undefined) sf.holyDef = n;
+          } else if (/^poise$|^stability$/.test(hl)) {
+            if (n !== undefined && sf.poise === undefined) sf.poise = n;
+          } else if (/^weight$|^wt$/.test(hl)) {
+            if (n !== undefined && sf.weight === undefined) sf.weight = n;
+          } else if (/^effect$|^passive$|^special\s*effect|^skill\s*effect/.test(hl)) {
+            if (!sf.effect) sf.effect = v.slice(0, 200);
+          } else if (/^location$|^how\s*to\s*find$|^drops\s*from$/.test(hl)) {
+            if (!sf.location) sf.location = v.slice(0, 200);
+          } else if (/(str|dex|int|fth|arc|rad|inf)\s*scal/.test(hl)) {
+            const label = hl.match(/^(str|dex|int|fth|arc|rad|inf)/i)?.[1]?.toUpperCase() ?? h;
+            scalingCols.push(`${label}:${v}`);
+          } else if (/^scaling$/.test(hl)) {
+            scalingCols.push(v);
+          } else if (/^bleed$|^poison$|^frost(bite)?$|^scarlet\s*rot$|^rot$|^madness$|^sleep$/.test(hl)) {
+            if (v !== "0") statusCols.push(`${h}:${v}`);
+          } else if (/^fp\s*cost$|^mana\s*cost$|^slots?\s*used$|^spell\s*slots?$/.test(hl)) {
+            reqCols.push(`FP:${v}`);
+          } else if (/^(str|dex|int|fth|arc|radiance|inferno)(\s*(req(uired?)?|min))?$/.test(hl)) {
+            const label = hl.match(/^(str|dex|int|fth|arc|rad|inf)/i)?.[1]?.toUpperCase() ?? h.toUpperCase();
+            if (v !== "0") reqCols.push(`${label} ${v}`);
+          }
         }
+        if (scalingCols.length > 0) sf.scalingTable = scalingCols.join(" ");
+        if (statusCols.length > 0) sf.status = statusCols.join(", ");
+        if (reqCols.length > 0) sf.requirements = reqCols.join(" / ");
+        if (inlineEffect && !sf.effect) sf.effect = inlineEffect.slice(0, 200);
 
         const name = rawName.slice(0, 80);
         const nameKey = name.toLowerCase();
         const raw = `${tableType}: ${name}${statParts.length ? " | " + statParts.join(" | ") : ""}`.slice(0, 600);
 
         if (!factMap.has(nameKey)) {
-          factMap.set(nameKey, { type: tableType, name, raw });
+          factMap.set(nameKey, { type: tableType, name, raw, ...sf });
           addedFromTable++;
         }
 
