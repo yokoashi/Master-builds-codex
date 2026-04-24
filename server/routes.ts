@@ -79,10 +79,11 @@ const SETTINGS_PATH = process.env.DB_PATH
 function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
-      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+      const saved = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"));
+      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude", ...saved };
     }
   } catch { /* ignore */ }
-  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity" };
+  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude" };
 }
 function saveSettings(s: AppSettings) {
   try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
