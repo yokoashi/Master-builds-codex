@@ -639,6 +639,89 @@ export function registerRoutes(httpServer: Server, app: Express) {
     }
   });
 
+  // ── POST /api/debug/wiki-structure — dump real HTML structure of a URL ────────
+  // Returns table class names, exact header text, sample rows, first item link,
+  // and that item's infobox key/value pairs. Used to reverse-engineer wiki format.
+  app.post("/api/debug/wiki-structure", async (req, res) => {
+    try {
+      const { url } = req.body as { url: string };
+      if (!url) return res.status(400).json({ error: "url required" });
+
+      const html = await (async () => {
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), 15000);
+        const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
+        return r.ok ? r.text() : "";
+      })();
+      if (!html) return res.json({ error: "fetch returned empty (403/timeout?)" });
+
+      // 1. All table elements — class names + first 3 headers + first 3 data rows
+      const tables: { cls: string; headers: string[]; rows: string[][] }[] = [];
+      const tblPat = /<table([^>]*)>([\s\S]*?)<\/table>/gi;
+      let tm: RegExpExecArray | null;
+      while ((tm = tblPat.exec(html)) !== null && tables.length < 8) {
+        const attrs = tm[1]; const body = tm[2];
+        const clsMatch = attrs.match(/class="([^"]*)"/);
+        const cls = clsMatch ? clsMatch[1] : "(no class)";
+        const headers: string[] = [];
+        const thPat = /<th[^>]*>([\s\S]*?)<\/th>/gi; let th: RegExpExecArray | null;
+        while ((th = thPat.exec(body)) !== null && headers.length < 10) headers.push(th[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,60));
+        const rows: string[][] = [];
+        const trPat2 = /<tr[^>]*>([\s\S]*?)<\/tr>/gi; let tr: RegExpExecArray | null;
+        while ((tr = trPat2.exec(body)) !== null && rows.length < 3) {
+          if (/<th/i.test(tr[1])) continue;
+          const cells: string[] = [];
+          const tdPat = /<td[^>]*>([\s\S]*?)<\/td>/gi; let td: RegExpExecArray | null;
+          while ((td = tdPat.exec(tr[1])) !== null && cells.length < 8) cells.push(td[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,80));
+          if (cells.length) rows.push(cells);
+        }
+        if (headers.length || rows.length) tables.push({ cls, headers, rows });
+      }
+
+      // 2. First item link found in the page (href that looks like an item)
+      const linkPat = /<a[^>]+href="(\/[A-Za-z0-9][^"#?]{3,60})"[^>]*>([\s\S]*?)<\/a>/g;
+      const navSkip = /^\/(?:wiki|home|login|search|edit|forum|blog|news|category|special|help)/i;
+      let firstItemLink = "";
+      let lm: RegExpExecArray | null;
+      while ((lm = linkPat.exec(html)) !== null) {
+        const href = lm[1]; const text = lm[2].replace(/<[^>]+>/g," ").trim();
+        if (navSkip.test(href) || text.length < 3 || /wiki/i.test(text)) continue;
+        firstItemLink = new URL(href, url).toString();
+        break;
+      }
+
+      // 3. Fetch that item page and dump its infobox
+      let itemPage: { url: string; title: string; infoboxRows: { key: string; val: string }[]; tableClasses: string[] } | null = null;
+      if (firstItemLink) {
+        const ihtml = await (async () => {
+          const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 10000);
+          const r = await fetch(firstItemLink, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
+          return r.ok ? r.text() : "";
+        })();
+        if (ihtml) {
+          const h1 = ihtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+          const title = h1 ? h1[1].replace(/<[^>]+>/g," ").trim() : firstItemLink;
+          const infoboxRows: { key: string; val: string }[] = [];
+          // th+td rows
+          const irPat = /<tr[^>]*>[\s\S]*?<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
+          let ir: RegExpExecArray | null;
+          while ((ir = irPat.exec(ihtml)) !== null && infoboxRows.length < 30) {
+            infoboxRows.push({ key: ir[1].replace(/<[^>]+>/g," ").trim().slice(0,50), val: ir[2].replace(/<[^>]+>/g," ").trim().slice(0,100) });
+          }
+          const itblClasses: string[] = [];
+          const itPat = /<table([^>]*)>/gi; let it: RegExpExecArray | null;
+          while ((it = itPat.exec(ihtml)) !== null) { const c = it[1].match(/class="([^"]*)"/); if (c) itblClasses.push(c[1]); }
+          const uniqClasses = itblClasses.filter((c, i) => itblClasses.indexOf(c) === i).slice(0, 10);
+          itemPage = { url: firstItemLink, title, infoboxRows, tableClasses: uniqClasses };
+        }
+      }
+
+      res.json({ url, tableCount: tables.length, tables, firstItemLink, itemPage });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ── GET /api/config — read API key status (never returns actual key values) ──
   app.get("/api/config", (_req, res) => {
     const hasPerplexity = Boolean(process.env.PERPLEXITY_API_KEY);
