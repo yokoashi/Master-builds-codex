@@ -79,10 +79,10 @@ const SETTINGS_PATH = process.env.DB_PATH
 function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
-      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
     }
   } catch { /* ignore */ }
-  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude" };
+  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity" };
 }
 function saveSettings(s: AppSettings) {
   try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
@@ -1524,10 +1524,9 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
         else if (hasOrKey) { effectiveResearchMode = "openrouter"; emit("Research mode", "No Claude key — falling back to OpenRouter"); }
       }
 
+      console.log(`[learn] starting: game=${gameKey} mode=${effectiveResearchMode} urls=${hintUrls.length} hasPplx=${hasPplxKey} hasClaude=${hasClaudeKey} hasOR=${hasOrKey}`);
+
       // ── Wiki pre-pass — run before AI queries ─────────────────────────────
-      // Discovers real item sources (Trello, Fextralife, Fandom, etc.) and seeds
-      // the cache with verified names so the AI has a factual foundation.
-      // Skipped if the cache already has ≥50 facts (already learned or seeded).
       let preFacts = 0;
       let preSources: string[] = [];
       const existingCache = storage.getKnowledgeCache(gameKey);
@@ -1698,8 +1697,8 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
             allFacts.push(...facts);
             categoryResults.push({ name: batch[j].name, count: facts.length });
           } else {
-            // Surface the actual error so the user knows why a category failed
             const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+            console.error(`[learn] category "${batch[j].name}" failed (mode=${effectiveResearchMode}):`, r.reason);
             categoryResults.push({ name: batch[j].name, count: 0 });
             emit(`Category failed: ${batch[j].name}`, errMsg.slice(0, 200));
           }
