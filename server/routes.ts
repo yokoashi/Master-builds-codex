@@ -1493,6 +1493,35 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
       const emit = (stage: string, detail?: string) =>
         learnEmitter.emit("progress", { gameKey, stage, detail } satisfies LearnProgressEvent);
 
+      // ── API key check — fail fast with clear error rather than silent 0-facts ──
+      const researchMode = appSettings.learnResearchMode;
+      const hasPplxKey = Boolean(process.env.PERPLEXITY_API_KEY);
+      const hasClaudeKey = Boolean(process.env.CLAUDE_API_KEY);
+      const hasOrKey = Boolean(process.env.OPEN_ROUTER_API_KEY);
+
+      // Determine effective research mode: auto-fallback if chosen key is missing
+      let effectiveResearchMode = researchMode;
+      if (researchMode === "perplexity" && !hasPplxKey) {
+        if (hasClaudeKey) {
+          effectiveResearchMode = "claude";
+          emit("Research mode", "No Perplexity key — falling back to Claude for research");
+        } else if (hasOrKey) {
+          effectiveResearchMode = "openrouter";
+          emit("Research mode", "No Perplexity key — falling back to OpenRouter for research");
+        } else {
+          learnEmitter.emit("progress", { gameKey, stage: "Error", detail: "No API keys configured. Set PERPLEXITY_API_KEY, CLAUDE_API_KEY, or OPEN_ROUTER_API_KEY.", error: "No API keys configured" } satisfies LearnProgressEvent);
+          return res.status(400).json({ error: "No API keys configured for learn. Set PERPLEXITY_API_KEY, CLAUDE_API_KEY, or OPEN_ROUTER_API_KEY." });
+        }
+      }
+      if (researchMode === "openrouter" && !hasOrKey) {
+        if (hasClaudeKey) { effectiveResearchMode = "claude"; emit("Research mode", "No OpenRouter key — falling back to Claude"); }
+        else if (hasPplxKey) { effectiveResearchMode = "perplexity"; emit("Research mode", "No OpenRouter key — falling back to Perplexity"); }
+      }
+      if (researchMode === "claude" && !hasClaudeKey) {
+        if (hasPplxKey) { effectiveResearchMode = "perplexity"; emit("Research mode", "No Claude key — falling back to Perplexity"); }
+        else if (hasOrKey) { effectiveResearchMode = "openrouter"; emit("Research mode", "No Claude key — falling back to OpenRouter"); }
+      }
+
       // ── Wiki pre-pass — run before AI queries ─────────────────────────────
       // Discovers real item sources (Trello, Fextralife, Fandom, etc.) and seeds
       // the cache with verified names so the AI has a factual foundation.
@@ -1584,8 +1613,8 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
           batch.map((c) => c.name).join(" · ")
         );
         const LEARN_TIMEOUT_MS = 300_000; // 5 min per category
-        const useOrResearch    = appSettings.learnResearchMode === "openrouter";
-        const useClaudeResearch = appSettings.learnResearchMode === "claude";
+        const useOrResearch    = effectiveResearchMode === "openrouter";
+        const useClaudeResearch = effectiveResearchMode === "claude";
         const results = await Promise.allSettled(
           batch.map(async (cat) => {
             const controller = new AbortController();
@@ -1667,13 +1696,24 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
             allFacts.push(...facts);
             categoryResults.push({ name: batch[j].name, count: facts.length });
           } else {
+            // Surface the actual error so the user knows why a category failed
+            const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
             categoryResults.push({ name: batch[j].name, count: 0 });
+            emit(`Category failed: ${batch[j].name}`, errMsg.slice(0, 200));
           }
         }
+        const batchErrors = results.filter(r => r.status === "rejected").length;
         emit(
           `Batch ${batchNum}/${totalBatches} done`,
-          `${allFacts.length} facts so far`
+          batchErrors > 0
+            ? `${allFacts.length} facts so far (${batchErrors}/${results.length} failed — check API key)`
+            : `${allFacts.length} facts so far`
         );
+      }
+
+      if (allFacts.length === 0 && categoryResults.every(c => c.count === 0)) {
+        const failedMode = effectiveResearchMode;
+        emit("Error", `All ${categories.length} categories returned 0 facts using ${failedMode} mode. Check that your ${failedMode === "perplexity" ? "PERPLEXITY_API_KEY" : failedMode === "claude" ? "CLAUDE_API_KEY" : "OPEN_ROUTER_API_KEY"} is set and valid in Settings.`);
       }
 
       emit("Synthesis pass", `Deduplicating & validating ${allFacts.length} facts...`);
