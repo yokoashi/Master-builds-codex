@@ -23,6 +23,7 @@ import type {
   GenerateStep2Request,
   GenerateStep3Request,
   UpdateRequest,
+  KnowledgeFact,
 } from "@shared/types";
 
 // ── AI Clients ───────────────────────────────────────────────────────────────
@@ -491,6 +492,140 @@ async function pplxResearch(queries: string[], maxTokens = 4000): Promise<string
   }
 }
 
+// ── Claude HTML extractor — Strategy 4 fallback for wiki pre-pass ─────────────
+// Converts wiki page HTML to readable text (preserving table structure), then
+// asks Claude to extract all game items as structured JSON. Works on any wiki
+// layout — Fextralife, Fandom, custom wikis — completely layout-agnostic.
+async function claudeExtractFromHtml(html: string, url: string): Promise<KnowledgeFact[]> {
+  // Convert HTML tables → pipe-delimited lines so Claude can parse them clearly
+  const text = html
+    .replace(/<tr[^>]*>/gi, "\n")
+    .replace(/<\/tr>/gi, "")
+    .replace(/<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/gi, "| $1 ")
+    .replace(/<\/?(h[1-6]|p|div|li|ul|ol|br)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ").replace(/&#\d+;/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 14000);
+
+  if (text.length < 100) return [];
+
+  try {
+    const msg = await claude.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 8000,
+      messages: [{
+        role: "user",
+        content: `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
+
+Extract all game items listed on this wiki page.
+
+Page URL: ${url}
+Page content (extracted from HTML, tables shown as pipe-delimited lines):
+${text}
+
+Return this exact JSON structure:
+{
+  "items": [
+    {
+      "name": "Item Name",
+      "type": "WEAPON",
+      "ap": 150,
+      "weight": 8.5,
+      "physDef": null,
+      "magicDef": null,
+      "fireDef": null,
+      "lightningDef": null,
+      "holyDef": null,
+      "poise": null,
+      "scalingTable": "STR:B DEX:D",
+      "requirements": "STR 18 / DEX 12",
+      "status": "Bleed:45",
+      "effect": null,
+      "location": "Zone Name, source",
+      "upgrade": "Standard"
+    }
+  ]
+}
+
+Rules:
+- type must be: WEAPON | ARMOR | SPELL | SHIELD | RING | BUFF | ITEM | CATALYST
+- Set numeric fields to null when the value is NOT shown on the page — do NOT guess values
+- Include ALL items visible (may be 50+ on category pages)
+- Skip navigation links, category headings, and wiki metadata
+- For armor: fill physDef, magicDef, fireDef, lightningDef, holyDef, poise, weight
+- For weapons: fill ap, weight, scalingTable (e.g. "STR:B DEX:D"), requirements
+- For spells: fill requirements (FP cost + stat reqs), effect`,
+      }],
+    });
+
+    const responseText = msg.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { type: "text"; text: string }).text)
+      .join("");
+
+    const parsed = parseJsonResponse<{ items: unknown[] }>(responseText);
+    if (!parsed.ok || !Array.isArray(parsed.value.items)) return [];
+
+    const validTypes = new Set(["WEAPON", "ARMOR", "SPELL", "SHIELD", "RING", "BUFF", "ITEM", "CATALYST", "BUILD", "MECHANIC"]);
+    const facts: KnowledgeFact[] = [];
+
+    for (const item of parsed.value.items) {
+      if (typeof item !== "object" || !item) continue;
+      const it = item as Record<string, unknown>;
+      const name = typeof it.name === "string" ? it.name.trim().slice(0, 80) : "";
+      if (name.length < 2) continue;
+
+      const rawType = typeof it.type === "string" ? it.type.toUpperCase() : "WEAPON";
+      const type = (validTypes.has(rawType) ? rawType : "WEAPON") as KnowledgeFact["type"];
+
+      const fact: KnowledgeFact = { type, name, raw: "" };
+
+      const numField = (key: string): number | undefined => {
+        const v = it[key];
+        return typeof v === "number" && !isNaN(v) ? v : undefined;
+      };
+      const strField = (key: string): string | undefined => {
+        const v = it[key];
+        return typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : undefined;
+      };
+
+      const ap = numField("ap"); if (ap !== undefined) fact.ap = ap;
+      const weight = numField("weight"); if (weight !== undefined) fact.weight = weight;
+      const physDef = numField("physDef"); if (physDef !== undefined) fact.physDef = physDef;
+      const magicDef = numField("magicDef"); if (magicDef !== undefined) fact.magicDef = magicDef;
+      const fireDef = numField("fireDef"); if (fireDef !== undefined) fact.fireDef = fireDef;
+      const lightningDef = numField("lightningDef"); if (lightningDef !== undefined) fact.lightningDef = lightningDef;
+      const holyDef = numField("holyDef"); if (holyDef !== undefined) fact.holyDef = holyDef;
+      const poise = numField("poise"); if (poise !== undefined) fact.poise = poise;
+      const scalingTable = strField("scalingTable"); if (scalingTable) fact.scalingTable = scalingTable;
+      const requirements = strField("requirements"); if (requirements) fact.requirements = requirements;
+      const status = strField("status"); if (status) fact.status = status;
+      const effect = strField("effect"); if (effect) fact.effect = effect;
+      const location = strField("location"); if (location) fact.location = location;
+      const upgrade = strField("upgrade"); if (upgrade) fact.upgrade = upgrade;
+
+      const parts = [`${type}: ${name}`];
+      if (fact.ap != null) parts.push(`ap:${fact.ap}`);
+      if (fact.weight != null) parts.push(`wt:${fact.weight}`);
+      if (fact.physDef != null) parts.push(`physDef:${fact.physDef}`);
+      if (fact.scalingTable) parts.push(`scaling:${fact.scalingTable}`);
+      if (fact.requirements) parts.push(`req:${fact.requirements}`);
+      if (fact.location) parts.push(`loc:${fact.location}`);
+      fact.raw = parts.join(" | ").slice(0, 600);
+
+      facts.push(fact);
+    }
+
+    return facts;
+  } catch {
+    return [];
+  }
+}
+
 export function registerRoutes(httpServer: Server, app: Express) {
 
   // ── GET /api/games — all games (seed + dynamic) ────────────────────────────
@@ -587,7 +722,8 @@ export function registerRoutes(httpServer: Server, app: Express) {
         : "generic";
 
       const start = Date.now();
-      const facts = await parseWikiPage(url, gameKey, sourceType);
+      const facts = await parseWikiPage(url, gameKey, sourceType,
+        process.env.CLAUDE_API_KEY ? claudeExtractFromHtml : undefined);
       const elapsed = Date.now() - start;
 
       // Count structured field coverage
@@ -608,6 +744,7 @@ export function registerRoutes(httpServer: Server, app: Express) {
       res.json({
         url,
         sourceType,
+        strategy4_available: Boolean(process.env.CLAUDE_API_KEY),
         elapsed_ms: elapsed,
         total_facts: facts.length,
         by_type: byType,
@@ -1668,7 +1805,8 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
             appSettings.learnResearchMode === "openrouter"
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               ? (openRouter as any)
-              : undefined
+              : undefined,
+            process.env.CLAUDE_API_KEY ? claudeExtractFromHtml : undefined
           );
           if (prePass.facts.length > 0) {
             updateKnowledgeCache(gameKey, gameName, prePass.facts, `Wiki pre-pass — ${prePass.facts.length} items`);

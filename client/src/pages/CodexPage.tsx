@@ -162,6 +162,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
       if (!url) throw new Error("No URL to test");
       return apiRequest<{
         url: string; sourceType: string; elapsed_ms: number; total_facts: number;
+        strategy4_available: boolean;
         by_type: Record<string, number>;
         structured_fields: Record<string, number>;
         sample: { type: string; name: string; ap?: number; physDef?: number; weight?: number; scalingTable?: string; status?: string; effect?: string; raw: string }[];
@@ -171,8 +172,9 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
       const sf = data.structured_fields;
       const sfStr = Object.entries(sf).filter(([,v]) => v > 0).map(([k,v]) => `${k}:${v}`).join(" ");
       const typeStr = Object.entries(data.by_type).map(([k,v]) => `${k}:${v}`).join(" ");
+      const s4 = data.strategy4_available ? "Claude ✓" : "Claude ✗ (no key)";
       const lines = [
-        `✓ ${data.total_facts} facts in ${data.elapsed_ms}ms (${data.sourceType})`,
+        `✓ ${data.total_facts} facts in ${data.elapsed_ms}ms (${data.sourceType}) [S4: ${s4}]`,
         `Types: ${typeStr || "none"}`,
         `Structured: ${sfStr || "NONE — stats columns not matching"}`,
         `Sample: ${data.sample.slice(0,3).map(f => `${f.name}(ap=${f.ap ?? "—"} wt=${f.weight ?? "—"} phys=${f.physDef ?? "—"})`).join(", ")}`,

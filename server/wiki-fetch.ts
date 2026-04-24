@@ -923,7 +923,8 @@ async function fetchDetailPagesBatched(
 export async function parseWikiPage(
   url: string,
   gameKey: string,
-  sourceType: "fextralife" | "fandom" | "generic"
+  sourceType: "fextralife" | "fandom" | "generic",
+  claudeExtract?: (html: string, url: string) => Promise<KnowledgeFact[]>
 ): Promise<KnowledgeFact[]> {
   let html = await safeFetch(url, 15000);
   if (!html) return [];
@@ -1279,6 +1280,34 @@ export async function parseWikiPage(
     }
   }
 
+  // ── Strategy 4: Claude-assisted extraction (fallback for thin results) ────
+  // Triggers when strategies 0–3b produced fewer than 10 facts with any
+  // structured numeric field (ap, weight, physDef, etc.). Sends the stripped
+  // page HTML to Claude which reads any table layout — completely layout-agnostic
+  // and handles any wiki that our regex parsers can't parse reliably.
+  if (claudeExtract) {
+    const structuredCount = Array.from(factMap.values()).filter(f =>
+      f.ap != null || f.weight != null || f.physDef != null || f.magicDef != null ||
+      f.fireDef != null || f.holyDef != null || f.poise != null || f.scalingTable != null
+    ).length;
+
+    if (structuredCount < 10) {
+      try {
+        const claudeFacts = await claudeExtract(html, url);
+        const score = (f: KnowledgeFact) =>
+          [f.ap, f.weight, f.physDef, f.magicDef, f.fireDef,
+           f.holyDef, f.poise, f.scalingTable].filter(v => v != null).length;
+        for (const f of claudeFacts) {
+          const key = f.name.toLowerCase();
+          const existing = factMap.get(key);
+          if (!existing || score(f) >= score(existing)) {
+            factMap.set(key, f);
+          }
+        }
+      } catch { /* Strategy 4 is non-fatal */ }
+    }
+  }
+
   return Array.from(factMap.values()).slice(0, 800);
 }
 
@@ -1322,7 +1351,8 @@ export async function fetchWikiPrePass(
   /** One or more category-specific URLs (weapons page, armor page, etc.)
    *  or a legacy single URL string — both forms accepted. */
   hintUrls?: string | string[],
-  orClient?: OaiCompatClient
+  orClient?: OaiCompatClient,
+  claudeExtract?: (html: string, url: string) => Promise<KnowledgeFact[]>
 ): Promise<{ facts: KnowledgeFact[]; sourcesUsed: string[] }> {
   // Normalise to array
   const hintList: string[] = hintUrls
@@ -1378,7 +1408,7 @@ export async function fetchWikiPrePass(
       if (src.type === "trello") {
         facts = await parseTrello(src.url, gameKey);
       } else {
-        facts = await parseWikiPage(src.url, gameKey, src.type);
+        facts = await parseWikiPage(src.url, gameKey, src.type, claudeExtract);
       }
       if (facts.length > 0) {
         allFacts.push(...facts);
