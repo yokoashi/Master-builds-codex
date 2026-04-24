@@ -182,6 +182,40 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
     onError: (err: Error) => setWikiTestResult(`✗ ${err.message}`),
   });
 
+  const wikiInspectMutation = useMutation({
+    mutationFn: () => {
+      const urls = learnUrlsText.split(/[\n,]+/).map(u => u.trim()).filter(u => u.startsWith("http"));
+      const url = urls[0];
+      if (!url) throw new Error("No URL to inspect");
+      return apiRequest<{
+        url: string;
+        tableCount: number;
+        tables: { cls: string; headers: string[]; rows: string[][] }[];
+        firstItemLink: string;
+        itemPage: { url: string; title: string; infoboxRows: { key: string; val: string }[]; tableClasses: string[] } | null;
+      }>("POST", "/api/debug/wiki-structure", { url });
+    },
+    onSuccess: (data) => {
+      const lines: string[] = [`=== STRUCTURE: ${data.url} ===`, `Tables found: ${data.tableCount}`];
+      data.tables.forEach((t, i) => {
+        lines.push(`\nTable ${i+1} class="${t.cls}"`);
+        lines.push(`  Headers: ${t.headers.join(" | ") || "(none)"}`);
+        t.rows.slice(0,2).forEach((r, ri) => lines.push(`  Row${ri+1}: ${r.join(" | ")}`));
+      });
+      if (data.firstItemLink) {
+        lines.push(`\nFirst item link: ${data.firstItemLink}`);
+        if (data.itemPage) {
+          lines.push(`Item page: "${data.itemPage.title}"`);
+          lines.push(`Table classes: ${data.itemPage.tableClasses.join(", ") || "(none)"}`);
+          lines.push(`Infobox rows:`);
+          data.itemPage.infoboxRows.slice(0, 20).forEach(r => lines.push(`  [${r.key}] → ${r.val}`));
+        }
+      }
+      setWikiTestResult(lines.join("\n"));
+    },
+    onError: (err: Error) => setWikiTestResult(`✗ ${err.message}`),
+  });
+
   const updateMutation = useMutation({
     mutationFn: () =>
       apiRequest<{ patchVersion: string; count: number }>("POST", "/api/update", {
@@ -570,15 +604,26 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                         : "Paste category pages for accurate extraction, or leave empty to let AI search the web"}
                     </p>
                     {learnUrlsText.trim().startsWith("http") && (
-                      <button
-                        onClick={() => { setWikiTestResult(null); wikiTestMutation.mutate(); }}
-                        disabled={wikiTestMutation.isPending}
-                        className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5 flex-shrink-0"
-                        style={{ color: "var(--color-dim)", border: "1px solid #302820", fontSize: "0.6rem" }}
-                        title="Test first URL — shows how many facts & structured fields are extracted"
-                      >
-                        {wikiTestMutation.isPending ? "Testing..." : "Test URL"}
-                      </button>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => { setWikiTestResult(null); wikiTestMutation.mutate(); }}
+                          disabled={wikiTestMutation.isPending || wikiInspectMutation.isPending}
+                          className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
+                          style={{ color: "var(--color-dim)", border: "1px solid #302820", fontSize: "0.6rem" }}
+                          title="Test first URL — shows fact count and structured field coverage"
+                        >
+                          {wikiTestMutation.isPending ? "Testing..." : "Test"}
+                        </button>
+                        <button
+                          onClick={() => { setWikiTestResult(null); wikiInspectMutation.mutate(); }}
+                          disabled={wikiInspectMutation.isPending || wikiTestMutation.isPending}
+                          className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
+                          style={{ color: "var(--color-dim)", border: "1px solid #302820", fontSize: "0.6rem" }}
+                          title="Inspect first URL — dumps table classes, headers, and infobox structure"
+                        >
+                          {wikiInspectMutation.isPending ? "Inspecting..." : "Inspect"}
+                        </button>
+                      </div>
                     )}
                   </div>
                   {wikiTestResult && (
