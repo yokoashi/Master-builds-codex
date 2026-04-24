@@ -32,7 +32,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
   const [showAddModal, setShowAddModal] = useState(false);
   const [deletePending, setDeletePending] = useState<Build | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
-  const [learnHintUrls, setLearnHintUrls] = useState<string[]>([]);
+  const [learnUrlsText, setLearnUrlsText] = useState<string>("");
   const [showLearnInput, setShowLearnInput] = useState(false);
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [showLearnProgress, setShowLearnProgress] = useState(false);
@@ -125,11 +125,15 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
       }>("POST", "/api/learn", {
         gameKey: selectedGameKey,
         gameName: currentGame?.name ?? selectedGameKey,
-        ...(learnHintUrls.length > 0 ? { hintUrls: learnHintUrls } : {}),
+        ...(() => {
+          const urls = learnUrlsText.split(/[\n,]+/).map(u => u.trim()).filter(u => u.startsWith("http"));
+          return urls.length > 0 ? { hintUrls: urls } : {};
+        })(),
       }),
     onMutate: () => {
       setShowLearnInput(false);
       setShowLearnProgress(true);
+      setLearnUrlsText("");
       setUpdateStatus(null);
     },
     onSuccess: (data: {
@@ -513,46 +517,29 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
                     <span style={{ fontSize: "0.6rem", color: "var(--color-dim2)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)" }}>
-                      Category URLs <span style={{ color: "var(--color-dim2)", fontWeight: 400 }}>(optional — weapons page, armor page, etc.)</span>
+                      Category URLs <span style={{ color: "var(--color-dim2)", fontWeight: 400 }}>(one per line — paste all at once)</span>
                     </span>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => setLearnHintUrls(u => [...u, ""])}
-                        className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
-                        style={{ color: "var(--color-dim)", border: "1px solid #302820", fontSize: "0.65rem" }}
-                        title="Add URL"
-                      >+ Add URL</button>
-                      <button
-                        onClick={() => { setShowLearnInput(false); setLearnHintUrls([]); }}
-                        className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
-                        style={{ color: "var(--color-dim)", border: "1px solid #302820" }}
-                      >✕</button>
-                    </div>
+                    <button
+                      onClick={() => { setShowLearnInput(false); setLearnUrlsText(""); }}
+                      className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
+                      style={{ color: "var(--color-dim)", border: "1px solid #302820" }}
+                    >✕</button>
                   </div>
-                  {learnHintUrls.map((url, i) => (
-                    <div key={i} className="flex gap-1">
-                      <input
-                        data-testid={`input-learn-hint-url-${i}`}
-                        type="url"
-                        value={url}
-                        onChange={(e) => setLearnHintUrls(u => u.map((v, j) => j === i ? e.target.value : v))}
-                        placeholder={i === 0 ? "https://wiki.fextralife.com/Weapons" : i === 1 ? "https://wiki.fextralife.com/Armor" : "https://wiki.fextralife.com/Rings..."}
-                        className="flex-1 min-w-0 px-2 py-1 rounded text-xs"
-                        style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-text)", outline: "none" }}
-                        onKeyDown={(e) => { if (e.key === "Enter") learnMutation.mutate(); }}
-                      />
-                      <button
-                        onClick={() => setLearnHintUrls(u => u.filter((_, j) => j !== i))}
-                        className="px-1.5 py-1 rounded text-xs hover:bg-white/5"
-                        style={{ color: "var(--color-dim)", border: "1px solid #302820", flexShrink: 0 }}
-                      >✕</button>
-                    </div>
-                  ))}
-                  {learnHintUrls.length === 0 && (
-                    <p style={{ fontSize: "0.6rem", color: "var(--color-dim2)" }}>
-                      No URLs added — AI will search the web. Add category pages for more accurate extraction.
-                    </p>
-                  )}
+                  <textarea
+                    data-testid="input-learn-hint-urls"
+                    value={learnUrlsText}
+                    onChange={(e) => setLearnUrlsText(e.target.value)}
+                    placeholder={"https://wiki.fextralife.com/Weapons\nhttps://wiki.fextralife.com/Magic\nhttps://wiki.fextralife.com/Shields\nhttps://wiki.fextralife.com/Armor\nhttps://wiki.fextralife.com/Rings\nhttps://wiki.fextralife.com/Runes"}
+                    rows={5}
+                    className="w-full px-2 py-1.5 rounded text-xs resize-none"
+                    style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-text)", outline: "none", lineHeight: "1.5" }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) learnMutation.mutate(); }}
+                  />
+                  <p style={{ fontSize: "0.6rem", color: "var(--color-dim2)" }}>
+                    {learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length > 0
+                      ? `${learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length} URL${learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length === 1 ? "" : "s"} ready · Ctrl+Enter to start`
+                      : "Paste category pages for accurate extraction, or leave empty to let AI search the web"}
+                  </p>
                 </div>
               )}
             </div>
