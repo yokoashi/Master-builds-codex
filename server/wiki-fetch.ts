@@ -60,7 +60,12 @@ async function safeFetch(url: string, timeoutMs = 12000): Promise<string> {
   try {
     const resp = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Cache-Control": "no-cache",
+      },
     });
     if (!resp.ok) return "";
     // Cap at 400 KB to keep parsing fast
@@ -488,6 +493,10 @@ function extractDetailInfo(html: string): DetailInfo {
 /**
  * Collect item-page links from a sub-hub page (e.g. /Axes listing individual axes).
  * Skips nav paths and already-seen URLs. Returns up to 150 unique links.
+ *
+ * IMPORTANT: Does NOT modify `seen`. The caller (Strategy 3b) is responsible for
+ * updating `seen` when it actually schedules a URL for fetching. This prevents
+ * Strategy 3b from seeing sub-hub URLs as "already processed" when they haven't been.
  */
 function extractSubHubLinks(html: string, baseUrl: string, seen: Set<string>): string[] {
   const links: string[] = [];
@@ -496,6 +505,8 @@ function extractSubHubLinks(html: string, baseUrl: string, seen: Set<string>): s
   const navBlock = /\/(home|blog|forum|news|guides?|reviews?|shop|vip|search|login|logout|register|account|special|help|chat|discord|twitch|youtube|facebook|twitter|instagram|reddit|patch|dlc|edit|history|talk|upload|file|template|portal|project|main[-_]page|random|donate|preferences|watchlist|contributions|accessibility|version|category)(?:\/|$)/i;
   const fandomNs = /\/wiki\/(?:Special|User|Talk|File|Template|Help|Forum|Category|Portal|Project|MediaWiki|Module):/i;
   const linkPat = /<a[^>]+href="([^"#?]+)"/gi;
+  // Use a local set to dedup within this call without polluting the caller's set
+  const localSeen = new Set<string>(seen);
   let m: RegExpExecArray | null;
   while ((m = linkPat.exec(html)) !== null) {
     try {
@@ -504,8 +515,8 @@ function extractSubHubLinks(html: string, baseUrl: string, seen: Set<string>): s
       if (abs.pathname.split("/").filter(Boolean).length < 1) continue;
       if (navBlock.test(abs.pathname) || fandomNs.test(abs.pathname)) continue;
       const dk = abs.pathname.toLowerCase();
-      if (seen.has(dk)) continue;
-      seen.add(dk);
+      if (localSeen.has(dk)) continue;
+      localSeen.add(dk);
       links.push(abs.href);
       if (links.length >= 150) break;
     } catch { /* ignore */ }
@@ -531,43 +542,174 @@ function pickField(fields: Record<string, string>, ...keys: string[]): string | 
   return undefined;
 }
 
-// Fetch one detail page and convert it into an enriched KnowledgeFact.
-// If the page has no infobox (it's a hub/category page), returns null and
-// populates subHubLinksOut with links to the actual item pages inside it.
+/**
+ * Parse item facts directly from wiki_table tables found in a category page's HTML.
+ * Called by fetchDetailPage when a page has no infobox (it's a category page, not
+ * an individual item page). Returns facts extracted from the table rows, and queues
+ * individual item links into subHubLinksOut for Strategy 3b enrichment.
+ */
+function extractCategoryTableFacts(
+  html: string,
+  pageUrl: string,
+  fallbackType: KnowledgeFact["type"],
+  subHubLinksOut: string[],
+  detailSeen: Set<string>,
+): KnowledgeFact[] {
+  const facts: KnowledgeFact[] = [];
+  const baseUrl = (() => { try { return new URL(pageUrl); } catch { return null; } })();
+  const allTables = extractWikiTables(html);
+
+  for (const table of allTables) {
+    if (table.headers.length < 2 || table.rows.length < 2) continue;
+    const headerStr = table.headers.join(" ").toLowerCase();
+    if (/contents?|toc|navigation|changelog|version\s*history|patch\s*note/i.test(headerStr)) continue;
+
+    // Find name column (same logic as Strategy 0)
+    let nameColIdx = 0;
+    const namedCol = table.headers.findIndex(h =>
+      /^(name|spell|magic|shield|weapon|armor|ring|item|skill|ability|catalyst|rune|gem|accessory|talisman|sorcery|incantation)$/i.test(h.trim())
+    );
+    if (namedCol >= 0) {
+      nameColIdx = namedCol;
+    } else {
+      let bestCol = 0, bestCount = 0;
+      for (let col = 0; col < Math.min(4, table.rows[0]?.cells.length ?? 0); col++) {
+        const cnt = table.rows.slice(0, 6).filter(r => r.links[col] !== null).length;
+        if (cnt > bestCount) { bestCount = cnt; bestCol = col; }
+      }
+      if (bestCount > 0) nameColIdx = bestCol;
+    }
+
+    // Infer category from column headers
+    let tableType: KnowledgeFact["type"] = fallbackType;
+    if (/fp\s*cost|mana\s*cost|spell\s*slot|slots?\s*used|radiance\s*req|inferno\s*req/i.test(headerStr)) tableType = "SPELL";
+    else if (/stability|block\s*%|guard\s*absorb|shield\s+type/i.test(headerStr)) tableType = "SHIELD";
+    else if (/phys.*def|physical\s+def|poise\s|armor\s+type/i.test(headerStr)) tableType = "ARMOR";
+    else if (/str.*scal|dex.*scal|attack\s*rat|weapon\s+type/i.test(headerStr)) tableType = "WEAPON";
+    else if (/ring\s+effect|talisman\s+effect|amulet\s+effect/i.test(headerStr)) tableType = "RING";
+
+    let added = 0;
+    for (const row of table.rows) {
+      const rawName = row.cells[nameColIdx]?.trim() ?? "";
+      if (rawName.length < 2 || rawName.length > 80) continue;
+      if (!/[A-Za-z]/.test(rawName) || /^\d+$/.test(rawName)) continue;
+      // Skip obvious headers/junk
+      if (/^(name|type|weight|attack|defense|effect|location|description|notes?|image|icon)$/i.test(rawName)) continue;
+      if (/\bwikis?\b/i.test(rawName)) continue;
+
+      const sf: Partial<KnowledgeFact> = {};
+      const scalingCols: string[] = [];
+      const reqCols: string[] = [];
+      const statusCols: string[] = [];
+
+      for (let i = 0; i < Math.min(table.headers.length, row.cells.length); i++) {
+        if (i === nameColIdx) continue;
+        const h = (table.headers[i] ?? "").trim();
+        const v = (row.cells[i] ?? "").trim();
+        if (!h || !v || v === "—" || v === "-" || v === "N/A") continue;
+        const hl = h.toLowerCase();
+        const n = parseNum(v);
+        if (/attack\s*rat|base\s*(attack|damage|physical)|physical\s*atk|^\batk\b$|^\bap\b$/.test(hl)) {
+          if (n !== undefined && sf.ap === undefined) sf.ap = n;
+        } else if (/physical\s*def|phys\s*def/.test(hl) || hl === "physical") {
+          if (n !== undefined && sf.physDef === undefined) sf.physDef = n;
+        } else if (/magic\s*def|mag\s*def/.test(hl) || hl === "magic") {
+          if (n !== undefined && sf.magicDef === undefined) sf.magicDef = n;
+        } else if (/fire\s*def|fir\s*def/.test(hl) || hl === "fire") {
+          if (n !== undefined && sf.fireDef === undefined) sf.fireDef = n;
+        } else if (/lightning\s*def|lgt\s*def|lit\s*def/.test(hl) || hl === "lightning") {
+          if (n !== undefined && sf.lightningDef === undefined) sf.lightningDef = n;
+        } else if (/holy\s*def|hol\s*def|dark\s*def|wither\s*def/.test(hl) || hl === "holy" || hl === "dark" || hl === "wither") {
+          if (n !== undefined && sf.holyDef === undefined) sf.holyDef = n;
+        } else if (/^poise$|^stability$/.test(hl)) {
+          if (n !== undefined && sf.poise === undefined) sf.poise = n;
+        } else if (/^weight$|^wt$/.test(hl)) {
+          if (n !== undefined && sf.weight === undefined) sf.weight = n;
+        } else if (/^effect$|^passive$|^special\s*effect/.test(hl)) {
+          if (!sf.effect) sf.effect = v.slice(0, 200);
+        } else if (/^location$|^how\s*to\s*find$|^drops\s*from$/.test(hl)) {
+          if (!sf.location) sf.location = v.slice(0, 200);
+        } else if (/(str|dex|int|fth|arc|rad|inf)\s*scal/.test(hl)) {
+          const label = hl.match(/^(str|dex|int|fth|arc|rad|inf)/i)?.[1]?.toUpperCase() ?? h;
+          scalingCols.push(`${label}:${v}`);
+        } else if (/^scaling$/.test(hl)) {
+          scalingCols.push(v);
+        } else if (/^bleed$|^poison$|^frost(bite)?$|^rot$|^madness$|^sleep$/.test(hl)) {
+          if (v !== "0") statusCols.push(`${h}:${v}`);
+        } else if (/^fp\s*cost$|^slots?\s*used$|^spell\s*slots?$/.test(hl)) {
+          reqCols.push(`FP:${v}`);
+        } else if (/^(str|dex|int|fth|arc|radiance|inferno)(\s*(req(uired?)?|min))?$/.test(hl)) {
+          const label = hl.match(/^(str|dex|int|fth|arc|rad|inf)/i)?.[1]?.toUpperCase() ?? h.toUpperCase();
+          if (v !== "0") reqCols.push(`${label} ${v}`);
+        }
+      }
+      if (scalingCols.length > 0) sf.scalingTable = scalingCols.join(" ");
+      if (statusCols.length > 0) sf.status = statusCols.join(", ");
+      if (reqCols.length > 0) sf.requirements = reqCols.join(" / ");
+
+      const raw = `${tableType}: ${rawName}`.slice(0, 600);
+      facts.push({ type: tableType, name: rawName, raw, ...sf });
+      added++;
+
+      // Queue individual item page for detail enrichment in Strategy 3b.
+      // Do NOT add to detailSeen here — Strategy 3b will do that when it
+      // actually schedules the fetch, preventing it from skipping these URLs.
+      const link = row.links[nameColIdx];
+      if (link && baseUrl) {
+        try {
+          const abs = new URL(link, baseUrl);
+          subHubLinksOut.push(abs.href);
+        } catch { /* ignore */ }
+      }
+    }
+
+    if (added >= 3) break; // First good table wins
+  }
+
+  return facts;
+}
+
+// Fetch one detail page and convert it into an enriched KnowledgeFact[].
+// - If the page has an infobox: returns a single-element array with a rich fact.
+// - If the page is a category page with a wiki_table listing items: returns those facts directly.
+// - If the page is a hub/sub-category page with no table data: populates subHubLinksOut and returns [].
 async function fetchDetailPage(
   url: string,
   fallbackName: string,
   fallbackType: KnowledgeFact["type"],
   detailSeen: Set<string>,
   subHubLinksOut: string[]
-): Promise<KnowledgeFact | null> {
+): Promise<KnowledgeFact[]> {
   const html = await safeFetch(url, DETAIL_PAGE_TIMEOUT_MS);
-  if (!html) return null;
+  if (!html) return [];
 
   const info = extractDetailInfo(html);
   const name = (info.title || fallbackName).trim();
-  if (!name || name.length < 2 || name.length > 120) return null;
+  if (!name || name.length < 2 || name.length > 120) return [];
 
   // Reject wiki chrome masquerading as items: titles containing "wiki", "wikis",
   // or matching multi-word nav phrases like "Lords of the Fallen Wiki".
   const nameLo = name.toLowerCase();
-  if (/\bwikis?\b/.test(nameLo)) return null;
-  if (/^(\w+\s+){2,}(wiki|wikis|guide|guides|list|hub|home|index)$/i.test(name)) return null;
+  if (/\bwikis?\b/.test(nameLo)) return [];
+  if (/^(\w+\s+){2,}(wiki|wikis|guide|guides|list|hub|home|index)$/i.test(name)) return [];
 
-  // If this page has NO infobox fields and no upgrade table it's almost certainly
-  // a hub/sub-category page (e.g. /Axes, /Grand+Swords, /Abbess+Set listing pieces).
-  // Collect its item links for a second crawl pass (Strategy 3b) instead of
-  // storing a useless thin fact.
+  // If this page has NO infobox fields and no upgrade table, try two strategies:
   if (Object.keys(info.fields).length === 0 && !info.upgradeProgression) {
+    // 1. Try to extract items from any wiki_table listing (handles Fextralife category
+    //    pages like /Straight+Swords that have item tables but no per-item infobox).
+    const categoryFacts = extractCategoryTableFacts(html, url, fallbackType, subHubLinksOut, detailSeen);
+    if (categoryFacts.length >= 3) return categoryFacts;
+
+    // 2. Treat as sub-hub: collect item links for a second crawl pass (Strategy 3b).
+    //    Lower threshold to 3: even small sub-hubs (e.g. /Axes with 6 axes) should
+    //    be followed. Individual item pages have ≤2 "related item" links typically.
     const subLinks = extractSubHubLinks(html, url, detailSeen);
-    // Lower threshold to 3: even small sub-hubs (e.g. /Axes with 6 axes) should
-    // be followed. Individual item pages have ≤2 "related item" links typically.
     if (subLinks.length >= 3) {
       subHubLinksOut.push(...subLinks);
-      return null;
+      return [];
     }
-    // No sub-links either — truly empty page, don't store as a fact
-    return null;
+    // No table data, no sub-links — truly empty page
+    return [];
   }
 
   const type = info.inferredType ?? fallbackType;
@@ -728,7 +870,7 @@ async function fetchDetailPage(
   // Location
   const location = pickField(f, "location", "loc", "how to find", "acquired", "drops from", "found");
 
-  return {
+  return [{
     type, name, raw,
     ...(location         ? { location }                              : {}),
     ...(upgrade          ? { upgrade }                               : {}),
@@ -745,7 +887,7 @@ async function fetchDetailPage(
     ...(holyDefNum !== undefined       ? { holyDef: holyDefNum }       : {}),
     ...(poiseNum !== undefined         ? { poise: poiseNum }           : {}),
     ...(weightNum !== undefined        ? { weight: weightNum }         : {}),
-  };
+  }];
 }
 
 // Fetch many detail pages in parallel batches so one slow server doesn't stall
@@ -763,7 +905,11 @@ async function fetchDetailPagesBatched(
       slice.map((t) => fetchDetailPage(t.url, t.fallbackName, t.fallbackType, detailSeen, subHubLinksOut))
     );
     for (const s of settled) {
-      if (s.status === "fulfilled" && s.value) results.push(s.value);
+      if (s.status === "fulfilled" && s.value.length > 0) results.push(...s.value);
+    }
+    // Brief pause between batches to avoid rate-limiting on wiki servers
+    if (i + DETAIL_BATCH_SIZE < targets.length) {
+      await new Promise((r) => setTimeout(r, 200));
     }
   }
   return results;

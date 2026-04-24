@@ -640,83 +640,125 @@ export function registerRoutes(httpServer: Server, app: Express) {
   });
 
   // ── POST /api/debug/wiki-structure — dump real HTML structure of a URL ────────
-  // Returns table class names, exact header text, sample rows, first item link,
-  // and that item's infobox key/value pairs. Used to reverse-engineer wiki format.
   app.post("/api/debug/wiki-structure", async (req, res) => {
     try {
       const { url } = req.body as { url: string };
       if (!url) return res.status(400).json({ error: "url required" });
 
-      const html = await (async () => {
+      const fetchHtml = async (u: string, timeout = 15000) => {
         const ctrl = new AbortController();
-        setTimeout(() => ctrl.abort(), 15000);
-        const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
+        setTimeout(() => ctrl.abort(), timeout);
+        const r = await fetch(u, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
         return r.ok ? r.text() : "";
-      })();
+      };
+
+      const html = await fetchHtml(url);
       if (!html) return res.json({ error: "fetch returned empty (403/timeout?)" });
 
-      // 1. All table elements — class names + first 3 headers + first 3 data rows
+      // 1. All tables: class + headers + first 2 data rows
       const tables: { cls: string; headers: string[]; rows: string[][] }[] = [];
       const tblPat = /<table([^>]*)>([\s\S]*?)<\/table>/gi;
       let tm: RegExpExecArray | null;
       while ((tm = tblPat.exec(html)) !== null && tables.length < 8) {
-        const attrs = tm[1]; const body = tm[2];
-        const clsMatch = attrs.match(/class="([^"]*)"/);
-        const cls = clsMatch ? clsMatch[1] : "(no class)";
+        const cls = (tm[1].match(/class="([^"]*)"/) ?? [])[1] ?? "(no class)";
+        const body = tm[2];
         const headers: string[] = [];
         const thPat = /<th[^>]*>([\s\S]*?)<\/th>/gi; let th: RegExpExecArray | null;
-        while ((th = thPat.exec(body)) !== null && headers.length < 10) headers.push(th[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,60));
+        while ((th = thPat.exec(body)) !== null && headers.length < 12) headers.push(th[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,60));
         const rows: string[][] = [];
         const trPat2 = /<tr[^>]*>([\s\S]*?)<\/tr>/gi; let tr: RegExpExecArray | null;
-        while ((tr = trPat2.exec(body)) !== null && rows.length < 3) {
+        while ((tr = trPat2.exec(body)) !== null && rows.length < 2) {
           if (/<th/i.test(tr[1])) continue;
           const cells: string[] = [];
           const tdPat = /<td[^>]*>([\s\S]*?)<\/td>/gi; let td: RegExpExecArray | null;
-          while ((td = tdPat.exec(tr[1])) !== null && cells.length < 8) cells.push(td[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,80));
+          while ((td = tdPat.exec(tr[1])) !== null && cells.length < 10) cells.push(td[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,80));
           if (cells.length) rows.push(cells);
         }
         if (headers.length || rows.length) tables.push({ cls, headers, rows });
       }
 
-      // 2. First item link found in the page (href that looks like an item)
-      const linkPat = /<a[^>]+href="(\/[A-Za-z0-9][^"#?]{3,60})"[^>]*>([\s\S]*?)<\/a>/g;
-      const navSkip = /^\/(?:wiki|home|login|search|edit|forum|blog|news|category|special|help)/i;
-      let firstItemLink = "";
+      // 2. Most-used div class names (reveals content structure when tables=0)
+      const divClasses: Record<string, number> = {};
+      const divPat = /<div[^>]+class="([^"]+)"/gi; let dm: RegExpExecArray | null;
+      while ((dm = divPat.exec(html)) !== null) {
+        for (const cls of dm[1].split(/\s+/)) {
+          if (cls.length > 2 && cls.length < 40) divClasses[cls] = (divClasses[cls] ?? 0) + 1;
+        }
+      }
+      const topDivClasses = Object.entries(divClasses)
+        .filter(([,n]) => n >= 3)
+        .sort((a,b) => b[1]-a[1])
+        .slice(0, 20)
+        .map(([cls, n]) => `${cls}(×${n})`);
+
+      // 3. All item-looking links on the page (skip nav/wiki chrome)
+      const navSkip = /^\/(?:home|login|search|edit|forum|blog|news|category|special|help|The\+Lords|Lords-of)/i;
+      const itemLinks: string[] = [];
+      const linkPat = /<a[^>]+href="(\/[A-Za-z0-9%+][^"#?]{2,80})"[^>]*>([\s\S]*?)<\/a>/gi;
       let lm: RegExpExecArray | null;
-      while ((lm = linkPat.exec(html)) !== null) {
-        const href = lm[1]; const text = lm[2].replace(/<[^>]+>/g," ").trim();
-        if (navSkip.test(href) || text.length < 3 || /wiki/i.test(text)) continue;
-        firstItemLink = new URL(href, url).toString();
-        break;
+      while ((lm = linkPat.exec(html)) !== null && itemLinks.length < 20) {
+        const href = lm[1];
+        const text = lm[2].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+        if (navSkip.test(href)) continue;
+        if (text.length < 3 || text.length > 80) continue;
+        if (/\bwiki\b/i.test(text) || /\b(home|login|search|edit|forum|sign in)\b/i.test(text)) continue;
+        if (/^\d+$/.test(text)) continue;
+        itemLinks.push(`"${text}" → ${href}`);
       }
 
-      // 3. Fetch that item page and dump its infobox
-      let itemPage: { url: string; title: string; infoboxRows: { key: string; val: string }[]; tableClasses: string[] } | null = null;
-      if (firstItemLink) {
-        const ihtml = await (async () => {
-          const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 10000);
-          const r = await fetch(firstItemLink, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
-          return r.ok ? r.text() : "";
-        })();
-        if (ihtml) {
-          const h1 = ihtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-          const title = h1 ? h1[1].replace(/<[^>]+>/g," ").trim() : firstItemLink;
-          const infoboxRows: { key: string; val: string }[] = [];
-          // th+td rows
-          const irPat = /<tr[^>]*>[\s\S]*?<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<\/tr>/gi;
-          let ir: RegExpExecArray | null;
-          while ((ir = irPat.exec(ihtml)) !== null && infoboxRows.length < 30) {
-            infoboxRows.push({ key: ir[1].replace(/<[^>]+>/g," ").trim().slice(0,50), val: ir[2].replace(/<[^>]+>/g," ").trim().slice(0,100) });
-          }
-          const itblClasses: string[] = [];
-          const itPat = /<table([^>]*)>/gi; let it: RegExpExecArray | null;
-          while ((it = itPat.exec(ihtml)) !== null) { const c = it[1].match(/class="([^"]*)"/); if (c) itblClasses.push(c[1]); }
-          const uniqClasses = itblClasses.filter((c, i) => itblClasses.indexOf(c) === i).slice(0, 10);
-          itemPage = { url: firstItemLink, title, infoboxRows, tableClasses: uniqClasses };
+      // 4. Fetch the most-promising item link and dump its full structure
+      // Pick the first link that doesn't look like a hub/category page
+      const hubWords = /^(Weapons|Armor|Shields|Magic|Accessories|Runes|Spells|Rings|Items|Equipment|Bosses|Areas|Maps|Lore|Guides?)$/i;
+      let itemUrl = "";
+      for (const link of itemLinks) {
+        const href = link.match(/→ (.+)$/)?.[1] ?? "";
+        const name = link.match(/"([^"]+)"/)?.[1] ?? "";
+        if (!hubWords.test(name) && href) {
+          itemUrl = new URL(href, url).toString();
+          break;
         }
       }
 
-      res.json({ url, tableCount: tables.length, tables, firstItemLink, itemPage });
+      let itemPage: { url: string; title: string; tableClasses: string[]; infoboxRows: { key: string; val: string }[]; divClasses: string[]; rawSnippet: string } | null = null;
+      if (itemUrl) {
+        const ihtml = await fetchHtml(itemUrl, 10000);
+        if (ihtml) {
+          const h1 = ihtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+          const title = h1 ? h1[1].replace(/<[^>]+>/g," ").trim() : itemUrl;
+
+          // Table classes
+          const itblClasses: string[] = [];
+          const itPat = /<table([^>]*)>/gi; let it: RegExpExecArray | null;
+          while ((it = itPat.exec(ihtml)) !== null) { const c = it[1].match(/class="([^"]*)"/); if (c) itblClasses.push(c[1]); }
+          const tableClasses = itblClasses.filter((c,i) => itblClasses.indexOf(c) === i).slice(0, 10);
+
+          // All tr rows (th or td key + td value)
+          const infoboxRows: { key: string; val: string }[] = [];
+          const irPat = /<tr[^>]*>([\s\S]*?)<\/tr>/gi; let ir: RegExpExecArray | null;
+          while ((ir = irPat.exec(ihtml)) !== null && infoboxRows.length < 40) {
+            const cells: string[] = [];
+            const cellPat = /<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/gi; let cell: RegExpExecArray | null;
+            while ((cell = cellPat.exec(ir[1])) !== null) cells.push(cell[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,120));
+            if (cells.length >= 2) infoboxRows.push({ key: cells[0], val: cells.slice(1).join(" | ") });
+          }
+
+          // Div classes on item page
+          const idivClasses: Record<string, number> = {};
+          const idivPat = /<div[^>]+class="([^"]+)"/gi; let idm: RegExpExecArray | null;
+          while ((idm = idivPat.exec(ihtml)) !== null) {
+            for (const cls of idm[1].split(/\s+/)) { if (cls.length > 2 && cls.length < 40) idivClasses[cls] = (idivClasses[cls] ?? 0) + 1; }
+          }
+          const itemDivClasses = Object.entries(idivClasses).filter(([,n]) => n >= 2).sort((a,b) => b[1]-a[1]).slice(0,15).map(([c,n]) => `${c}(×${n})`);
+
+          // Raw HTML snippet around first h2/h3 section (reveals content layout)
+          const snipMatch = ihtml.match(/<(?:h2|h3|div[^>]+class="[^"]*(?:infobox|info|stat|weapon|armor)[^"]*")[^>]*>[\s\S]{0,2000}/i);
+          const rawSnippet = snipMatch ? snipMatch[0].replace(/<script[\s\S]*?<\/script>/gi,"").slice(0,800) : "";
+
+          itemPage = { url: itemUrl, title, tableClasses, infoboxRows, divClasses: itemDivClasses, rawSnippet };
+        }
+      }
+
+      res.json({ url, tableCount: tables.length, tables, topDivClasses, itemLinks: itemLinks.slice(0,15), itemPage });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
