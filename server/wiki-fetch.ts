@@ -548,18 +548,26 @@ async function fetchDetailPage(
   const name = (info.title || fallbackName).trim();
   if (!name || name.length < 2 || name.length > 120) return null;
 
+  // Reject wiki chrome masquerading as items: titles containing "wiki", "wikis",
+  // or matching multi-word nav phrases like "Lords of the Fallen Wiki".
+  const nameLo = name.toLowerCase();
+  if (/\bwikis?\b/.test(nameLo)) return null;
+  if (/^(\w+\s+){2,}(wiki|wikis|guide|guides|list|hub|home|index)$/i.test(name)) return null;
+
   // If this page has NO infobox fields and no upgrade table it's almost certainly
   // a hub/sub-category page (e.g. /Axes, /Grand+Swords, /Abbess+Set listing pieces).
   // Collect its item links for a second crawl pass (Strategy 3b) instead of
   // storing a useless thin fact.
   if (Object.keys(info.fields).length === 0 && !info.upgradeProgression) {
     const subLinks = extractSubHubLinks(html, url, detailSeen);
-    // Threshold of 10: individual item pages have a handful of nav/related links,
-    // but genuine sub-hubs (e.g. /Axes listing 20 axes) will have many more.
-    if (subLinks.length >= 10) {
+    // Lower threshold to 3: even small sub-hubs (e.g. /Axes with 6 axes) should
+    // be followed. Individual item pages have ≤2 "related item" links typically.
+    if (subLinks.length >= 3) {
       subHubLinksOut.push(...subLinks);
       return null;
     }
+    // No sub-links either — truly empty page, don't store as a fact
+    return null;
   }
 
   const type = info.inferredType ?? fallbackType;
@@ -1007,7 +1015,13 @@ export async function parseWikiPage(
       DATE_PATTERN.test(trimmed) ||
       COMMENT_PATTERN.test(trimmed) ||
       BREADCRUMB_PATTERN.test(trimmed) ||
-      DESCRIPTION_PATTERN.test(trimmed)
+      DESCRIPTION_PATTERN.test(trimmed) ||
+      // Reject wiki-page-level category names that slip past the above:
+      // e.g. "Boss Remembrances", "Runes", "Lords of the Fallen Wiki"
+      /\bwikis?\b/i.test(trimmed) ||
+      /\b(remembrance|remembrances|category|categories|overview|compendium)\b/i.test(trimmed) ||
+      // Single-word plural item-type names that are category pages, not items
+      /^(runes?|gems?|axes?|bows?|spears?|shields?|swords?|lances?|daggers?|hammers?|maces?|clubs?|staves?|seals?|whips?|katanas?|halberds?|polearms?|crossbows?|greatbows?)$/i.test(trimmed)
     ) continue;
     if (!/[A-Z]/.test(text)) continue;
 
