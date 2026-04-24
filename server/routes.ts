@@ -79,10 +79,10 @@ const SETTINGS_PATH = process.env.DB_PATH
 function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
-      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
+      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude", ...JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) };
     }
   } catch { /* ignore */ }
-  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "perplexity" };
+  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude" };
 }
 function saveSettings(s: AppSettings) {
   try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
@@ -1495,9 +1495,11 @@ CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start
 
       // ── API key check — fail fast with clear error rather than silent 0-facts ──
       const researchMode = appSettings.learnResearchMode;
-      const hasPplxKey = Boolean(process.env.PERPLEXITY_API_KEY);
-      const hasClaudeKey = Boolean(process.env.CLAUDE_API_KEY);
-      const hasOrKey = Boolean(process.env.OPEN_ROUTER_API_KEY);
+      // A key must be at least 20 chars to be real (not a placeholder like "your-key-here")
+      const keyOk = (k: string | undefined) => typeof k === "string" && k.trim().length >= 20;
+      const hasPplxKey = keyOk(process.env.PERPLEXITY_API_KEY);
+      const hasClaudeKey = keyOk(process.env.CLAUDE_API_KEY);
+      const hasOrKey = keyOk(process.env.OPEN_ROUTER_API_KEY);
 
       // Determine effective research mode: auto-fallback if chosen key is missing
       let effectiveResearchMode = researchMode;
