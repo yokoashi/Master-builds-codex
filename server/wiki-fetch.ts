@@ -766,7 +766,7 @@ async function fetchDetailPagesBatched(
  * These pages list items in <li>, <tr>, or heading patterns — we extract
  * item names via simple heuristics (no HTML parser needed).
  */
-async function parseWikiPage(
+export async function parseWikiPage(
   url: string,
   gameKey: string,
   sourceType: "fextralife" | "fandom" | "generic"

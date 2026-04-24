@@ -34,6 +34,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [learnUrlsText, setLearnUrlsText] = useState<string>("");
   const [showLearnInput, setShowLearnInput] = useState(false);
+  const [wikiTestResult, setWikiTestResult] = useState<string | null>(null);
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [showLearnProgress, setShowLearnProgress] = useState(false);
   const [showTeamLog, setShowTeamLog] = useState(false);
@@ -152,6 +153,33 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
       setUpdateStatus(`✗ Learn failed: ${err.message}`);
       setTimeout(() => setUpdateStatus(null), 6000);
     },
+  });
+
+  const wikiTestMutation = useMutation({
+    mutationFn: () => {
+      const urls = learnUrlsText.split(/[\n,]+/).map(u => u.trim()).filter(u => u.startsWith("http"));
+      const url = urls[0];
+      if (!url) throw new Error("No URL to test");
+      return apiRequest<{
+        url: string; sourceType: string; elapsed_ms: number; total_facts: number;
+        by_type: Record<string, number>;
+        structured_fields: Record<string, number>;
+        sample: { type: string; name: string; ap?: number; physDef?: number; weight?: number; scalingTable?: string; status?: string; effect?: string; raw: string }[];
+      }>("POST", "/api/debug/wiki-test", { url, gameKey: selectedGameKey });
+    },
+    onSuccess: (data) => {
+      const sf = data.structured_fields;
+      const sfStr = Object.entries(sf).filter(([,v]) => v > 0).map(([k,v]) => `${k}:${v}`).join(" ");
+      const typeStr = Object.entries(data.by_type).map(([k,v]) => `${k}:${v}`).join(" ");
+      const lines = [
+        `✓ ${data.total_facts} facts in ${data.elapsed_ms}ms (${data.sourceType})`,
+        `Types: ${typeStr || "none"}`,
+        `Structured: ${sfStr || "NONE — stats columns not matching"}`,
+        `Sample: ${data.sample.slice(0,3).map(f => `${f.name}(ap=${f.ap ?? "—"} wt=${f.weight ?? "—"} phys=${f.physDef ?? "—"})`).join(", ")}`,
+      ];
+      setWikiTestResult(lines.join("\n"));
+    },
+    onError: (err: Error) => setWikiTestResult(`✗ ${err.message}`),
   });
 
   const updateMutation = useMutation({
@@ -535,11 +563,30 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                     style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-text)", outline: "none", lineHeight: "1.5" }}
                     onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) learnMutation.mutate(); }}
                   />
-                  <p style={{ fontSize: "0.6rem", color: "var(--color-dim2)" }}>
-                    {learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length > 0
-                      ? `${learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length} URL${learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length === 1 ? "" : "s"} ready · Ctrl+Enter to start`
-                      : "Paste category pages for accurate extraction, or leave empty to let AI search the web"}
-                  </p>
+                  <div className="flex items-center justify-between gap-1">
+                    <p style={{ fontSize: "0.6rem", color: "var(--color-dim2)" }}>
+                      {learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length > 0
+                        ? `${learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length} URL${learnUrlsText.split(/[\n,]+/).filter(u => u.trim().startsWith("http")).length === 1 ? "" : "s"} ready · Ctrl+Enter to start`
+                        : "Paste category pages for accurate extraction, or leave empty to let AI search the web"}
+                    </p>
+                    {learnUrlsText.trim().startsWith("http") && (
+                      <button
+                        onClick={() => { setWikiTestResult(null); wikiTestMutation.mutate(); }}
+                        disabled={wikiTestMutation.isPending}
+                        className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5 flex-shrink-0"
+                        style={{ color: "var(--color-dim)", border: "1px solid #302820", fontSize: "0.6rem" }}
+                        title="Test first URL — shows how many facts & structured fields are extracted"
+                      >
+                        {wikiTestMutation.isPending ? "Testing..." : "Test URL"}
+                      </button>
+                    )}
+                  </div>
+                  {wikiTestResult && (
+                    <pre
+                      className="rounded p-2 text-xs whitespace-pre-wrap"
+                      style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-dim2)", fontSize: "0.6rem", lineHeight: 1.5 }}
+                    >{wikiTestResult}</pre>
+                  )}
                 </div>
               )}
             </div>

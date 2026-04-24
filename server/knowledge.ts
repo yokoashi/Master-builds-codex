@@ -122,12 +122,25 @@ export function updateKnowledgeCache(
     }
   }
 
-  // Dedup by 40-char prefix of raw string (replace old entry with newer one)
+  // Dedup by (type + name) — new facts replace old ones for the same item.
+  // Raw-prefix dedup was wrong: a thin fact "WEAPON: Sword | Loc:x" and a rich
+  // fact "WEAPON: Sword | attack: 250 | wt:5" have different prefixes and both
+  // survive, so the thin fact with "—" stats persists in the viewer.
+  const factKey = (f: KnowledgeFact) => `${f.type}:${f.name.toLowerCase().trim()}`;
   const factMap = new Map<string, KnowledgeFact>(
-    currentFacts.map((f) => [f.raw.substring(0, DEDUP_PREFIX_LEN), f])
+    currentFacts.map((f) => [factKey(f), f])
   );
   for (const fact of newFacts) {
-    factMap.set(fact.raw.substring(0, DEDUP_PREFIX_LEN), fact);
+    const key = factKey(fact);
+    const existing = factMap.get(key);
+    // Keep whichever fact has more structured data (more non-null fields)
+    const score = (f: KnowledgeFact) =>
+      [f.ap, f.physDef, f.magicDef, f.fireDef, f.lightningDef, f.holyDef,
+       f.poise, f.weight, f.damageTable, f.scalingTable, f.status, f.effect,
+       f.requirements, f.location, f.upgrade].filter(v => v != null).length;
+    if (!existing || score(fact) >= score(existing)) {
+      factMap.set(key, fact);
+    }
   }
 
   let merged = Array.from(factMap.values());

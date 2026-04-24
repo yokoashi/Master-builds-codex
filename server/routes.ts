@@ -13,7 +13,7 @@ import {
   buildKnowledgeBlock,
   parseLearnLines,
 } from "./knowledge";
-import { fetchWikiPrePass } from "./wiki-fetch";
+import { fetchWikiPrePass, parseWikiPage } from "./wiki-fetch";
 import { parseJsonResponse } from "./parse-json";
 import { SEED_GAMES, SEED_BUILDS } from "@shared/seed-data";
 import type {
@@ -569,6 +569,72 @@ export function registerRoutes(httpServer: Server, app: Express) {
       res.json({ facts, patchNote: cache.patchNote, updatedAt: cache.updatedAt });
     } catch {
       res.json({ facts: [], patchNote: null, updatedAt: null });
+    }
+  });
+
+  // ── POST /api/debug/wiki-test — diagnose wiki URL parsing ───────────────────
+  // Fetches a single URL, runs parseWikiPage, and returns a diagnostic report:
+  // table count, headers found, fact count, sample facts, structured field hits.
+  // Used to verify whether Strategy 0/1/2/3 are working for a given wiki URL.
+  app.post("/api/debug/wiki-test", async (req, res) => {
+    try {
+      const { url, gameKey = "debug" } = req.body as { url: string; gameKey?: string };
+      if (!url) return res.status(400).json({ error: "url required" });
+
+      const sourceType = url.includes("fextralife.com") ? "fextralife"
+        : (url.includes("fandom.com") || url.includes("gamepedia.com")) ? "fandom"
+        : "generic";
+
+      const start = Date.now();
+      const facts = await parseWikiPage(url, gameKey, sourceType);
+      const elapsed = Date.now() - start;
+
+      // Count structured field coverage
+      const withAp       = facts.filter(f => f.ap != null).length;
+      const withPhysDef  = facts.filter(f => f.physDef != null).length;
+      const withWeight   = facts.filter(f => f.weight != null).length;
+      const withScaling  = facts.filter(f => f.scalingTable != null).length;
+      const withStatus   = facts.filter(f => f.status != null).length;
+      const withEffect   = facts.filter(f => f.effect != null).length;
+      const withLocation = facts.filter(f => f.location != null).length;
+      const withDmgTable = facts.filter(f => f.damageTable != null).length;
+      const withReqs     = facts.filter(f => f.requirements != null).length;
+
+      // Type breakdown
+      const byType: Record<string, number> = {};
+      for (const f of facts) byType[f.type] = (byType[f.type] ?? 0) + 1;
+
+      res.json({
+        url,
+        sourceType,
+        elapsed_ms: elapsed,
+        total_facts: facts.length,
+        by_type: byType,
+        structured_fields: {
+          ap: withAp,
+          physDef: withPhysDef,
+          weight: withWeight,
+          scalingTable: withScaling,
+          status: withStatus,
+          effect: withEffect,
+          location: withLocation,
+          damageTable: withDmgTable,
+          requirements: withReqs,
+        },
+        sample: facts.slice(0, 10).map(f => ({
+          type: f.type,
+          name: f.name,
+          ap: f.ap,
+          physDef: f.physDef,
+          weight: f.weight,
+          scalingTable: f.scalingTable,
+          status: f.status,
+          effect: f.effect,
+          raw: f.raw.slice(0, 120),
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
     }
   });
 
