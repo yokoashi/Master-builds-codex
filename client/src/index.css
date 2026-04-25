@@ -387,8 +387,8 @@ button { cursor: pointer; }
 
 /* Grimoire: slow arcane ink bleed on borders */
 @keyframes inkBleed {
-  0%, 100% { box-shadow: inset 0 0 12px rgba(120, 80, 200, 0.12), 0 0 4px rgba(120, 80, 200, 0.08); }
-  50%       { box-shadow: inset 0 0 20px rgba(120, 80, 200, 0.22), 0 0 8px rgba(120, 80, 200, 0.16); }
+  0%, 100% { box-shadow: inset 0 0 14px rgba(120, 80, 200, 0.15), 0 0 5px rgba(120, 80, 200, 0.10); }
+  50%       { box-shadow: inset 0 0 30px rgba(120, 80, 200, 0.30), 0 0 14px rgba(120, 80, 200, 0.20); }
 }
 /* Forge: ember glow pulse on card edges */
 @keyframes emberPulse {
@@ -412,14 +412,15 @@ button { cursor: pointer; }
 }
 
 /* ── Grimoire ─────────────────────────────────────────────────────────────────
-   Ancient spellbook. Blackletter headers, aged serif body, parchment-burnt bg.
-   Borders glow with arcane ink. Decorative flourish via ::before pseudo-elements.
+   Ancient spellbook — full tome layout transformation.
+   Illuminated manuscript: gilt binding edge, parchment ground, rubricated
+   headers, arcane ink-bleed borders, marginalia annotations, velum surfaces.
    ─────────────────────────────────────────────────────────────────────────── */
 [data-theme="grimoire"] {
-  --color-bg:      #110e07;
-  --color-card:    #1c1608;
-  --color-card-hi: #251d0c;
-  --color-card-2:  #2e2410;
+  --color-bg:      #0e0b05;
+  --color-card:    #1a1408;
+  --color-card-hi: #221b0b;
+  --color-card-2:  #2b2110;
   --color-text:    #d4c89a;
   --color-dim:     #8a7a50;
   --color-dim2:    #6a5c38;
@@ -434,36 +435,319 @@ button { cursor: pointer; }
   --font-display: 'UnifrakturMaguntia', 'Palatino Linotype', serif;
   --font-body:    'IM Fell English', 'Georgia', serif;
 
-  /* Parchment noise texture via SVG data URL */
-  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
-  --border-deco: 1px solid rgba(160, 120, 40, 0.35);
+  /* Richer parchment grain — more visible, larger tile */
+  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.62' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+  --border-deco: 1px solid rgba(160, 120, 40, 0.40);
   --card-anim:   inkBleed 4s ease-in-out infinite;
 }
 
+/* ── Body: burnt-vellum ground with radial depth ─────────────────────────── */
 [data-theme="grimoire"] body {
-  background-image: var(--bg-texture);
-  background-size: 200px 200px;
+  background-image:
+    var(--bg-texture),
+    radial-gradient(ellipse 110% 70% at 50% 45%, #1a1408 0%, #0e0b05 65%, #080602 100%);
+  background-size: 300px 300px, cover;
 }
 
-/* Grimoire: cards breathe with arcane ink */
-[data-theme="grimoire"] .bg-\[\#171310\],
-[data-theme="grimoire"] .bg-\[\#1f1a14\],
-[data-theme="grimoire"] .bg-\[\#251f17\] {
-  animation: inkBleed 4s ease-in-out infinite;
-  border-color: rgba(160, 120, 40, 0.25) !important;
+/* ── Decorative page-border frame (fixed overlay, never clips content) ─────── */
+[data-theme="grimoire"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9990;
+  border: 5px solid rgba(120, 88, 22, 0.22);
+  box-shadow:
+    inset 0 0 0 1px rgba(160, 120, 40, 0.10),
+    inset 0 0 70px rgba(0, 0, 0, 0.45);
 }
 
-/* Grimoire: headings get full blackletter treatment */
+/* Top-left corner diamond */
+[data-theme="grimoire"] body::after {
+  content: '✦';
+  position: fixed;
+  top: 9px; left: 12px;
+  pointer-events: none;
+  z-index: 9991;
+  color: rgba(160, 120, 40, 0.42);
+  font-size: 0.6rem;
+  line-height: 1;
+  text-shadow: 0 0 7px rgba(160, 120, 40, 0.35);
+}
+
+/* Top-right corner diamond */
+[data-theme="grimoire"] html::before {
+  content: '✦';
+  position: fixed;
+  top: 9px; right: 12px;
+  pointer-events: none;
+  z-index: 9991;
+  color: rgba(160, 120, 40, 0.42);
+  font-size: 0.6rem;
+  text-shadow: 0 0 7px rgba(160, 120, 40, 0.35);
+}
+
+/* Bottom corner diamonds */
+[data-theme="grimoire"] html::after {
+  content: '✦                                        ✦';
+  position: fixed;
+  bottom: 9px; left: 0; right: 0;
+  pointer-events: none;
+  z-index: 9991;
+  color: rgba(160, 120, 40, 0.42);
+  font-size: 0.6rem;
+  text-align: center;
+  letter-spacing: 6px;
+  text-shadow: 0 0 7px rgba(160, 120, 40, 0.35);
+}
+
+/* ── Title bar: illuminated manuscript header ─────────────────────────────── */
+[data-theme="grimoire"] .flex-shrink-0.select-none {
+  background: linear-gradient(180deg, #1e1808 0%, #151006 100%) !important;
+  border-bottom: 1px solid rgba(155, 115, 30, 0.48) !important;
+  position: relative;
+}
+
+/* Floret ornament centred on the lower rule */
+[data-theme="grimoire"] .flex-shrink-0.select-none::after {
+  content: '❧ · ✦ · ❧';
+  position: absolute;
+  bottom: -8px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg);
+  padding: 0 10px;
+  color: rgba(155, 115, 30, 0.58);
+  font-size: 0.48rem;
+  letter-spacing: 3px;
+  pointer-events: none;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+/* ── Sidebar: leather tome index / book binding ───────────────────────────── */
+[data-theme="grimoire"] aside {
+  background: linear-gradient(180deg, #130f07 0%, #0c0905 100%) !important;
+  border-right: none !important;
+  position: relative;
+}
+
+/* Gilded spine edge — three-tone gold shimmer */
+[data-theme="grimoire"] aside::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; right: 0;
+  width: 2px;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(180, 140, 40, 0.55) 10%,
+    rgba(210, 168, 60, 0.80) 28%,
+    rgba(165, 125, 32, 0.50) 50%,
+    rgba(210, 168, 60, 0.80) 72%,
+    rgba(180, 140, 40, 0.55) 90%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* Thin dark line just inside the gold for depth */
+[data-theme="grimoire"] aside::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; right: 2px;
+  width: 1px;
+  background: rgba(50, 36, 8, 0.60);
+  pointer-events: none;
+}
+
+/* Sidebar brand header */
+[data-theme="grimoire"] aside > div:first-child {
+  border-bottom: 1px solid rgba(145, 105, 28, 0.38) !important;
+  background: linear-gradient(180deg, rgba(155, 115, 30, 0.09), transparent) !important;
+}
+
+/* Sidebar bottom tray */
+[data-theme="grimoire"] aside > div:last-child {
+  border-top: 1px solid rgba(145, 105, 28, 0.32) !important;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.38), transparent) !important;
+}
+
+/* Game separator rules: ornamental ink line */
+[data-theme="grimoire"] aside div[style*="linear-gradient(90deg, transparent"] {
+  background: linear-gradient(90deg, transparent, rgba(165, 125, 32, 0.32), transparent) !important;
+  height: 1px !important;
+}
+
+/* Sidebar buttons: small-caps index style */
+[data-theme="grimoire"] aside button {
+  font-variant: small-caps;
+  letter-spacing: 0.12em;
+}
+
+/* ── Tab bar: illuminated chapter ribbon ──────────────────────────────────── */
+[data-theme="grimoire"] [role="tablist"] {
+  background: linear-gradient(180deg, #1c1608 0%, #110e07 100%) !important;
+  border-bottom: 1px solid rgba(145, 105, 28, 0.42) !important;
+}
+
+/* Chapter tab buttons */
+[data-theme="grimoire"] button[role="tab"] {
+  font-family: var(--font-body) !important;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  border-radius: 3px 3px 0 0 !important;
+  transition: color 0.2s, background 0.2s !important;
+}
+
+/* Active chapter — the open page */
+[data-theme="grimoire"] button[role="tab"][aria-selected="true"] {
+  background: var(--color-bg) !important;
+  border: 1px solid rgba(145, 105, 28, 0.48) !important;
+  border-bottom: 1px solid var(--color-bg) !important;
+  color: var(--color-gold) !important;
+  text-shadow: 0 0 14px rgba(185, 145, 40, 0.50);
+}
+
+/* Inactive chapters — closed page edge */
+[data-theme="grimoire"] button[role="tab"]:not([aria-selected="true"]) {
+  color: var(--color-dim2) !important;
+  border: 1px solid transparent !important;
+}
+
+[data-theme="grimoire"] button[role="tab"]:not([aria-selected="true"]):hover {
+  color: var(--color-dim) !important;
+  background: rgba(145, 105, 28, 0.08) !important;
+}
+
+/* ── Phase nav: chapter progression markers ───────────────────────────────── */
+[data-theme="grimoire"] [data-testid^="phase-btn-"] {
+  font-family: var(--font-body) !important;
+  font-style: italic;
+  letter-spacing: 0.03em;
+  border: 1px solid rgba(100, 72, 18, 0.42) !important;
+}
+
+[data-theme="grimoire"] [data-testid^="ng-cycle-btn-"] {
+  font-family: var(--font-body) !important;
+  font-style: italic;
+}
+
+/* ── Hero card: illuminated panel with arcane corner diamonds ─────────────── */
+[data-theme="grimoire"] [data-testid="build-hero-card"] {
+  border: 1px solid rgba(145, 105, 28, 0.48) !important;
+  box-shadow:
+    0 0 0 1px rgba(88, 60, 12, 0.22),
+    0 6px 28px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(185, 145, 40, 0.13) !important;
+  position: relative;
+  overflow: visible !important;
+}
+
+[data-theme="grimoire"] [data-testid="build-hero-card"]::before {
+  content: '✦';
+  position: absolute;
+  top: 5px; left: 8px;
+  color: rgba(155, 93, 229, 0.52);
+  font-size: 0.55rem;
+  pointer-events: none;
+  text-shadow: 0 0 9px rgba(155, 93, 229, 0.55);
+}
+
+[data-theme="grimoire"] [data-testid="build-hero-card"]::after {
+  content: '✦';
+  position: absolute;
+  top: 5px; right: 8px;
+  color: rgba(155, 93, 229, 0.52);
+  font-size: 0.55rem;
+  pointer-events: none;
+  text-shadow: 0 0 9px rgba(155, 93, 229, 0.55);
+}
+
+/* ── Phase note: margin annotation ───────────────────────────────────────── */
+[data-theme="grimoire"] [data-testid="phase-note"] {
+  background: rgba(145, 105, 28, 0.07) !important;
+  border: 1px solid rgba(145, 105, 28, 0.24) !important;
+  border-left: 3px solid rgba(155, 93, 229, 0.58) !important;
+  font-style: italic;
+}
+
+/* ── Damage summary: arcane formula panel ─────────────────────────────────── */
+[data-theme="grimoire"] [data-testid="damage-summary"] {
+  border: 1px solid rgba(145, 105, 28, 0.38) !important;
+  position: relative;
+  overflow: visible !important;
+}
+
+[data-theme="grimoire"] [data-testid="damage-summary"]::before {
+  content: '⁂';
+  position: absolute;
+  top: -9px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-bg);
+  padding: 0 10px;
+  color: rgba(155, 93, 229, 0.58);
+  font-size: 0.7rem;
+  font-family: var(--font-body);
+  pointer-events: none;
+}
+
+/* ── Item cards: tome entry style ─────────────────────────────────────────── */
+[data-theme="grimoire"] [data-testid^="item-card-"] {
+  border: 1px solid rgba(110, 80, 18, 0.38) !important;
+}
+
+[data-theme="grimoire"] [data-testid^="item-card-"]:hover {
+  border-color: rgba(155, 93, 229, 0.38) !important;
+}
+
+/* ── Headings: full blackletter + arcane glow ─────────────────────────────── */
 [data-theme="grimoire"] h1,
 [data-theme="grimoire"] h2,
 [data-theme="grimoire"] h3 {
   letter-spacing: 0.02em;
-  text-shadow: 0 0 20px rgba(155, 93, 229, 0.3);
+  text-shadow: 0 0 22px rgba(155, 93, 229, 0.38), 0 1px 3px rgba(0, 0, 0, 0.90);
 }
 
-/* Grimoire: scrollbar becomes inkwell */
-[data-theme="grimoire"] ::-webkit-scrollbar-thumb { background: #6a3a90; }
-[data-theme="grimoire"] ::-webkit-scrollbar-thumb:hover { background: #8a50b8; }
+[data-theme="grimoire"] h1 {
+  font-size: 1.6em !important;
+  line-height: 1.1;
+}
+
+/* ── Inputs: parchment-lined ──────────────────────────────────────────────── */
+[data-theme="grimoire"] textarea,
+[data-theme="grimoire"] input[type="text"],
+[data-theme="grimoire"] input[type="url"] {
+  border-color: rgba(130, 95, 22, 0.42) !important;
+  background: rgba(14, 11, 5, 0.88) !important;
+  font-family: var(--font-body) !important;
+  font-style: italic;
+  color: var(--color-text) !important;
+}
+
+/* ── Scrollbar: inkwell ───────────────────────────────────────────────────── */
+[data-theme="grimoire"] ::-webkit-scrollbar { width: 5px; background: #0a0703; }
+[data-theme="grimoire"] ::-webkit-scrollbar-track { background: #0e0b05; }
+[data-theme="grimoire"] ::-webkit-scrollbar-thumb { background: #5c3385; }
+[data-theme="grimoire"] ::-webkit-scrollbar-thumb:hover { background: #7a4aa8; }
+
+/* ── Selection: arcane highlight ─────────────────────────────────────────── */
+[data-theme="grimoire"] ::selection {
+  background: rgba(155, 93, 229, 0.28);
+  color: var(--color-bright);
+}
+
+/* ── Focus rings: arcane glow ─────────────────────────────────────────────── */
+[data-theme="grimoire"] :focus-visible {
+  outline: 2px solid rgba(155, 93, 229, 0.58);
+  outline-offset: 2px;
+}
+
+/* ── Card classes: arcane ink-bleed animation ─────────────────────────────── */
+[data-theme="grimoire"] .bg-\[\#171310\],
+[data-theme="grimoire"] .bg-\[\#1f1a14\],
+[data-theme="grimoire"] .bg-\[\#251f17\] {
+  animation: inkBleed 4s ease-in-out infinite;
+  border-color: rgba(130, 95, 22, 0.32) !important;
+}
 
 /* ── Forge ────────────────────────────────────────────────────────────────────
    Blacksmith's workshop. Heavy condensed headers, iron-dark bg, molten accents.
