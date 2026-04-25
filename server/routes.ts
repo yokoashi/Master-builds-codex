@@ -2144,47 +2144,48 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
   app.post("/api/import", (req, res) => {
     try {
       const data = req.body as {
-        version: number;
-        hiddenSeedBuilds?: string[];
-        dynamicGames?: Game[];
-        dynamicBuilds?: Build[];
+        version?: number;
+        hiddenSeedBuilds?: unknown;
+        dynamicGames?: unknown;
+        dynamicBuilds?: unknown;
       };
 
       let imported = 0;
 
       // Restore hidden seeds
-      if (data.hiddenSeedBuilds) {
-        for (const key of data.hiddenSeedBuilds) {
-          storage.hideStaticBuild(key);
-        }
+      const hiddenBuilds = Array.isArray(data.hiddenSeedBuilds)
+        ? data.hiddenSeedBuilds
+        : [];
+      for (const key of hiddenBuilds) {
+        if (typeof key === "string") storage.hideStaticBuild(key);
       }
 
       // Import dynamic games
-      if (data.dynamicGames) {
-        for (const game of data.dynamicGames) {
-          const existing = storage.getDynamicGame(game.key);
-          if (!existing) {
-            storage.createDynamicGame({
-              key: game.key,
-              data: JSON.stringify(game),
-            });
-            imported++;
-          }
+      const games = Array.isArray(data.dynamicGames) ? data.dynamicGames : [];
+      for (const game of games) {
+        if (!game || typeof game !== "object") continue;
+        const g = game as Record<string, unknown>;
+        const key = typeof g.key === "string" ? g.key : null;
+        if (!key) continue;
+        const existing = storage.getDynamicGame(key);
+        if (!existing) {
+          storage.createDynamicGame({ key, data: JSON.stringify(game) });
+          imported++;
         }
       }
 
       // Import dynamic builds
-      if (data.dynamicBuilds) {
-        for (const build of data.dynamicBuilds) {
-          const existing = storage.getDynamicBuild(build.key);
-          if (!existing) {
-            storage.createDynamicBuild({
-              key: build.key,
-              gameKey: build.gameKey,
-              data: JSON.stringify(build),
-            });
-            imported++;
-          }
+      const builds = Array.isArray(data.dynamicBuilds) ? data.dynamicBuilds : [];
+      for (const build of builds) {
+        if (!build || typeof build !== "object") continue;
+        const b = build as Record<string, unknown>;
+        const key = typeof b.key === "string" ? b.key : null;
+        const gameKey = typeof b.gameKey === "string" ? b.gameKey : null;
+        if (!key || !gameKey) continue;
+        const existing = storage.getDynamicBuild(key);
+        if (!existing) {
+          storage.createDynamicBuild({ key, gameKey, data: JSON.stringify(build) });
+          imported++;
         }
       }
 
