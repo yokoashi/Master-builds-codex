@@ -2152,6 +2152,28 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
 
       let imported = 0;
 
+      /** Build a minimal valid Game object, merging provided fields with defaults. */
+      const makeGameObject = (key: string, partial: Record<string, unknown> = {}) => {
+        const name =
+          typeof partial.name === "string" && partial.name.trim()
+            ? partial.name.trim()
+            : key.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        return {
+          key,
+          name,
+          icon: typeof partial.icon === "string" && partial.icon ? partial.icon : "🎮",
+          statMax: typeof partial.statMax === "number" ? partial.statMax : 99,
+          endgameBudget: typeof partial.endgameBudget === "number" ? partial.endgameBudget : 150,
+          softCaps:
+            partial.softCaps && typeof partial.softCaps === "object" && !Array.isArray(partial.softCaps)
+              ? (partial.softCaps as Record<string, number | null>)
+              : {},
+          mats: Array.isArray(partial.mats) ? partial.mats : [],
+          weightInfo: Array.isArray(partial.weightInfo) ? partial.weightInfo : [],
+          isCustom: true,
+        };
+      }
+
       // Restore hidden seeds
       const hiddenBuilds = Array.isArray(data.hiddenSeedBuilds)
         ? data.hiddenSeedBuilds
@@ -2160,7 +2182,7 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
         if (typeof key === "string") storage.hideStaticBuild(key);
       }
 
-      // Import dynamic games
+      // Import dynamic games (partial objects are filled with defaults)
       const games = Array.isArray(data.dynamicGames) ? data.dynamicGames : [];
       for (const game of games) {
         if (!game || typeof game !== "object") continue;
@@ -2169,12 +2191,13 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
         if (!key) continue;
         const existing = storage.getDynamicGame(key);
         if (!existing) {
-          storage.createDynamicGame({ key, data: JSON.stringify(game) });
+          const gameObj = makeGameObject(key, g);
+          storage.createDynamicGame({ key, data: JSON.stringify(gameObj) });
           imported++;
         }
       }
 
-      // Import dynamic builds
+      // Import dynamic builds; auto-create game if unknown
       const builds = Array.isArray(data.dynamicBuilds) ? data.dynamicBuilds : [];
       for (const build of builds) {
         if (!build || typeof build !== "object") continue;
@@ -2182,6 +2205,15 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
         const key = typeof b.key === "string" ? b.key : null;
         const gameKey = typeof b.gameKey === "string" ? b.gameKey : null;
         if (!key || !gameKey) continue;
+
+        // Auto-create the game if it doesn't exist in seeds or dynamic games
+        const seedGame = SEED_GAMES.find((g) => g.key === gameKey);
+        if (!seedGame && !storage.getDynamicGame(gameKey)) {
+          const gameObj = makeGameObject(gameKey);
+          storage.createDynamicGame({ key: gameKey, data: JSON.stringify(gameObj) });
+          imported++;
+        }
+
         const existing = storage.getDynamicBuild(key);
         if (!existing) {
           storage.createDynamicBuild({ key, gameKey, data: JSON.stringify(build) });
