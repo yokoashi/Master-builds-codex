@@ -271,7 +271,6 @@ function BuildTabInner({ build, game, onDelete, twoColumn }: Props) {
 
   // ── Two-column open-book layout (Grimoire theme) ───────────────────────────
   if (twoColumn) {
-    const rulingLines = "repeating-linear-gradient(to bottom, transparent 0px, transparent 27px, rgba(145,108,32,0.055) 27px, rgba(145,108,32,0.055) 28px)";
     return (
       <div
         className="animate-fade-in"
@@ -284,7 +283,7 @@ function BuildTabInner({ build, game, onDelete, twoColumn }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 4px 1fr", flex: 1, minHeight: 0 }}>
 
           {/* ── Left page: identity + gear ──────────────────────────────── */}
-          <div style={{ overflowY: "auto", padding: "16px 20px", backgroundImage: rulingLines, backgroundAttachment: "local" }}>
+          <div className="grimoire-page" style={{ overflowY: "auto", padding: "16px 20px" }}>
             {heroCard}
             {phaseNote}
             {loadoutBlock}
@@ -300,7 +299,7 @@ function BuildTabInner({ build, game, onDelete, twoColumn }: Props) {
           }} />
 
           {/* ── Right page: stats + damage ──────────────────────────────── */}
-          <div style={{ overflowY: "auto", padding: "16px 20px", backgroundImage: rulingLines, backgroundAttachment: "local" }}>
+          <div className="grimoire-page" style={{ overflowY: "auto", padding: "16px 20px" }}>
             {/* Phase label at top of right page */}
             <div className="mb-4 pb-2.5" style={{ borderBottom: "1px solid rgba(145,108,32,0.28)" }}>
               <p className="text-xs font-semibold" style={{ color: "var(--color-gold)", fontFamily: "var(--font-display)", letterSpacing: "0.12em" }}>

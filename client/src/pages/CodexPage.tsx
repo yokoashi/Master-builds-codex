@@ -391,6 +391,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                   {/* Game header */}
                   <button
                     data-testid={`sidebar-game-${game.key}`}
+                    data-active={isGameActive ? "true" : undefined}
                     onClick={() => setSelectedGameKey(game.key)}
                     className="w-full text-left px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-all flex items-center gap-2"
                     style={
@@ -416,6 +417,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                       <button
                         key={build.key}
                         data-testid={`sidebar-build-${build.key}`}
+                        data-active={isActive ? "true" : undefined}
                         onClick={() => setSelectedBuildKey(build.key)}
                         className="w-full text-left py-2 text-xs transition-all flex flex-col gap-0.5"
                         style={

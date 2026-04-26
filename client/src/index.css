@@ -413,62 +413,60 @@ button { cursor: pointer; }
 
 /* ── Grimoire ─────────────────────────────────────────────────────────────────
    Ancient spellbook — full tome layout transformation.
-   Illuminated manuscript: gilt binding edge, parchment ground, rubricated
-   headers, arcane ink-bleed borders, marginalia annotations, velum surfaces.
+   Illuminated manuscript: gilt binding edge, warm parchment pages, dark ink,
+   rubricated headers, arcane ink-bleed borders, marginalia annotations.
    ─────────────────────────────────────────────────────────────────────────── */
 [data-theme="grimoire"] {
-  --color-bg:      #201808;   /* dark parchment — warm, visibly paper-like */
-  --color-card:    #2a1f0c;
-  --color-card-hi: #332710;
-  --color-card-2:  #3c2e14;
-  --color-text:    #d4c89a;
-  --color-dim:     #8a7a50;
-  --color-dim2:    #6a5c38;
-  --color-bright:  #f0e8c0;
-  --color-crimson: #9b5de5;
-  --color-gold:    #c9a84c;
-  --color-purple:  #7b2fff;
-  --color-blue:    #6a7fff;
-  --color-green:   #5cba7a;
-  --color-fire:    #c97a2a;
+  --color-bg:      #e2cfa0;   /* warm parchment — aged vellum */
+  --color-card:    #d8c290;   /* card panels on parchment */
+  --color-card-hi: #eadaac;   /* highlight panels */
+  --color-card-2:  #ccb07c;
+  --color-text:    #1a1008;   /* dark brown ink */
+  --color-dim:     #5a4220;   /* faded ink */
+  --color-dim2:    #7a6038;   /* very faded ink */
+  --color-bright:  #080402;   /* near-black for headers */
+  --color-crimson: #7820d0;   /* arcane purple ink */
+  --color-gold:    #7a5818;   /* aged gold on light ground */
+  --color-purple:  #4810a8;   /* deep purple ink */
+  --color-blue:    #1828a0;   /* blue ink */
+  --color-green:   #1a6028;   /* green ink */
+  --color-fire:    #8a2800;   /* burnt sienna */
 
   --font-display: 'UnifrakturMaguntia', 'Palatino Linotype', serif;
   --font-body:    'IM Fell English', 'Georgia', serif;
 
-  /* Richer parchment grain — more visible, larger tile */
-  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.62' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
-  --border-deco: 1px solid rgba(160, 120, 40, 0.40);
+  --bg-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.62' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  --border-deco: 1px solid rgba(100, 72, 18, 0.42);
   --card-anim:   inkBleed 4s ease-in-out infinite;
 }
 
-/* ── Body: dark oak desk the book sits on ────────────────────────────────── */
+/* ── Body: dark oak desk the book rests on ───────────────────────────────── */
 [data-theme="grimoire"] body {
-  background: #07050200;
   background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.35' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23w)' opacity='0.06'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.35' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23w)' opacity='0.05'/%3E%3C/svg%3E"),
     radial-gradient(ellipse 120% 100% at 50% 50%, #100c06 0%, #070502 100%);
   background-size: 200px 200px, cover;
 }
 
-/* ── Page surfaces: parchment grain over the warmer bg ───────────────────── */
+/* ── Book surface: parchment grain ───────────────────────────────────────── */
 [data-theme="grimoire"] .h-screen {
   background-image:
     var(--bg-texture),
-    radial-gradient(ellipse 90% 70% at 50% 40%, #251e0b 0%, #201808 70%, #1a1407 100%);
+    radial-gradient(ellipse 90% 70% at 50% 40%, #e8d8b0 0%, #dcc898 70%, #d0b880 100%);
   background-size: 300px 300px, cover;
 }
 
-/* ── Decorative page-border frame (fixed overlay, never clips content) ─────── */
+/* ── Decorative page-border frame ─────────────────────────────────────────── */
 [data-theme="grimoire"] body::before {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 9990;
-  border: 5px solid rgba(120, 88, 22, 0.22);
+  border: 5px solid rgba(100, 72, 18, 0.28);
   box-shadow:
-    inset 0 0 0 1px rgba(160, 120, 40, 0.10),
-    inset 0 0 70px rgba(0, 0, 0, 0.45);
+    inset 0 0 0 1px rgba(140, 100, 30, 0.14),
+    inset 0 0 60px rgba(0, 0, 0, 0.25);
 }
 
 /* Top-left corner diamond */
@@ -478,10 +476,10 @@ button { cursor: pointer; }
   top: 9px; left: 12px;
   pointer-events: none;
   z-index: 9991;
-  color: rgba(160, 120, 40, 0.42);
+  color: rgba(100, 72, 18, 0.55);
   font-size: 0.6rem;
   line-height: 1;
-  text-shadow: 0 0 7px rgba(160, 120, 40, 0.35);
+  text-shadow: 0 0 5px rgba(120, 88, 22, 0.35);
 }
 
 /* Top-right corner diamond */
@@ -491,9 +489,9 @@ button { cursor: pointer; }
   top: 9px; right: 12px;
   pointer-events: none;
   z-index: 9991;
-  color: rgba(160, 120, 40, 0.42);
+  color: rgba(100, 72, 18, 0.55);
   font-size: 0.6rem;
-  text-shadow: 0 0 7px rgba(160, 120, 40, 0.35);
+  text-shadow: 0 0 5px rgba(120, 88, 22, 0.35);
 }
 
 /* Bottom corner diamonds */
@@ -503,30 +501,30 @@ button { cursor: pointer; }
   bottom: 9px; left: 0; right: 0;
   pointer-events: none;
   z-index: 9991;
-  color: rgba(160, 120, 40, 0.42);
+  color: rgba(100, 72, 18, 0.55);
   font-size: 0.6rem;
   text-align: center;
   letter-spacing: 6px;
-  text-shadow: 0 0 7px rgba(160, 120, 40, 0.35);
+  text-shadow: 0 0 5px rgba(120, 88, 22, 0.35);
 }
 
-/* ── Title bar: book headband (the coloured ribbon sewn to the spine top) ─── */
+/* ── Title bar: dark headband ribbon ─────────────────────────────────────── */
 [data-theme="grimoire"] .flex-shrink-0.select-none {
   background: linear-gradient(180deg, #2a2008 0%, #1c1507 100%) !important;
   border-bottom: 1px solid rgba(155, 115, 30, 0.48) !important;
-  border-top: 3px solid rgba(155, 93, 229, 0.50) !important;  /* headband colour */
+  border-top: 3px solid rgba(155, 93, 229, 0.50) !important;
   position: relative;
 }
 
-/* Floret ornament centred on the lower rule */
+/* Floret ornament on the lower rule */
 [data-theme="grimoire"] .flex-shrink-0.select-none::after {
   content: '❧ · ✦ · ❧';
   position: absolute;
   bottom: -8px; left: 50%;
   transform: translateX(-50%);
-  background: var(--color-bg);
+  background: #1c1507;
   padding: 0 10px;
-  color: rgba(155, 115, 30, 0.58);
+  color: rgba(185, 148, 40, 0.65);
   font-size: 0.48rem;
   letter-spacing: 3px;
   pointer-events: none;
@@ -534,14 +532,23 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
-/* ── Sidebar: leather tome index / book binding ───────────────────────────── */
+/* ── Sidebar: dark leather binding — scoped vars keep text readable ───────── */
 [data-theme="grimoire"] aside {
+  /* Re-scope CSS vars to dark values so sidebar text stays light */
+  --color-bg:      #0f0c06;
+  --color-card:    #1a1508;
+  --color-card-hi: #221c0a;
+  --color-text:    #c8b088;
+  --color-dim:     #8a7050;
+  --color-dim2:    #6a5438;
+  --color-bright:  #e8d8a8;
+  --color-gold:    #c9a84c;
   background: linear-gradient(180deg, #130f07 0%, #0c0905 100%) !important;
   border-right: none !important;
   position: relative;
 }
 
-/* Gilded spine edge — three-tone gold shimmer */
+/* Gilded spine edge */
 [data-theme="grimoire"] aside::after {
   content: '';
   position: absolute;
@@ -559,7 +566,7 @@ button { cursor: pointer; }
   pointer-events: none;
 }
 
-/* Thin dark line just inside the gold for depth */
+/* Thin shadow line inside the gold for depth */
 [data-theme="grimoire"] aside::before {
   content: '';
   position: absolute;
@@ -581,7 +588,7 @@ button { cursor: pointer; }
   background: linear-gradient(0deg, rgba(0, 0, 0, 0.38), transparent) !important;
 }
 
-/* Game separator rules: ornamental ink line */
+/* Game separator rules */
 [data-theme="grimoire"] aside div[style*="linear-gradient(90deg, transparent"] {
   background: linear-gradient(90deg, transparent, rgba(165, 125, 32, 0.32), transparent) !important;
   height: 1px !important;
@@ -593,10 +600,59 @@ button { cursor: pointer; }
   letter-spacing: 0.12em;
 }
 
-/* ── Book spine: deep gutter shadow between left and right pages ─────────── */
-/* The content column casts the binding shadow on its left edge              */
+/* ── Sidebar: bookmark-tab indicators ────────────────────────────────────── */
+/* Game section tabs — small coloured rectangle on the right edge */
+[data-theme="grimoire"] button[data-testid^="sidebar-game-"] {
+  position: relative;
+  padding-right: 22px !important;
+}
+
+[data-theme="grimoire"] button[data-testid^="sidebar-game-"]::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 20px;
+  background: rgba(90, 62, 12, 0.30);
+  border: 1px solid rgba(145, 108, 32, 0.35);
+  border-radius: 1px 3px 3px 1px;
+  pointer-events: none;
+}
+
+[data-theme="grimoire"] button[data-testid^="sidebar-game-"][data-active="true"]::after {
+  background: rgba(200, 158, 48, 0.60);
+  border-color: rgba(220, 175, 55, 0.78);
+  box-shadow: 0 0 7px rgba(185, 148, 40, 0.50);
+}
+
+/* Build bookmark flags — thinner ribbon per build */
+[data-theme="grimoire"] button[data-testid^="sidebar-build-"] {
+  position: relative;
+}
+
+[data-theme="grimoire"] button[data-testid^="sidebar-build-"]::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 14px;
+  background: rgba(70, 50, 10, 0.28);
+  border-radius: 1px 2px 2px 1px;
+  pointer-events: none;
+}
+
+[data-theme="grimoire"] button[data-testid^="sidebar-build-"][data-active="true"]::after {
+  background: rgba(145, 78, 215, 0.70);
+  box-shadow: 0 0 5px rgba(145, 78, 215, 0.40);
+}
+
+/* ── Book spine: gutter shadow between left and right pages ──────────────── */
 [data-theme="grimoire"] .flex-col.flex-1.min-h-0 {
-  box-shadow: -12px 0 24px rgba(0, 0, 0, 0.70), inset 6px 0 14px rgba(0, 0, 0, 0.45);
+  box-shadow: -10px 0 22px rgba(0, 0, 0, 0.60), inset 5px 0 12px rgba(0, 0, 0, 0.35);
 }
 
 /* Left page outer edge: stacked-paper silhouette */
@@ -604,24 +660,47 @@ button { cursor: pointer; }
   box-shadow: -4px 0 0 rgba(145, 110, 32, 0.18), -6px 0 0 rgba(120, 90, 22, 0.12), -8px 0 0 rgba(100, 74, 18, 0.07);
 }
 
-/* Right page outer edge: stacked-paper silhouette */
+/* Right page outer edge */
 [data-theme="grimoire"] .flex-col.flex-1.min-h-0 > div:last-child {
   box-shadow: 4px 0 0 rgba(145, 110, 32, 0.18), 6px 0 0 rgba(120, 90, 22, 0.12), 8px 0 0 rgba(100, 74, 18, 0.07);
 }
 
-/* ── Manuscript ruling lines in the content scroll area ──────────────────── */
+/* ── Parchment page surfaces ─────────────────────────────────────────────── */
+/* Single-column scroll area */
 [data-theme="grimoire"] .flex-1.overflow-y-auto.p-4 {
+  background-color: #e2cfa0;
   background-image: repeating-linear-gradient(
     to bottom,
     transparent 0px,
     transparent 27px,
-    rgba(145, 108, 32, 0.055) 27px,
-    rgba(145, 108, 32, 0.055) 28px
+    rgba(90, 62, 18, 0.10) 27px,
+    rgba(90, 62, 18, 0.10) 28px
   );
   background-attachment: local;
 }
 
-/* ── Tab bar: illuminated chapter ribbon ──────────────────────────────────── */
+/* Two-column page divs (class added by BuildTab in Grimoire mode) */
+[data-theme="grimoire"] .grimoire-page {
+  background-color: #e2cfa0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 27px,
+    rgba(90, 62, 18, 0.10) 27px,
+    rgba(90, 62, 18, 0.10) 28px
+  );
+  background-attachment: local;
+}
+
+/* Section divider rules — visible on light parchment */
+[data-theme="grimoire"] .grimoire-page .section-label::before,
+[data-theme="grimoire"] .grimoire-page .section-label::after,
+[data-theme="grimoire"] .flex-1.overflow-y-auto.p-4 .section-label::before,
+[data-theme="grimoire"] .flex-1.overflow-y-auto.p-4 .section-label::after {
+  background: linear-gradient(90deg, transparent, rgba(90, 62, 18, 0.30), transparent);
+}
+
+/* ── Tab bar: dark chapter ribbon — explicit colours (no var inheritance) ─── */
 [data-theme="grimoire"] [role="tablist"] {
   background: linear-gradient(180deg, #1c1608 0%, #110e07 100%) !important;
   border-bottom: 1px solid rgba(145, 105, 28, 0.42) !important;
@@ -636,24 +715,24 @@ button { cursor: pointer; }
   transition: color 0.2s, background 0.2s !important;
 }
 
-/* Active chapter — the open page */
+/* Active chapter — tab opens onto the parchment page below */
 [data-theme="grimoire"] button[role="tab"][aria-selected="true"] {
-  background: var(--color-bg) !important;
-  border: 1px solid rgba(145, 105, 28, 0.48) !important;
-  border-bottom: 1px solid var(--color-bg) !important;
-  color: var(--color-gold) !important;
-  text-shadow: 0 0 14px rgba(185, 145, 40, 0.50);
+  background: #e2cfa0 !important;
+  border: 1px solid rgba(120, 88, 22, 0.50) !important;
+  border-bottom: 1px solid #e2cfa0 !important;
+  color: #7a5818 !important;
+  text-shadow: none;
 }
 
-/* Inactive chapters — closed page edge */
+/* Inactive chapters — explicit gold-dim on dark bar */
 [data-theme="grimoire"] button[role="tab"]:not([aria-selected="true"]) {
-  color: var(--color-dim2) !important;
+  color: rgba(185, 148, 40, 0.52) !important;
   border: 1px solid transparent !important;
 }
 
 [data-theme="grimoire"] button[role="tab"]:not([aria-selected="true"]):hover {
-  color: var(--color-dim) !important;
-  background: rgba(145, 105, 28, 0.08) !important;
+  color: rgba(205, 168, 55, 0.75) !important;
+  background: rgba(145, 105, 28, 0.10) !important;
 }
 
 /* ── Phase nav: chapter progression markers ───────────────────────────────── */
@@ -661,7 +740,6 @@ button { cursor: pointer; }
   font-family: var(--font-body) !important;
   font-style: italic;
   letter-spacing: 0.03em;
-  border: 1px solid rgba(100, 72, 18, 0.42) !important;
 }
 
 [data-theme="grimoire"] [data-testid^="ng-cycle-btn-"] {
@@ -669,13 +747,14 @@ button { cursor: pointer; }
   font-style: italic;
 }
 
-/* ── Hero card: illuminated panel with arcane corner diamonds ─────────────── */
+/* ── Hero card: illuminated panel ─────────────────────────────────────────── */
 [data-theme="grimoire"] [data-testid="build-hero-card"] {
-  border: 1px solid rgba(145, 105, 28, 0.48) !important;
+  background: linear-gradient(135deg, rgba(100, 72, 18, 0.14) 0%, rgba(210, 190, 140, 0.60) 55%) !important;
+  border: 1px solid rgba(100, 72, 18, 0.55) !important;
   box-shadow:
-    0 0 0 1px rgba(88, 60, 12, 0.22),
-    0 6px 28px rgba(0, 0, 0, 0.65),
-    inset 0 1px 0 rgba(185, 145, 40, 0.13) !important;
+    0 0 0 1px rgba(150, 110, 30, 0.15),
+    0 4px 18px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(220, 185, 90, 0.30) !important;
   position: relative;
   overflow: visible !important;
 }
@@ -684,33 +763,34 @@ button { cursor: pointer; }
   content: '✦';
   position: absolute;
   top: 5px; left: 8px;
-  color: rgba(155, 93, 229, 0.52);
+  color: rgba(120, 32, 208, 0.50);
   font-size: 0.55rem;
   pointer-events: none;
-  text-shadow: 0 0 9px rgba(155, 93, 229, 0.55);
+  text-shadow: 0 0 8px rgba(120, 32, 208, 0.40);
 }
 
 [data-theme="grimoire"] [data-testid="build-hero-card"]::after {
   content: '✦';
   position: absolute;
   top: 5px; right: 8px;
-  color: rgba(155, 93, 229, 0.52);
+  color: rgba(120, 32, 208, 0.50);
   font-size: 0.55rem;
   pointer-events: none;
-  text-shadow: 0 0 9px rgba(155, 93, 229, 0.55);
+  text-shadow: 0 0 8px rgba(120, 32, 208, 0.40);
 }
 
-/* ── Phase note: margin annotation ───────────────────────────────────────── */
+/* ── Phase note: marginalia annotation ───────────────────────────────────── */
 [data-theme="grimoire"] [data-testid="phase-note"] {
-  background: rgba(145, 105, 28, 0.07) !important;
-  border: 1px solid rgba(145, 105, 28, 0.24) !important;
-  border-left: 3px solid rgba(155, 93, 229, 0.58) !important;
+  background: rgba(100, 72, 18, 0.08) !important;
+  border: 1px solid rgba(100, 72, 18, 0.28) !important;
+  border-left: 3px solid rgba(120, 32, 208, 0.55) !important;
   font-style: italic;
 }
 
 /* ── Damage summary: arcane formula panel ─────────────────────────────────── */
 [data-theme="grimoire"] [data-testid="damage-summary"] {
-  border: 1px solid rgba(145, 105, 28, 0.38) !important;
+  background: linear-gradient(135deg, rgba(100, 72, 18, 0.10) 0%, rgba(210, 190, 140, 0.50) 60%) !important;
+  border: 1px solid rgba(100, 72, 18, 0.45) !important;
   position: relative;
   overflow: visible !important;
 }
@@ -720,9 +800,9 @@ button { cursor: pointer; }
   position: absolute;
   top: -9px; left: 50%;
   transform: translateX(-50%);
-  background: var(--color-bg);
+  background: #e2cfa0;
   padding: 0 10px;
-  color: rgba(155, 93, 229, 0.58);
+  color: rgba(120, 32, 208, 0.62);
   font-size: 0.7rem;
   font-family: var(--font-body);
   pointer-events: none;
@@ -730,61 +810,72 @@ button { cursor: pointer; }
 
 /* ── Item cards: tome entry style ─────────────────────────────────────────── */
 [data-theme="grimoire"] [data-testid^="item-card-"] {
-  border: 1px solid rgba(110, 80, 18, 0.38) !important;
+  background: rgba(210, 185, 130, 0.45) !important;
+  border: 1px solid rgba(90, 65, 15, 0.40) !important;
 }
 
 [data-theme="grimoire"] [data-testid^="item-card-"]:hover {
-  border-color: rgba(155, 93, 229, 0.38) !important;
+  background: rgba(220, 198, 145, 0.60) !important;
+  border-color: rgba(120, 32, 208, 0.40) !important;
 }
 
-/* ── Headings: full blackletter + arcane glow ─────────────────────────────── */
-[data-theme="grimoire"] h1,
+/* ── Headings: blackletter + ink shadow ───────────────────────────────────── */
 [data-theme="grimoire"] h2,
 [data-theme="grimoire"] h3 {
   letter-spacing: 0.02em;
-  text-shadow: 0 0 22px rgba(155, 93, 229, 0.38), 0 1px 3px rgba(0, 0, 0, 0.90);
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.20);
 }
 
 [data-theme="grimoire"] h1 {
   font-size: 1.6em !important;
   line-height: 1.1;
+  text-shadow: 0 1px 4px rgba(255, 255, 255, 0.25);
 }
 
-/* ── Inputs: parchment-lined ──────────────────────────────────────────────── */
+/* ── Inputs: ink on parchment ─────────────────────────────────────────────── */
 [data-theme="grimoire"] textarea,
 [data-theme="grimoire"] input[type="text"],
 [data-theme="grimoire"] input[type="url"] {
-  border-color: rgba(130, 95, 22, 0.42) !important;
-  background: rgba(14, 11, 5, 0.88) !important;
+  border-color: rgba(100, 72, 18, 0.45) !important;
+  background: rgba(230, 210, 160, 0.80) !important;
   font-family: var(--font-body) !important;
   font-style: italic;
-  color: var(--color-text) !important;
+  color: #1a1008 !important;
 }
 
-/* ── Scrollbar: inkwell ───────────────────────────────────────────────────── */
-[data-theme="grimoire"] ::-webkit-scrollbar { width: 5px; background: #0a0703; }
-[data-theme="grimoire"] ::-webkit-scrollbar-track { background: #0e0b05; }
-[data-theme="grimoire"] ::-webkit-scrollbar-thumb { background: #5c3385; }
-[data-theme="grimoire"] ::-webkit-scrollbar-thumb:hover { background: #7a4aa8; }
+/* ── Scrollbar: aged ink ──────────────────────────────────────────────────── */
+[data-theme="grimoire"] ::-webkit-scrollbar { width: 5px; background: #c8b078; }
+[data-theme="grimoire"] ::-webkit-scrollbar-track { background: #d4bc88; }
+[data-theme="grimoire"] ::-webkit-scrollbar-thumb { background: #7820d0; }
+[data-theme="grimoire"] ::-webkit-scrollbar-thumb:hover { background: #5810a8; }
 
 /* ── Selection: arcane highlight ─────────────────────────────────────────── */
 [data-theme="grimoire"] ::selection {
-  background: rgba(155, 93, 229, 0.28);
-  color: var(--color-bright);
+  background: rgba(120, 32, 208, 0.22);
+  color: #080402;
 }
 
-/* ── Focus rings: arcane glow ─────────────────────────────────────────────── */
+/* ── Focus rings ──────────────────────────────────────────────────────────── */
 [data-theme="grimoire"] :focus-visible {
-  outline: 2px solid rgba(155, 93, 229, 0.58);
+  outline: 2px solid rgba(120, 32, 208, 0.55);
   outline-offset: 2px;
 }
 
-/* ── Card classes: arcane ink-bleed animation ─────────────────────────────── */
-[data-theme="grimoire"] .bg-\[\#171310\],
-[data-theme="grimoire"] .bg-\[\#1f1a14\],
-[data-theme="grimoire"] .bg-\[\#251f17\] {
-  animation: inkBleed 4s ease-in-out infinite;
-  border-color: rgba(130, 95, 22, 0.32) !important;
+/* ── Stat bars and utility elements ───────────────────────────────────────── */
+[data-theme="grimoire"] .grimoire-page [class*="rounded"] {
+  border-color: rgba(90, 65, 15, 0.30);
+}
+
+/* ── Card bg class override: parchment-appropriate ───────────────────────── */
+[data-theme="grimoire"] .grimoire-page .bg-\[\#171310\],
+[data-theme="grimoire"] .grimoire-page .bg-\[\#1f1a14\],
+[data-theme="grimoire"] .grimoire-page .bg-\[\#251f17\],
+[data-theme="grimoire"] .flex-1.overflow-y-auto.p-4 .bg-\[\#171310\],
+[data-theme="grimoire"] .flex-1.overflow-y-auto.p-4 .bg-\[\#1f1a14\],
+[data-theme="grimoire"] .flex-1.overflow-y-auto.p-4 .bg-\[\#251f17\] {
+  background: rgba(210, 185, 130, 0.45) !important;
+  border-color: rgba(90, 65, 15, 0.32) !important;
+  animation: none;
 }
 
 /* ── Forge ────────────────────────────────────────────────────────────────────
