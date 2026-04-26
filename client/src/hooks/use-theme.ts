@@ -122,11 +122,9 @@ export const THEMES: ThemeDef[] = [
   },
 ];
 
-const STORAGE_KEY = "codex-theme";
+// ── Module-level singleton so all useTheme() calls stay in sync ──────────────
 
-function getInitialTheme(): ThemeId {
-  // Try to read from a non-restricted source: the html attribute itself
-  // (set on previous render) or fall back to ashen
+function readDomTheme(): ThemeId {
   if (typeof document !== "undefined") {
     const attr = document.documentElement.getAttribute("data-theme") as ThemeId | null;
     if (attr && THEMES.some((t) => t.id === attr)) return attr;
@@ -134,19 +132,29 @@ function getInitialTheme(): ThemeId {
   return "ashen";
 }
 
-export function useTheme() {
-  const [theme, setThemeState] = useState<ThemeId>(getInitialTheme);
+let _current: ThemeId = readDomTheme();
+const _listeners = new Set<(t: ThemeId) => void>();
 
-  // Apply theme to <html data-theme="..."> whenever it changes
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
-
-  const setTheme = useCallback((id: ThemeId) => {
-    setThemeState(id);
-    // Also persist to html attribute so getInitialTheme can read it on re-mount
+function _setGlobal(id: ThemeId) {
+  _current = id;
+  if (typeof document !== "undefined") {
     document.documentElement.setAttribute("data-theme", id);
+  }
+  _listeners.forEach((fn) => fn(id));
+}
+
+export function useTheme() {
+  const [theme, setLocal] = useState<ThemeId>(() => _current);
+
+  useEffect(() => {
+    // Sync in case DOM was set before this component mounted
+    if (_current !== theme) setLocal(_current);
+    _listeners.add(setLocal);
+    return () => { _listeners.delete(setLocal); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const setTheme = useCallback((id: ThemeId) => { _setGlobal(id); }, []);
 
   const currentThemeDef = THEMES.find((t) => t.id === theme) ?? THEMES[0];
 

@@ -275,7 +275,7 @@ function BuildTabInner({ build, game, onDelete, twoColumn }: Props) {
     return (
       <div
         className="animate-fade-in"
-        style={{ display: "flex", flexDirection: "column", margin: "-16px", height: "calc(100% + 32px)" }}
+        style={{ display: "flex", flexDirection: "column", margin: "-16px", minHeight: "calc(100vh - 96px)" }}
       >
         {/* Phase nav — spans both pages */}
         {phaseNavBar}
