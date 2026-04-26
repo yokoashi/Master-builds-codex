@@ -15,6 +15,7 @@ import KnowledgeViewer from "@/components/KnowledgeViewer";
 import LearnProgress from "@/components/LearnProgress";
 import ThemePicker from "@/components/ThemePicker";
 import SetupScreen from "@/components/SetupScreen";
+import { useTheme } from "@/hooks/use-theme";
 
 const TABS = ["Your Build", "Materials", "Similar", "Other OP", "Quick Ref"] as const;
 type Tab = typeof TABS[number];
@@ -26,6 +27,8 @@ interface CodexPageProps {
 
 export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProps) {
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const isGrimoire = theme === "grimoire";
   const [selectedGameKey, setSelectedGameKey] = useState<string>("lotf");
   const [selectedBuildKey, setSelectedBuildKey] = useState<string>("crimson-reaper");
   const [activeTab, setActiveTab] = useState<Tab>("Your Build");
@@ -709,6 +712,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                     build={currentBuild}
                     game={currentGame}
                     onDelete={() => setDeletePending(currentBuild)}
+                    twoColumn={isGrimoire}
                   />
                 )}
                 {activeTab === "Materials" && (
