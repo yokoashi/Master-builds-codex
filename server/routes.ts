@@ -2095,6 +2095,219 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
     }
   });
 
+  // ── POST /api/learn/codex — 5-pass JSON codex extraction via Fextralife ────
+  // Each pass asks sonar-deep-research to return a specific JSON section of the
+  // game's full item database. Sections are merged into one codex record and
+  // processed via extractFactsFromCodex. Uses the same SSE progress stream.
+  app.post("/api/learn/codex", async (req, res) => {
+    try {
+      const body = req.body as { gameKey: string; gameName: string; wikiUrl?: string };
+      const { gameKey, gameName } = body;
+      if (!gameKey || !gameName) return res.status(400).json({ error: "gameKey and gameName required" });
+
+      // Default wiki roots for known games
+      const WIKI_ROOTS: Record<string, string> = {
+        "lotf": "thelordsofthefallen.wiki.fextralife.com",
+        "elden-ring": "eldenring.wiki.fextralife.com",
+        "dark-souls": "darksouls.wiki.fextralife.com",
+        "dark-souls-2": "darksouls2.wiki.fextralife.com",
+        "dark-souls-3": "darksouls3.wiki.fextralife.com",
+        "bloodborne": "bloodborne.wiki.fextralife.com",
+        "sekiro": "sekiroshadowsdietwice.wiki.fextralife.com",
+        "lies-of-p": "liesofp.wiki.fextralife.com",
+        "remnant-2": "remnant2.wiki.fextralife.com",
+      };
+      const wikiRoot = body.wikiUrl
+        ? body.wikiUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")
+        : WIKI_ROOTS[gameKey] ?? `${gameKey.replace(/-/g, "")}.wiki.fextralife.com`;
+
+      const emit = (stage: string, detail?: string) =>
+        learnEmitter.emit("progress", { gameKey, stage, detail } satisfies LearnProgressEvent);
+
+      emit("Codex extraction", `Targeting ${wikiRoot} — 5 passes`);
+
+      const JSON_RULES = `CRITICAL: Your ENTIRE response must be a single valid JSON object. Start with { and end with }. No markdown, no code fences, no commentary outside the JSON. Every string value must be properly escaped. Use null for missing numeric values.`;
+
+      // 5 targeted passes — each returns a partial codex JSON
+      const passes = [
+        {
+          name: "Pass 1: Weapons, Shields, Catalysts",
+          prompt: `Search ${wikiRoot} for ${gameName} complete weapon, shield, and catalyst/staff/seal databases.
+
+Return a JSON object with:
+{
+  "weapons": [{"name":"","type":"","ap":"","scaling":"","status":"","weight":0,"loc":"","req":"","upgrade":""}],
+  "shields": [{"name":"","type":"","stability":"","blockPhys":"","weight":0,"loc":""}],
+  "catalysts": [{"name":"","type":"","spellBuff":"","scaling":"","weight":0,"loc":"","req":""}]
+}
+Include EVERY weapon, shield, and catalyst in the game including DLC. ap/scaling should be full +0→+10 progression where available.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 2: Armor",
+          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE armor database — every helm, chest piece, gauntlets, and leggings.
+
+Return a JSON object with:
+{
+  "armor": [{"name":"","piece":"helm|chest|gauntlets|leggings","set":"","physDef":0,"magDef":0,"fireDef":0,"lightDef":0,"holyDef":0,"poise":0,"weight":0,"loc":""}]
+}
+Include EVERY armor piece including boss armor, DLC armor, missable/questline armor. ALL 5 defense stats + poise + weight required.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 3: Throwables, Runes, Upgrade Materials",
+          prompt: `Search ${wikiRoot} for ${gameName} throwable items (ALL 60+ types), rune gems (all 4 shapes), and upgrade materials.
+
+Return a JSON object with:
+{
+  "throwables": {
+    "desc": "throwing mechanics description",
+    "keyRings": [{"name":"","effect":"","loc":""}],
+    "items": [{"name":"","dmg":"","ammoCost":1,"status":"","loc":"","tip":""}]
+  },
+  "runes": {
+    "desc": "rune system description",
+    "throwerPriority": [],
+    "byShape": {
+      "ShapeName": [{"name":"","weaponEffect":"","shieldEffect":""}]
+    }
+  },
+  "upgradeMaterials": [{"tier":"","upgradeRange":"","buy":"","farm":"","find":"","tip":""}]
+}
+Include ALL throwable types including enhanced versions, all rune shapes and every rune within each shape.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 4: Rings/Pendants, Spells, Bosses, NPCs",
+          prompt: `Search ${wikiRoot} for ${gameName} rings/pendants/accessories (including Princess' Sting), all spells, all bosses, and all NPCs.
+
+Return a JSON object with:
+{
+  "rings": [{"name":"","effect":"","loc":""}],
+  "spells": [{"name":"","type":"","damage":"","effect":"","fp":0,"loc":"","req":""}],
+  "bosses": [{"name":"","area":"","drop":"","weakness":"","tip":""}],
+  "npcs": [{"name":"","loc":"","sells":[],"quest":""}]
+}
+For rings: include EVERY ring, pendant, charm, and accessory with EXACT numeric effects. Princess' Sting, Slinger's Ring, Bloodbane Ring, all missable rings.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 5: Classes, Stats, Mechanics, Endings, NG+",
+          prompt: `Search ${wikiRoot} for ${gameName} starting classes, stat system (soft/hard caps), status effects, weight classes, endings, NG+ mechanics, and trophy/achievement list.
+
+Return a JSON object with:
+{
+  "classes": [{"name":"","desc":"","stats":{}}],
+  "stats": {"STATNAME": {"desc":"","softCap":null,"hardCap":0}},
+  "statusEffects": [{"name":"","effect":"","procThreshold":"","bestWeapons":[]}],
+  "weightClasses": {"light":{"threshold":"","effect":""},"medium":{"threshold":"","effect":""},"heavy":{"threshold":"","effect":""},"notes":[]},
+  "endings": [{"name":"","trophy":"","steps":[],"unlocks":"","missableNotes":""}],
+  "ngPlus": {"carryOver":[],"doesNotCarryOver":[],"vestigenRemoval":{},"communityTip":"","throwableNote":"","minimumPlaythroughs":0},
+  "trophies": {"total":0,"missable":0,"onlineRequired":0,"minimumPlaythroughs":0,"keyTrophies":[{"name":"","type":"","req":"","missable":false}]}
+}
+Be exhaustive — all classes, all stat soft caps, all status effects, all endings, full NG+ info.
+${JSON_RULES}`,
+        },
+      ];
+
+      const passResults: Record<string, unknown>[] = [];
+
+      for (let i = 0; i < passes.length; i++) {
+        const pass = passes[i];
+        emit(pass.name, `Searching ${wikiRoot}...`);
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 300_000);
+          let rawText = "";
+          try {
+            const useOr = appSettings.learnResearchMode === "openrouter";
+            if (useOr) {
+              rawText = await orDeepResearch(pass.prompt, controller.signal);
+            } else if (appSettings.learnResearchMode === "claude") {
+              const resp = await claude.messages.create({
+                model: CLAUDE_MODEL,
+                max_tokens: 8000,
+                system: `You are a ${gameName} game database compiler. Output ONLY valid JSON — no markdown, no commentary.`,
+                messages: [{ role: "user", content: pass.prompt }],
+              });
+              rawText = resp.content.filter(b => b.type === "text").map(b => (b as { type: "text"; text: string }).text).join("");
+            } else {
+              const result = await pplx.chat.completions.create(
+                { model: SONAR_DEEP, stream: false as const, max_tokens: 8000, messages: [{ role: "user", content: pass.prompt }] },
+                { signal: controller.signal }
+              );
+              rawText = extractText(result as PplxResponse);
+            }
+          } finally {
+            clearTimeout(timer);
+          }
+          const parsed = parseJsonResponse<Record<string, unknown>>(rawText);
+          if (parsed.ok) {
+            passResults.push(parsed.value);
+            const sectionKeys = Object.keys(parsed.value).join(", ");
+            const sectionCount = Object.values(parsed.value).reduce((n: number, v) => n + (Array.isArray(v) ? v.length : typeof v === "object" && v ? Object.keys(v).length : 1), 0);
+            emit(`${pass.name} done`, `Sections: ${sectionKeys} | ~${sectionCount} items`);
+          } else {
+            emit(`${pass.name} parse error`, parsed.error.slice(0, 120));
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          emit(`${pass.name} failed`, msg.slice(0, 200));
+        }
+      }
+
+      if (passResults.length === 0) {
+        learnEmitter.emit("progress", { gameKey, stage: "Error", detail: "All 5 passes failed — check API key", done: true, error: "All passes failed" } satisfies LearnProgressEvent);
+        return res.status(500).json({ error: "All passes failed" });
+      }
+
+      // Merge all pass results into one codex object
+      emit("Merging passes", `${passResults.length}/5 passes succeeded`);
+      const codex: Record<string, unknown> = {};
+      for (const result of passResults) {
+        for (const [key, val] of Object.entries(result)) {
+          if (!(key in codex)) {
+            codex[key] = val;
+          } else {
+            // Merge arrays; objects get shallow-merged
+            const existing = codex[key];
+            if (Array.isArray(existing) && Array.isArray(val)) {
+              codex[key] = [...existing, ...val];
+            } else if (existing && typeof existing === "object" && !Array.isArray(existing) && typeof val === "object" && !Array.isArray(val)) {
+              codex[key] = { ...(existing as Record<string, unknown>), ...(val as Record<string, unknown>) };
+            }
+          }
+        }
+      }
+
+      // Extract facts and cache them
+      emit("Extracting facts", "Processing codex sections...");
+      const facts = extractFactsFromCodex(codex);
+      if (facts.length > 0) {
+        updateKnowledgeCache(gameKey, gameName, facts, `Codex extraction (${passResults.length} passes) — ${facts.length} facts`);
+      }
+
+      const breakdown: Record<string, number> = {};
+      for (const f of facts) breakdown[f.type] = (breakdown[f.type] ?? 0) + 1;
+
+      learnEmitter.emit("progress", {
+        gameKey,
+        stage: "Complete",
+        detail: `${facts.length} facts cached from ${passResults.length} passes`,
+        done: true,
+      } satisfies LearnProgressEvent);
+
+      return res.json({ ok: true, total: facts.length, breakdown, passes: passResults.length });
+    } catch (err) {
+      const msg = friendlyPplxError(err);
+      learnEmitter.emit("progress", {
+        gameKey: (req.body as { gameKey?: string })?.gameKey ?? "",
+        stage: "Error", detail: msg, done: true, error: msg,
+      } satisfies LearnProgressEvent);
+      res.status(500).json({ error: msg });
+    }
+  });
+
   // ── GET/POST /api/team-log — AI inter-agent communication channel ────────────
   // Claude writes summaries; Perplexity reads them as context for next search session.
   const teamLogPath = resolve("team-log.json");

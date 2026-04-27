@@ -37,6 +37,8 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [learnUrlsText, setLearnUrlsText] = useState<string>("");
   const [showLearnInput, setShowLearnInput] = useState(false);
+  const [showCodexInput, setShowCodexInput] = useState(false);
+  const [codexWikiUrl, setCodexWikiUrl] = useState<string>("");
   const [wikiTestResult, setWikiTestResult] = useState<string | null>(null);
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [showLearnProgress, setShowLearnProgress] = useState(false);
@@ -154,6 +156,33 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
     },
     onError: (err: Error) => {
       setUpdateStatus(`✗ Learn failed: ${err.message}`);
+      setTimeout(() => setUpdateStatus(null), 6000);
+    },
+  });
+
+  const codexLearnMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<{ ok: boolean; total: number; breakdown: Record<string, number>; passes: number }>(
+        "POST", "/api/learn/codex", {
+          gameKey: selectedGameKey,
+          gameName: currentGame?.name ?? selectedGameKey,
+          ...(codexWikiUrl.trim().startsWith("http") ? { wikiUrl: codexWikiUrl.trim() } : {}),
+        }
+      ),
+    onMutate: () => {
+      setShowCodexInput(false);
+      setShowLearnProgress(true);
+      setCodexWikiUrl("");
+      setUpdateStatus(null);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${selectedGameKey}`] });
+      const bd = Object.entries(data.breakdown).map(([k, v]) => `${k}:${v}`).join(" ");
+      setUpdateStatus(`✓ Codex extracted ${data.total} facts (${data.passes} passes) — ${bd}`);
+      setTimeout(() => setUpdateStatus(null), 16000);
+    },
+    onError: (err: Error) => {
+      setUpdateStatus(`✗ Codex extract failed: ${err.message}`);
       setTimeout(() => setUpdateStatus(null), 6000);
     },
   });
@@ -590,18 +619,28 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
               <div className="flex gap-1">
                 <button
                   data-testid="btn-learn"
-                  onClick={() => { showLearnInput ? learnMutation.mutate() : setShowLearnInput(true); }}
-                  disabled={learnMutation.isPending || updateMutation.isPending}
+                  onClick={() => { showLearnInput ? learnMutation.mutate() : setShowLearnInput(true); if (showCodexInput) setShowCodexInput(false); }}
+                  disabled={learnMutation.isPending || codexLearnMutation.isPending || updateMutation.isPending}
                   className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
                   style={{ border: "1px solid #302820", color: "var(--color-dim)" }}
-                  title="Build item database (weapons, armor, spells, etc.)"
+                  title="Build item database — 18 categories, line-by-line extraction"
                 >
                   🎓 {showLearnInput ? "Start" : "Learn"}
                 </button>
                 <button
+                  data-testid="btn-codex-learn"
+                  onClick={() => { setShowCodexInput(v => !v); setShowLearnInput(false); }}
+                  disabled={learnMutation.isPending || codexLearnMutation.isPending || updateMutation.isPending}
+                  className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
+                  style={{ border: "1px solid #302820", color: showCodexInput ? "var(--color-gold)" : "var(--color-dim)" }}
+                  title="5-pass JSON codex extraction from Fextralife wiki — covers throwables, runes, mechanics"
+                >
+                  📖 {showCodexInput ? "Run" : "Codex"}
+                </button>
+                <button
                   data-testid="btn-update"
                   onClick={() => updateMutation.mutate()}
-                  disabled={updateMutation.isPending || learnMutation.isPending}
+                  disabled={updateMutation.isPending || learnMutation.isPending || codexLearnMutation.isPending}
                   className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
                   style={{ border: "1px solid #302820", color: "var(--color-dim)" }}
                   title="Check for patch updates"
@@ -666,6 +705,40 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                       style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-dim2)", fontSize: "0.6rem", lineHeight: 1.5 }}
                     >{wikiTestResult}</pre>
                   )}
+                </div>
+              )}
+              {showCodexInput && (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span style={{ fontSize: "0.6rem", color: "var(--color-gold)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)" }}>
+                      📖 5-Pass Fextralife Codex
+                    </span>
+                    <button
+                      onClick={() => { setShowCodexInput(false); setCodexWikiUrl(""); }}
+                      className="px-1.5 py-0.5 rounded text-xs hover:bg-white/5"
+                      style={{ color: "var(--color-dim)", border: "1px solid #302820" }}
+                    >✕</button>
+                  </div>
+                  <p style={{ fontSize: "0.6rem", color: "var(--color-dim2)", lineHeight: 1.4 }}>
+                    Runs 5 targeted JSON passes via sonar-deep-research: weapons/shields, armor, throwables/runes/upgrades, rings/spells/bosses/NPCs, classes/mechanics/NG+. Auto-targets Fextralife wiki for known games.
+                  </p>
+                  <input
+                    type="text"
+                    value={codexWikiUrl}
+                    onChange={(e) => setCodexWikiUrl(e.target.value)}
+                    placeholder="Custom wiki URL (optional — leave blank for Fextralife)"
+                    className="w-full px-2 py-1.5 rounded text-xs"
+                    style={{ background: "var(--color-bg)", border: "1px solid #302820", color: "var(--color-text)", outline: "none" }}
+                    onKeyDown={(e) => { if (e.key === "Enter") codexLearnMutation.mutate(); }}
+                  />
+                  <button
+                    onClick={() => codexLearnMutation.mutate()}
+                    disabled={codexLearnMutation.isPending}
+                    className="w-full px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
+                    style={{ border: "1px solid rgba(210,165,48,0.4)", color: "var(--color-gold)", background: "rgba(210,165,48,0.06)" }}
+                  >
+                    {codexLearnMutation.isPending ? "Extracting..." : "▶ Run 5-Pass Codex Extraction"}
+                  </button>
                 </div>
               )}
             </div>
