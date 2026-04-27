@@ -2145,6 +2145,28 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
 
       const JSON_RULES = `CRITICAL: Your ENTIRE response must be a single valid JSON object. Start with { and end with }. No markdown, no code fences, no commentary outside the JSON. Every string value must be properly escaped. Use null for missing numeric values.`;
 
+      // Wiki pages to fetch per pass (relative paths from wikiRoot).
+      // Claude mode fetches these, strips HTML, and injects as ground-truth context.
+      // Perplexity/OR modes ignore these — the prompt text already names the site.
+      const PASS_WIKI_PATHS: string[][] = [
+        ["Weapons", "Shields", "Catalysts", "Staves", "Seals"],          // pass 1
+        ["Armor", "Helms", "Chest+Armor", "Gauntlets", "Leg+Armor"],     // pass 2
+        ["Throwables", "Ammunition", "Runes", "Upgrade+Materials"],       // pass 3
+        ["Rings", "Pendants", "Spells", "Bosses", "NPCs"],                // pass 4
+        ["Classes", "Stats", "Status+Effects", "Endings", "New+Game+Plus", "Trophies"], // pass 5
+      ];
+
+      /** Fetch a wiki page and strip HTML → plain text (max 20 000 chars) */
+      const fetchWikiPage = async (wikiRootUrl: string, path: string, signal: AbortSignal): Promise<string> => {
+        const url = `https://${wikiRootUrl}/${path}`;
+        try {
+          const resp = await fetch(url, { signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
+          if (!resp.ok) return "";
+          const html = await resp.text();
+          return htmlToText(html).slice(0, 20000);
+        } catch { return ""; }
+      };
+
       // 5 targeted passes — each returns a partial codex JSON
       const passes = [
         {
@@ -2231,6 +2253,7 @@ ${JSON_RULES}`,
 
       for (let i = 0; i < passes.length; i++) {
         const pass = passes[i];
+        const passWikiPaths = PASS_WIKI_PATHS[i] ?? [];
         emit(pass.name, `Searching ${wikiRoot}...`);
         try {
           const controller = new AbortController();
@@ -2241,11 +2264,39 @@ ${JSON_RULES}`,
             if (useOr) {
               rawText = await orDeepResearch(pass.prompt, controller.signal);
             } else if (effectiveMode === "claude") {
+              // Fetch wiki pages first so Claude has real content, not training guesses
+              emit(pass.name, `Fetching ${passWikiPaths.length} wiki pages...`);
+              const pageTexts = await Promise.all(
+                passWikiPaths.map(p => fetchWikiPage(wikiRoot, p, controller.signal))
+              );
+              const combinedContent = pageTexts
+                .map((txt, idx) => txt ? `=== ${passWikiPaths[idx]} ===\n${txt}` : "")
+                .filter(Boolean)
+                .join("\n\n")
+                .slice(0, 60000); // stay well within 200K context
+
+              const userContent = combinedContent
+                ? `Extract ALL items from the following ${gameName} wiki pages and format as the JSON schema below.\n\nWIKI PAGE CONTENT (use as ground truth — exact in-game names only):\n${combinedContent}\n\n${pass.prompt}`
+                : `Using your knowledge of ${gameName}, ${pass.prompt}`;
+
+              if (combinedContent) {
+                emit(pass.name, `Extracting from ${pageTexts.filter(Boolean).length}/${passWikiPaths.length} pages fetched...`);
+              } else {
+                emit(pass.name, "No pages fetched — falling back to training knowledge");
+              }
+
               const resp = await claude.messages.create({
                 model: CLAUDE_MODEL,
                 max_tokens: 8000,
-                system: `You are a ${gameName} game database compiler. Output ONLY valid JSON — no markdown, no commentary.`,
-                messages: [{ role: "user", content: pass.prompt }],
+                system: [
+                  {
+                    type: "text",
+                    text: `You are a ${gameName} game database compiler. Extract items from the provided wiki content and output ONLY valid JSON — no markdown, no code fences, no commentary. Every string value must be properly escaped.`,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    ...(combinedContent ? { cache_control: { type: "ephemeral" } } as any : {}),
+                  },
+                ],
+                messages: [{ role: "user", content: userContent }],
               });
               rawText = resp.content.filter(b => b.type === "text").map(b => (b as { type: "text"; text: string }).text).join("");
             } else {
