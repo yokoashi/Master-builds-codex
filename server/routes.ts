@@ -334,12 +334,13 @@ Do NOT modify, merge, or summarise. Return the winning list exactly as-is.`;
 const OR_SONAR_DEEP = "perplexity/sonar-deep-research";
 async function orDeepResearch(
   prompt: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  maxTokens = 8000
 ): Promise<string> {
   const resp = await openRouter.chat.completions.create(
     {
       model: OR_SONAR_DEEP,
-      max_tokens: 8000,
+      max_tokens: maxTokens,
       messages: [{ role: "user", content: prompt }],
     },
     { signal }
@@ -2320,7 +2321,7 @@ ${JSON_RULES}`,
           try {
             const useOr = effectiveMode === "openrouter";
             if (useOr) {
-              rawText = await orDeepResearch(pass.prompt, controller.signal);
+              rawText = await orDeepResearch(pass.prompt, controller.signal, 16000);
             } else if (effectiveMode === "claude") {
               // Fetch wiki pages first so Claude has real content, not training guesses
               emit(pass.name, `Fetching ${passWikiPaths.length} wiki pages...`);
