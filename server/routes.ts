@@ -9,6 +9,7 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import {
   extractFactsFromBuild,
+  extractFactsFromCodex,
   updateKnowledgeCache,
   buildKnowledgeBlock,
   parseLearnLines,
@@ -2199,6 +2200,7 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
 
       // Import dynamic builds; auto-create game if unknown
       const builds = Array.isArray(data.dynamicBuilds) ? data.dynamicBuilds : [];
+      const importedBuilds: Array<{ key: string; gameKey: string; data: Record<string, unknown> }> = [];
       for (const build of builds) {
         if (!build || typeof build !== "object") continue;
         const b = build as Record<string, unknown>;
@@ -2217,14 +2219,94 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
         const existing = storage.getDynamicBuild(key);
         if (!existing) {
           storage.createDynamicBuild({ key, gameKey, data: JSON.stringify(build) });
+          importedBuilds.push({ key, gameKey, data: b });
           imported++;
         }
+      }
+
+      // Extract knowledge facts from newly-imported builds and cache them
+      for (const { gameKey, data: buildData } of importedBuilds) {
+        try {
+          const allGames = [
+            ...SEED_GAMES,
+            ...(storage.getDynamicGames().map((g) => JSON.parse(g.data))),
+          ] as Array<{ key: string; name: string }>;
+          const gameName = allGames.find((g) => g.key === gameKey)?.name ?? gameKey;
+          const facts = extractFactsFromBuild(buildData as unknown as import("@shared/types").Build);
+          if (facts.length > 0) updateKnowledgeCache(gameKey, gameName, facts);
+        } catch { /* non-critical */ }
       }
 
       res.json({ ok: true, imported });
     } catch (err) {
       res.status(400).json({
         error: `Import failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  });
+
+  // ── POST /api/import/codex — ingest a Perplexity knowledge-JSON into the cache ──
+  app.post("/api/import/codex", (req, res) => {
+    try {
+      const body = req.body as Record<string, unknown>;
+
+      // Client sends { gameKey, codex: { ...perplexityJson } } OR the raw JSON itself
+      const gameKeyOverride = typeof body.gameKey === "string" ? body.gameKey : null;
+      const codex: Record<string, unknown> =
+        body.codex && typeof body.codex === "object" && !Array.isArray(body.codex)
+          ? (body.codex as Record<string, unknown>)
+          : body;
+
+      // Detect game from meta if gameKey not provided
+      let gameKey = gameKeyOverride ?? "unknown";
+      let gameName = gameKey;
+      const meta = codex.meta as Record<string, unknown> | undefined;
+      if (!gameKeyOverride && meta) {
+        const title = String(meta.game ?? meta.title ?? "").toLowerCase();
+        if (title.includes("lords of the fallen")) {
+          gameKey = "lotf"; gameName = "Lords of the Fallen";
+        } else if (title.includes("elden ring")) {
+          gameKey = "elden-ring"; gameName = "Elden Ring";
+        } else if (title.includes("dark souls")) {
+          gameKey = "dark-souls"; gameName = "Dark Souls";
+        } else if (title) {
+          gameKey = title.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
+          gameName = String(meta.game ?? meta.title ?? gameKey);
+        }
+      } else if (gameKeyOverride) {
+        const allGames = [
+          ...SEED_GAMES,
+          ...(storage.getDynamicGames().map((g) => JSON.parse(g.data) as { key: string; name: string })),
+        ];
+        gameName = allGames.find((g) => g.key === gameKey)?.name ?? gameKey;
+      }
+
+      // Auto-create game from meta if it doesn't exist
+      if (meta && !SEED_GAMES.find((g) => g.key === gameKey) && !storage.getDynamicGame(gameKey)) {
+        const gameObj = {
+          key: gameKey,
+          name: gameName,
+          icon: "🎮",
+          statMax: typeof meta.statMax === "number" ? meta.statMax : 99,
+          endgameBudget: typeof meta.endgameBudget === "number" ? meta.endgameBudget : 150,
+          softCaps: meta.softCaps && typeof meta.softCaps === "object" && !Array.isArray(meta.softCaps)
+            ? (meta.softCaps as Record<string, number | null>) : {},
+          mats: [],
+          weightInfo: [],
+          isCustom: true,
+        };
+        storage.createDynamicGame({ key: gameKey, data: JSON.stringify(gameObj) });
+      }
+
+      const facts = extractFactsFromCodex(codex);
+      if (facts.length > 0) {
+        updateKnowledgeCache(gameKey, gameName, facts, `Codex import — ${facts.length} facts`);
+      }
+
+      res.json({ ok: true, facts: facts.length, gameKey, gameName });
+    } catch (err) {
+      res.status(400).json({
+        error: `Codex import failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   });

@@ -287,6 +287,33 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
     input.click();
   }
 
+  function handleImportKnowledge() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const codex = JSON.parse(text);
+        const result = await apiRequest<{ ok: boolean; facts: number; gameName: string }>(
+          "POST", "/api/import/codex",
+          { gameKey: selectedGameKey, codex }
+        );
+        queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${selectedGameKey}`] });
+        toast({ title: `Knowledge imported — ${result.facts} facts added for ${result.gameName}` });
+      } catch (err) {
+        toast({
+          title: "Knowledge import failed",
+          description: err instanceof Error ? err.message : "Invalid file",
+          variant: "destructive",
+        });
+      }
+    };
+    input.click();
+  }
+
   const accent = currentBuild?.accent ?? "#d64545";
 
   // Group builds by game for sidebar
@@ -778,6 +805,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
               {[
                 { id: "btn-export", label: "💾", title: "Save", onClick: () => exportMutation.mutate() },
                 { id: "btn-import", label: "📂", title: "Load", onClick: handleImport },
+                { id: "btn-import-knowledge", label: "🧠", title: "Knowledge JSON", onClick: handleImportKnowledge },
                 { id: "btn-reset", label: "↺", title: "Reset", onClick: () => toast({ title: "Delete individual builds using the ✕ button on each build." }) },
               ].map(({ id, label, title, onClick }) => (
                 <button
