@@ -2124,7 +2124,24 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
       const emit = (stage: string, detail?: string) =>
         learnEmitter.emit("progress", { gameKey, stage, detail } satisfies LearnProgressEvent);
 
-      emit("Codex extraction", `Targeting ${wikiRoot} — 5 passes`);
+      // Mirror the same key-check + auto-fallback as /api/learn
+      const keyOk = (k: string | undefined) => typeof k === "string" && k.trim().length >= 20;
+      const hasPplxKey   = keyOk(process.env.PERPLEXITY_API_KEY);
+      const hasClaudeKey = keyOk(process.env.CLAUDE_API_KEY);
+      const hasOrKey     = keyOk(process.env.OPEN_ROUTER_API_KEY);
+      let effectiveMode = appSettings.learnResearchMode;
+      if (effectiveMode === "perplexity" && !hasPplxKey) {
+        effectiveMode = hasClaudeKey ? "claude" : hasOrKey ? "openrouter" : "perplexity";
+        if (effectiveMode !== "perplexity") emit("Research mode", `No Perplexity key — using ${effectiveMode}`);
+      } else if (effectiveMode === "openrouter" && !hasOrKey) {
+        effectiveMode = hasClaudeKey ? "claude" : hasPplxKey ? "perplexity" : "openrouter";
+        if (effectiveMode !== "openrouter") emit("Research mode", `No OpenRouter key — using ${effectiveMode}`);
+      } else if (effectiveMode === "claude" && !hasClaudeKey) {
+        effectiveMode = hasPplxKey ? "perplexity" : hasOrKey ? "openrouter" : "claude";
+        if (effectiveMode !== "claude") emit("Research mode", `No Claude key — using ${effectiveMode}`);
+      }
+
+      emit("Codex extraction", `Targeting ${wikiRoot} — 5 passes (${effectiveMode})`);
 
       const JSON_RULES = `CRITICAL: Your ENTIRE response must be a single valid JSON object. Start with { and end with }. No markdown, no code fences, no commentary outside the JSON. Every string value must be properly escaped. Use null for missing numeric values.`;
 
@@ -2220,10 +2237,10 @@ ${JSON_RULES}`,
           const timer = setTimeout(() => controller.abort(), 300_000);
           let rawText = "";
           try {
-            const useOr = appSettings.learnResearchMode === "openrouter";
+            const useOr = effectiveMode === "openrouter";
             if (useOr) {
               rawText = await orDeepResearch(pass.prompt, controller.signal);
-            } else if (appSettings.learnResearchMode === "claude") {
+            } else if (effectiveMode === "claude") {
               const resp = await claude.messages.create({
                 model: CLAUDE_MODEL,
                 max_tokens: 8000,
