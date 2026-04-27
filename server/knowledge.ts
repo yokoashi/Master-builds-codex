@@ -236,10 +236,44 @@ function parseArrowTable(val: string): string | undefined {
   return parseSlashTable(annotated);
 }
 
+// Keys we handle explicitly — used to skip them in the generic fallback
+const HANDLED_CODEX_KEYS = new Set([
+  "meta", "builds",
+  "statusEffects", "upgradeMaterials", "classes", "throwables",
+  "runes", "bosses", "npcs", "endings", "stats",
+  "ngPlus", "ngplus", "ng+", "trophies",
+  "weapons", "weapon", "armor", "armors", "rings", "ring",
+  "accessories", "acc", "spells", "spell", "items", "consumables",
+  "shields", "shield", "catalysts", "catalyst", "buffs", "buff",
+  "areas", "area", "locations", "location", "maps", "enemies",
+  "skills", "ashes", "gems", "talismans", "amulets", "charms",
+]);
+
+/** Map a top-level JSON key name → KnowledgeFact type */
+function keyToFactType(key: string): KnowledgeFact["type"] | null {
+  const k = key.toLowerCase();
+  if (/weapon|sword|blade|axe|hammer|bow|crossbow|staff|dagger|spear|halberd|lance|fist|claw|whip|gun/.test(k)) return "WEAPON";
+  if (/shield|greatshield|buckler/.test(k)) return "SHIELD";
+  if (/catalyst|seal|wand|foci|focus/.test(k)) return "CATALYST";
+  if (/armor|armour|helm|chest|gauntlet|leg|set/.test(k)) return "ARMOR";
+  if (/ring|talisman|amulet|accessor|charm|trinket/.test(k)) return "RING";
+  if (/spell|sorcery|incantation|magic|prayer|miracle|pyromancy/.test(k)) return "SPELL";
+  if (/buff|support|heal|utility/.test(k)) return "BUFF";
+  if (/ash|gem|infusion|whetblade|ashes/.test(k)) return "GEM";
+  if (/upgrade|material|smith|titanite|shard|stone|ore/.test(k)) return "UPGRADE";
+  if (/item|consumable|potion|tool|misc/.test(k)) return "ITEM";
+  if (/area|map|zone|region|location/.test(k)) return "MAP";
+  if (/boss|enemy|npc|mob|creature/.test(k)) return "BUILD";
+  if (/lore|quest|ending|story|faction/.test(k)) return "LORE";
+  if (/class|origin|stat|mechanic|system|skill/.test(k)) return "MECHANIC";
+  if (/trophy|achievement/.test(k)) return "LORE";
+  return null;
+}
+
 /**
  * Convert a Perplexity-style "codex" JSON into KnowledgeFact arrays.
- * Handles status effects, throwables, runes, bosses, NPCs, classes,
- * endings, upgrade mats, and build phases (ph[]) from the rich wiki extract.
+ * Handles every known section explicitly, then falls back to auto-detecting
+ * any array-of-named-objects top-level key that wasn't handled explicitly.
  */
 export function extractFactsFromCodex(codex: Record<string, unknown>): KnowledgeFact[] {
   const facts: KnowledgeFact[] = [];
@@ -248,44 +282,64 @@ export function extractFactsFromCodex(codex: Record<string, unknown>): Knowledge
   for (const se of asArray(codex.statusEffects)) {
     const name = str(se.name); if (!name) continue;
     const effect = str(se.effect);
-    const proc = str(se.procThreshold);
-    const best = asStringArray(se.bestWeapons).join(", ");
+    const proc = str(se.procThreshold ?? se.proc);
+    const best = asStringArray(se.bestWeapons ?? se.weapons).join(", ");
+    const buildup = str(se.buildup ?? se.buildupThreshold);
     facts.push({
       type: "MECHANIC",
       name: `Status: ${name}`,
       effect: effect || undefined,
-      raw: `MECHANIC: Status ${name} | Effect:${effect}${proc ? ` | Proc:${proc}` : ""}${best ? ` | BestWeapons:${best}` : ""}`,
+      raw: `MECHANIC: Status ${name} | Effect:${effect}${proc ? ` | Proc:${proc}` : ""}${buildup ? ` | Buildup:${buildup}` : ""}${best ? ` | BestWeapons:${best}` : ""}`,
     });
   }
 
   // ── Upgrade materials ──────────────────────────────────────────────────────
   for (const mat of asArray(codex.upgradeMaterials)) {
-    const tier = str(mat.tier); if (!tier) continue;
-    const range = str(mat.upgradeRange);
-    const buy = str(mat.buy);
-    const farm = str(mat.farm);
-    const tip = str(mat.tip);
+    const tier = str(mat.tier ?? mat.name); if (!tier) continue;
+    const range = str(mat.upgradeRange ?? mat.range);
+    const buy = str(mat.buy ?? mat.location);
+    const farm = str(mat.farm ?? mat.drop);
+    const tip = str(mat.tip ?? mat.note);
     facts.push({
       type: "UPGRADE",
       name: tier,
       location: buy || undefined,
       effect: farm || undefined,
-      raw: `UPGRADE: ${tier} | Range:${range}${buy ? ` | Buy:${buy}` : ""}${farm ? ` | Farm:${farm}` : ""}${tip ? ` | Tip:${tip}` : ""}`,
+      raw: `UPGRADE: ${tier}${range ? ` | Range:${range}` : ""}${buy ? ` | Buy:${buy}` : ""}${farm ? ` | Farm:${farm}` : ""}${tip ? ` | Tip:${tip}` : ""}`,
     });
   }
 
   // ── Classes ────────────────────────────────────────────────────────────────
   for (const cls of asArray(codex.classes)) {
     const name = str(cls.name); if (!name) continue;
-    const desc = str(cls.desc);
-    const stats = cls.stats && typeof cls.stats === "object" && !Array.isArray(cls.stats)
-      ? Object.entries(cls.stats as Record<string, unknown>).map(([k, v]) => `${k}:${v}`).join(" ")
+    const desc = str(cls.desc ?? cls.description ?? cls.playstyle);
+    const statsObj = cls.stats ?? cls.startingStats ?? cls.baseStats;
+    const stats = statsObj && typeof statsObj === "object" && !Array.isArray(statsObj)
+      ? Object.entries(statsObj as Record<string, unknown>).map(([k, v]) => `${k}:${v}`).join(" ")
       : "";
+    const startWep = str(cls.startingWeapon ?? cls.weapon);
     facts.push({
       type: "MECHANIC",
       name: `Class: ${name}`,
       effect: desc || undefined,
-      raw: `MECHANIC: Class ${name} | ${desc}${stats ? ` | StartStats:${stats}` : ""}`,
+      raw: `MECHANIC: Class ${name}${desc ? ` | ${desc}` : ""}${stats ? ` | StartStats:${stats}` : ""}${startWep ? ` | StartWeapon:${startWep}` : ""}`,
+    });
+  }
+
+  // ── Stats (soft caps, scaling) ─────────────────────────────────────────────
+  for (const stat of asArray(codex.stats)) {
+    const name = str(stat.name ?? stat.stat); if (!name) continue;
+    const desc = str(stat.desc ?? stat.description ?? stat.effect);
+    const softCaps = stat.softCaps ?? stat.softcaps;
+    const capStr = Array.isArray(softCaps) ? softCaps.join("/") :
+      (softCaps && typeof softCaps === "object"
+        ? Object.entries(softCaps as Record<string, unknown>).map(([k, v]) => `${k}:${v}`).join(", ")
+        : str(softCaps));
+    facts.push({
+      type: "MECHANIC",
+      name: `Stat: ${name}`,
+      effect: desc || undefined,
+      raw: `MECHANIC: Stat ${name}${desc ? ` | ${desc}` : ""}${capStr ? ` | SoftCaps:${capStr}` : ""}`,
     });
   }
 
@@ -296,49 +350,156 @@ export function extractFactsFromCodex(codex: Record<string, unknown>): Knowledge
     : asArray(codex.throwables);
   for (const th of throwableItems) {
     const name = str(th.name); if (!name) continue;
-    const dmg = str(th.dmg);
+    const dmg = str(th.dmg ?? th.damage ?? th.ap);
     const ammoCost = th.ammoCost != null ? `${th.ammoCost}` : "";
-    const status = str(th.status);
-    const loc = str(th.loc);
-    const tip = str(th.tip);
+    const status = str(th.status ?? th.st);
+    const loc = str(th.loc ?? th.location);
+    const tip = str(th.tip ?? th.note ?? th.effect);
     facts.push({
-      type: "WEAPON",
+      type: "ITEM",
       name,
       location: loc || undefined,
       ap: firstNum(dmg),
       status: status || undefined,
-      raw: `WEAPON: ${name} | AP:${dmg}${ammoCost ? ` | AmmoCost:${ammoCost}` : ""}${status ? ` | Status:${status}` : ""}${loc ? ` | Loc:${loc}` : ""}${tip ? ` | Tip:${tip}` : ""}`,
+      raw: `ITEM: ${name} | Dmg:${dmg || "?"}${ammoCost ? ` | AmmoCost:${ammoCost}` : ""}${status ? ` | Status:${status}` : ""}${loc ? ` | Loc:${loc}` : ""}${tip ? ` | Tip:${tip}` : ""}`,
     });
   }
 
   // ── Runes (GEM) ────────────────────────────────────────────────────────────
   const runeData = codex.runes;
   if (runeData && typeof runeData === "object" && !Array.isArray(runeData)) {
-    const byShape = (runeData as Record<string, unknown>).byShape;
+    const rd = runeData as Record<string, unknown>;
+    const byShape = rd.byShape ?? rd.byType ?? rd.types;
     if (byShape && typeof byShape === "object" && !Array.isArray(byShape)) {
       for (const [shape, runes] of Object.entries(byShape as Record<string, unknown>)) {
         for (const rune of asArray(runes)) {
           const name = str(rune.name); if (!name) continue;
-          const wef = str(rune.weaponEffect);
-          const sef = str(rune.shieldEffect);
+          const wef = str(rune.weaponEffect ?? rune.effect ?? rune.wef);
+          const sef = str(rune.shieldEffect ?? rune.sef);
+          const loc = str(rune.loc ?? rune.location);
           facts.push({
             type: "GEM",
             name,
             effect: wef || undefined,
-            raw: `GEM: Rune ${name} (${shape}) | Weapon:${wef}${sef ? ` | Shield:${sef}` : ""}`,
+            location: loc || undefined,
+            raw: `GEM: Rune ${name} (${shape}) | Effect:${wef || "?"}${sef ? ` | ShieldEf:${sef}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
           });
         }
       }
     }
+    // Also handle flat rune arrays
+    for (const rune of asArray(rd.items ?? rd.list)) {
+      const name = str(rune.name); if (!name) continue;
+      const ef = str(rune.effect ?? rune.weaponEffect);
+      facts.push({ type: "GEM", name, effect: ef || undefined, raw: `GEM: ${name} | Effect:${ef || "?"}` });
+    }
+  } else {
+    for (const rune of asArray(codex.runes)) {
+      const name = str(rune.name); if (!name) continue;
+      const ef = str(rune.effect ?? rune.weaponEffect);
+      facts.push({ type: "GEM", name, effect: ef || undefined, raw: `GEM: ${name} | Effect:${ef || "?"}` });
+    }
+  }
+
+  // ── Top-level weapons array ────────────────────────────────────────────────
+  for (const w of asArray(codex.weapons ?? codex.weapon)) {
+    const n = str(w.name ?? w.n); if (!n) continue;
+    extractItemFact(w, n, "WEAPON", facts);
+  }
+
+  // ── Shields ────────────────────────────────────────────────────────────────
+  for (const s of asArray(codex.shields ?? codex.shield)) {
+    const n = str(s.name ?? s.n); if (!n) continue;
+    extractItemFact(s, n, "SHIELD", facts);
+  }
+
+  // ── Catalysts / staffs ────────────────────────────────────────────────────
+  for (const c of asArray(codex.catalysts ?? codex.catalyst ?? codex.staffs)) {
+    const n = str(c.name ?? c.n); if (!n) continue;
+    extractItemFact(c, n, "CATALYST", facts);
+  }
+
+  // ── Armor ─────────────────────────────────────────────────────────────────
+  for (const a of asArray(codex.armor ?? codex.armors)) {
+    const n = str(a.name ?? a.n); if (!n) continue;
+    const loc = str(a.loc ?? a.location);
+    const wt = a.wt ?? a.weight;
+    const set = str(a.set ?? a.setName);
+    const phys = str(a.phys ?? a.physDef ?? a.physical);
+    facts.push({
+      type: "ARMOR",
+      name: n,
+      location: loc || undefined,
+      weight: typeof wt === "number" ? wt : undefined,
+      raw: `ARMOR: ${n}${set ? ` (${set})` : ""}${phys ? ` | Phys:${phys}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+    });
+  }
+
+  // ── Rings / accessories / talismans ───────────────────────────────────────
+  for (const r of asArray(codex.rings ?? codex.ring ?? codex.accessories ?? codex.talismans ?? codex.amulets)) {
+    const n = str(r.name ?? r.n); if (!n) continue;
+    const loc = str(r.loc ?? r.location);
+    const ef = str(r.effect ?? r.ef ?? r.description ?? r.desc);
+    facts.push({
+      type: "RING",
+      name: n,
+      location: loc || undefined,
+      effect: ef || undefined,
+      raw: `RING/ACC: ${n} | Effect:${ef || "none"}${loc ? ` | Loc:${loc}` : ""}`,
+    });
+  }
+
+  // ── Spells ────────────────────────────────────────────────────────────────
+  for (const sp of asArray(codex.spells ?? codex.spell ?? codex.sorceries ?? codex.incantations ?? codex.miracles)) {
+    const n = str(sp.name ?? sp.n); if (!n) continue;
+    const loc = str(sp.loc ?? sp.location);
+    const ef = str(sp.effect ?? sp.ef ?? sp.description);
+    const ap = firstNum(str(sp.ap ?? sp.damage ?? sp.dmg));
+    const type: KnowledgeFact["type"] = /buff|support|heal|utility/i.test(ef + n) ? "BUFF" : "SPELL";
+    facts.push({
+      type,
+      name: n,
+      location: loc || undefined,
+      effect: ef || undefined,
+      ap,
+      raw: `${type}: ${n} | Effect:${ef || "none"}${loc ? ` | Loc:${loc}` : ""}`,
+    });
+  }
+
+  // ── Consumable items ──────────────────────────────────────────────────────
+  for (const it of asArray(codex.items ?? codex.consumables)) {
+    const n = str(it.name ?? it.n); if (!n) continue;
+    const loc = str(it.loc ?? it.location);
+    const ef = str(it.effect ?? it.description ?? it.desc);
+    facts.push({
+      type: "ITEM",
+      name: n,
+      location: loc || undefined,
+      effect: ef || undefined,
+      raw: `ITEM: ${n} | Effect:${ef || "?"}${loc ? ` | Loc:${loc}` : ""}`,
+    });
+  }
+
+  // ── Areas / Maps ──────────────────────────────────────────────────────────
+  for (const area of asArray(codex.areas ?? codex.locations ?? codex.maps)) {
+    const n = str(area.name ?? area.n); if (!n) continue;
+    const desc = str(area.desc ?? area.description ?? area.notes);
+    const boss = str(area.boss ?? area.mainBoss);
+    facts.push({
+      type: "MAP",
+      name: n,
+      effect: desc || undefined,
+      raw: `MAP: ${n}${desc ? ` | ${desc}` : ""}${boss ? ` | Boss:${boss}` : ""}`,
+    });
   }
 
   // ── Bosses (BUILD) ─────────────────────────────────────────────────────────
-  for (const boss of asArray(codex.bosses)) {
+  for (const boss of asArray(codex.bosses ?? codex.enemies)) {
     const name = str(boss.name); if (!name) continue;
-    const area = str(boss.area);
-    const drop = str(boss.drop);
-    const weakness = str(boss.weakness);
-    const tip = str(boss.tip);
+    const area = str(boss.area ?? boss.location ?? boss.loc);
+    const drop = str(boss.drop ?? boss.reward ?? boss.loot);
+    const weakness = str(boss.weakness ?? boss.weaknesses ?? boss.weak);
+    const tip = str(boss.tip ?? boss.strategy ?? boss.note);
     facts.push({
       type: "BUILD",
       name,
@@ -351,14 +512,15 @@ export function extractFactsFromCodex(codex: Record<string, unknown>): Knowledge
   // ── NPCs (LORE) ────────────────────────────────────────────────────────────
   for (const npc of asArray(codex.npcs)) {
     const name = str(npc.name); if (!name) continue;
-    const loc = str(npc.loc);
-    const sells = asStringArray(npc.sells).join(", ");
-    const quest = str(npc.quest);
+    const loc = str(npc.loc ?? npc.location);
+    const sells = asStringArray(npc.sells ?? npc.items).join(", ");
+    const quest = str(npc.quest ?? npc.questline);
+    const role = str(npc.role ?? npc.type);
     facts.push({
       type: "LORE",
       name,
       location: loc || undefined,
-      raw: `LORE: NPC ${name}${loc ? ` | Loc:${loc}` : ""}${sells ? ` | Sells:${sells}` : ""}${quest ? ` | Quest:${quest}` : ""}`,
+      raw: `LORE: NPC ${name}${role ? ` (${role})` : ""}${loc ? ` | Loc:${loc}` : ""}${sells ? ` | Sells:${sells}` : ""}${quest ? ` | Quest:${quest}` : ""}`,
     });
   }
 
@@ -366,13 +528,51 @@ export function extractFactsFromCodex(codex: Record<string, unknown>): Knowledge
   for (const ending of asArray(codex.endings)) {
     const name = str(ending.name); if (!name) continue;
     const trophy = str(ending.trophy);
-    const unlocks = str(ending.unlocks);
-    const missable = str(ending.missableNotes);
-    const steps = asStringArray(ending.steps).join(" → ");
+    const unlocks = str(ending.unlocks ?? ending.unlock);
+    const missable = str(ending.missableNotes ?? ending.missable);
+    const steps = asStringArray(ending.steps ?? ending.requirements).join(" → ");
     facts.push({
       type: "LORE",
       name: `Ending: ${name}`,
       raw: `LORE: Ending ${name}${trophy ? ` | Trophy:${trophy}` : ""}${unlocks ? ` | Unlocks:${unlocks}` : ""}${steps ? ` | Steps:${steps}` : ""}${missable ? ` | Missable:${missable}` : ""}`,
+    });
+  }
+
+  // ── NG+ / NG cycles (BUILD) ────────────────────────────────────────────────
+  const ngData = codex.ngPlus ?? codex.ngplus ?? (codex as Record<string, unknown>)["ng+"] ?? codex.ng;
+  if (ngData && typeof ngData === "object" && !Array.isArray(ngData)) {
+    const ng = ngData as Record<string, unknown>;
+    // Handle object of cycle info: { ng1: {...}, ng2: {...} } or { cycles: [...] }
+    const cycles = Array.isArray(ng.cycles) ? ng.cycles : Object.values(ng).filter((v) => typeof v === "object");
+    for (const cycle of asArray(cycles.length ? cycles : [ng])) {
+      const name = str(cycle.name ?? cycle.cycle ?? cycle.label);
+      if (!name) continue;
+      const diff = str(cycle.difficulty ?? cycle.modifier ?? cycle.desc);
+      const reward = str(cycle.reward ?? cycle.drop ?? cycle.bonus);
+      facts.push({
+        type: "BUILD",
+        name: `NG+ ${name}`,
+        effect: diff || undefined,
+        raw: `BUILD: NG+ ${name}${diff ? ` | Difficulty:${diff}` : ""}${reward ? ` | Reward:${reward}` : ""}`,
+      });
+    }
+  } else {
+    for (const cycle of asArray(ngData)) {
+      const name = str(cycle.name ?? cycle.cycle); if (!name) continue;
+      const diff = str(cycle.difficulty ?? cycle.modifier);
+      facts.push({ type: "BUILD", name: `NG+ ${name}`, effect: diff || undefined, raw: `BUILD: NG+ ${name}${diff ? ` | ${diff}` : ""}` });
+    }
+  }
+
+  // ── Trophies / achievements (LORE) ────────────────────────────────────────
+  for (const tr of asArray(codex.trophies ?? codex.achievements)) {
+    const name = str(tr.name ?? tr.title); if (!name) continue;
+    const desc = str(tr.desc ?? tr.description ?? tr.requirement);
+    const type = str(tr.type ?? tr.rarity);
+    facts.push({
+      type: "LORE",
+      name: `Trophy: ${name}`,
+      raw: `LORE: Trophy ${name}${type ? ` (${type})` : ""}${desc ? ` | ${desc}` : ""}`,
     });
   }
 
@@ -415,7 +615,69 @@ export function extractFactsFromCodex(codex: Record<string, unknown>): Knowledge
     }
   }
 
+  // ── Generic fallback: any unhandled top-level key with named-item arrays ──
+  for (const [key, val] of Object.entries(codex)) {
+    if (HANDLED_CODEX_KEYS.has(key.toLowerCase())) continue;
+    if (!Array.isArray(val) || val.length === 0) continue;
+    const first = val[0];
+    if (!first || typeof first !== "object") continue;
+    // Must have a name field to be useful
+    const firstRec = first as Record<string, unknown>;
+    if (!firstRec.name && !firstRec.n && !firstRec.title) continue;
+
+    const type = keyToFactType(key) ?? "ITEM";
+    for (const item of val as Record<string, unknown>[]) {
+      const n = str(item.name ?? item.n ?? item.title); if (!n) continue;
+      const loc = str(item.loc ?? item.location);
+      const ef = str(item.effect ?? item.ef ?? item.description ?? item.desc);
+      const apStr = str(item.ap ?? item.damage ?? item.dmg);
+      facts.push({
+        type,
+        name: n,
+        location: loc || undefined,
+        effect: ef || undefined,
+        ap: firstNum(apStr),
+        raw: `${type}: ${n}${ef ? ` | ${ef}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+      });
+    }
+  }
+
   return facts;
+}
+
+/** Helper: extract a standard weapon/shield/catalyst fact from an item record */
+function extractItemFact(
+  w: Record<string, unknown>,
+  n: string,
+  defaultType: "WEAPON" | "SHIELD" | "CATALYST",
+  facts: KnowledgeFact[]
+): void {
+  const loc = str(w.loc ?? w.location);
+  const up = str(w.up ?? w.upgrade);
+  const apStr = str(w.ap ?? w.damage ?? w.dmg);
+  const st = str(w.st ?? w.status);
+  const ef = str(w.effect ?? w.ef ?? w.description);
+  const wt = w.wt ?? w.weight;
+  const scaling = str(w.scaling ?? w.scale);
+  const req = str(w.requirements ?? w.req ?? w.stats);
+
+  let type: KnowledgeFact["type"] = defaultType;
+  if (defaultType === "WEAPON") {
+    if (isShieldItem({ n, eq: str(w.slot ?? w.eq) })) type = "SHIELD";
+    else if (isCatalystItem({ n, eq: str(w.slot ?? w.eq) })) type = "CATALYST";
+  }
+
+  facts.push({
+    type,
+    name: n,
+    location: loc || undefined,
+    upgrade: up || undefined,
+    ap: firstNum(apStr),
+    status: st || undefined,
+    effect: ef || undefined,
+    weight: typeof wt === "number" ? wt : undefined,
+    raw: `${type}: ${n} | AP:${apStr || "?"}${st ? ` | Status:${st}` : ""}${scaling ? ` | Scaling:${scaling}` : ""}${req ? ` | Req:${req}` : ""}${up ? ` | Up:${up}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+  });
 }
 
 // ── Private helpers ────────────────────────────────────────────────────────────
