@@ -633,7 +633,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                   disabled={learnMutation.isPending || codexLearnMutation.isPending || updateMutation.isPending}
                   className="flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
                   style={{ border: "1px solid #302820", color: showCodexInput ? "var(--color-gold)" : "var(--color-dim)" }}
-                  title="5-pass JSON codex extraction from Fextralife wiki — covers throwables, runes, mechanics"
+                  title="10-pass JSON codex extraction from Fextralife wiki — weapons, armor, rings, spells, throwables, runes, bosses, NPCs, mechanics, NG+"
                 >
                   📖 {showCodexInput ? "Run" : "Codex"}
                 </button>
@@ -711,7 +711,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between">
                     <span style={{ fontSize: "0.6rem", color: "var(--color-gold)", letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--font-display)" }}>
-                      📖 5-Pass Fextralife Codex
+                      📖 10-Pass Fextralife Codex
                     </span>
                     <button
                       onClick={() => { setShowCodexInput(false); setCodexWikiUrl(""); }}
@@ -720,7 +720,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                     >✕</button>
                   </div>
                   <p style={{ fontSize: "0.6rem", color: "var(--color-dim2)", lineHeight: 1.4 }}>
-                    Runs 5 targeted JSON passes via sonar-deep-research: weapons/shields, armor, throwables/runes/upgrades, rings/spells/bosses/NPCs, classes/mechanics/NG+. Auto-targets Fextralife wiki for known games.
+                    Runs 10 focused JSON passes: 1H weapons · heavy/unique weapons · shields & catalysts · helms/chest · gauntlets/leggings · rings & pendants · spells & throwables · runes & upgrades · bosses & NPCs · classes & mechanics. Auto-targets Fextralife wiki. Multiple runs are additive — gaps fill in each time.
                   </p>
                   <input
                     type="text"
@@ -737,7 +737,7 @@ export default function CodexPage({ configMasks, onConfigUpdate }: CodexPageProp
                     className="w-full px-2 py-1.5 rounded text-xs font-medium transition-all hover:bg-white/5 disabled:opacity-40"
                     style={{ border: "1px solid rgba(210,165,48,0.4)", color: "var(--color-gold)", background: "rgba(210,165,48,0.06)" }}
                   >
-                    {codexLearnMutation.isPending ? "Extracting..." : "▶ Run 5-Pass Codex Extraction"}
+                    {codexLearnMutation.isPending ? "Extracting..." : "▶ Run 10-Pass Codex Extraction"}
                   </button>
                 </div>
               )}

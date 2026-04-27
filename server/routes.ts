@@ -2141,7 +2141,7 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
         if (effectiveMode !== "claude") emit("Research mode", `No Claude key — using ${effectiveMode}`);
       }
 
-      emit("Codex extraction", `Targeting ${wikiRoot} — 5 passes (${effectiveMode})`);
+      emit("Codex extraction", `Targeting ${wikiRoot} — 10 passes (${effectiveMode})`);
 
       const JSON_RULES = `CRITICAL: Your ENTIRE response must be a single valid JSON object. Start with { and end with }. No markdown, no code fences, no commentary outside the JSON. Every string value must be properly escaped. Use null for missing numeric values.`;
 
@@ -2149,11 +2149,16 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
       // Claude mode fetches these, strips HTML, and injects as ground-truth context.
       // Perplexity/OR modes ignore these — the prompt text already names the site.
       const PASS_WIKI_PATHS: string[][] = [
-        ["Weapons", "Shields", "Catalysts", "Staves", "Seals"],          // pass 1
-        ["Armor", "Helms", "Chest+Armor", "Gauntlets", "Leg+Armor"],     // pass 2
-        ["Throwables", "Ammunition", "Runes", "Upgrade+Materials"],       // pass 3
-        ["Rings", "Pendants", "Spells", "Bosses", "NPCs"],                // pass 4
-        ["Classes", "Stats", "Status+Effects", "Endings", "New+Game+Plus", "Trophies"], // pass 5
+        ["Weapons", "Straight+Swords", "Axes", "Hammers", "Spears"],                     // pass 1
+        ["Greatswords", "Great+Axes", "Great+Hammers", "Colossal+Weapons", "Unique+Weapons"], // pass 2
+        ["Shields", "Small+Shields", "Medium+Shields", "Greatshields", "Catalysts", "Staves", "Seals"], // pass 3
+        ["Armor", "Helms", "Chest+Armor"],                                                 // pass 4
+        ["Gauntlets", "Leg+Armor", "Boss+Armor"],                                          // pass 5
+        ["Rings", "Pendants", "Accessories"],                                              // pass 6
+        ["Spells", "Throwables", "Ammunition"],                                            // pass 7
+        ["Runes", "Upgrade+Materials", "Consumables"],                                     // pass 8
+        ["Bosses", "Enemies", "NPCs", "Merchants"],                                        // pass 9
+        ["Classes", "Stats", "Status+Effects", "Weight", "Endings", "New+Game+Plus", "Trophies"], // pass 10
       ];
 
       /** Fetch a wiki page and strip HTML → plain text (max 20 000 chars) */
@@ -2167,84 +2172,137 @@ Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(",
         } catch { return ""; }
       };
 
-      // 5 targeted passes — each returns a partial codex JSON
+      // 10 targeted passes — each returns a partial codex JSON
       const passes = [
         {
-          name: "Pass 1: Weapons, Shields, Catalysts",
-          prompt: `Search ${wikiRoot} for ${gameName} complete weapon, shield, and catalyst/staff/seal databases.
+          name: "Pass 1: Physical Weapons (1H)",
+          prompt: `Search ${wikiRoot} for ${gameName} complete database of one-handed physical weapons: straight swords, axes, hammers, spears, daggers, halberds, curved swords, twinblades.
 
 Return a JSON object with:
 {
-  "weapons": [{"name":"","type":"","ap":"","scaling":"","status":"","weight":0,"loc":"","req":"","upgrade":""}],
-  "shields": [{"name":"","type":"","stability":"","blockPhys":"","weight":0,"loc":""}],
-  "catalysts": [{"name":"","type":"","spellBuff":"","scaling":"","weight":0,"loc":"","req":""}]
+  "weapons": [{"name":"","type":"","ap":"","scaling":"","status":"","weight":0,"loc":"","req":"","upgrade":"","tip":""}]
 }
-Include EVERY weapon, shield, and catalyst in the game including DLC. ap/scaling should be full +0→+10 progression where available.
+Include EVERY weapon of these types including DLC. ap should be full +0→+10 AR progression. scaling should be letter grades per stat (e.g. "STR B / AGI C"). loc should be exact location or NPC seller.
 ${JSON_RULES}`,
         },
         {
-          name: "Pass 2: Armor",
-          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE armor database — every helm, chest piece, gauntlets, and leggings.
+          name: "Pass 2: Heavy & Unique Weapons",
+          prompt: `Search ${wikiRoot} for ${gameName} complete database of two-handed and unique weapons: greatswords, great axes, great hammers, colossal weapons, ultra weapons, ranged weapons (crossbows, bows), unique/boss weapons, and special weapons.
 
 Return a JSON object with:
 {
-  "armor": [{"name":"","piece":"helm|chest|gauntlets|leggings","set":"","physDef":0,"magDef":0,"fireDef":0,"lightDef":0,"holyDef":0,"poise":0,"weight":0,"loc":""}]
+  "weapons": [{"name":"","type":"","ap":"","scaling":"","status":"","weight":0,"loc":"","req":"","upgrade":"","tip":""}]
 }
-Include EVERY armor piece including boss armor, DLC armor, missable/questline armor. ALL 5 defense stats + poise + weight required.
+Include EVERY weapon of these types including DLC and boss drops. ap = full +0→+10 AR. For boss weapons include the boss they drop from in loc.
 ${JSON_RULES}`,
         },
         {
-          name: "Pass 3: Throwables, Runes, Upgrade Materials",
-          prompt: `Search ${wikiRoot} for ${gameName} throwable items (ALL 60+ types), rune gems (all 4 shapes), and upgrade materials.
+          name: "Pass 3: Shields & Catalysts",
+          prompt: `Search ${wikiRoot} for ${gameName} complete shield and catalyst/staff/seal databases.
 
 Return a JSON object with:
 {
+  "shields": [{"name":"","type":"small|medium|great","stability":"","blockPhys":"","blockMag":"","blockFire":"","blockLight":"","blockHoly":"","weight":0,"loc":"","req":""}],
+  "catalysts": [{"name":"","type":"staff|seal|catalyst","spellBuff":"","scaling":"","weight":0,"loc":"","req":"","tip":""}]
+}
+Include EVERY shield (all sizes) and EVERY catalyst/staff/seal in the game including DLC. blockPhys should include full upgrade values where available.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 4: Armor (Helms & Chest)",
+          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE armor database — every helm and chest piece.
+
+Return a JSON object with:
+{
+  "armor": [{"name":"","piece":"helm|chest","set":"","physDef":0,"magDef":0,"fireDef":0,"lightDef":0,"holyDef":0,"poise":0,"weight":0,"loc":"","tip":""}]
+}
+Include EVERY helm and chest piece including boss armor, DLC armor, questline/missable armor. ALL 5 defense stats + poise + weight are required for each entry.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 5: Armor (Gauntlets & Leggings)",
+          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE armor database — every gauntlet and legging piece, including boss armor sets.
+
+Return a JSON object with:
+{
+  "armor": [{"name":"","piece":"gauntlets|leggings","set":"","physDef":0,"magDef":0,"fireDef":0,"lightDef":0,"holyDef":0,"poise":0,"weight":0,"loc":"","tip":""}]
+}
+Include EVERY gauntlet and legging including boss armor, DLC, questline/missable pieces. ALL 5 defense stats + poise + weight required.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 6: Rings & Pendants",
+          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE rings, pendants, charms, and accessories database.
+
+Return a JSON object with:
+{
+  "rings": [{"name":"","effect":"","loc":"","req":"","tip":""}]
+}
+Include EVERY ring, pendant, charm, and accessory — ALL missable ones, quest rewards, boss drops, hidden ones. For each: EXACT numeric effect values (e.g. "+15% Ranged Damage" not "increases ranged damage"). Specifically include: Princess' Sting, Slinger's Ring, Bloodbane Ring, Briar Ring, Antidote Ring, and all other accessories. loc = exact location or NPC.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 7: Spells & Throwables",
+          prompt: `Search ${wikiRoot} for ${gameName} ALL spells and ALL throwable/ammunition items (there are 60+ throwable types).
+
+Return a JSON object with:
+{
+  "spells": [{"name":"","type":"","damage":"","effect":"","fp":0,"loc":"","req":"","tip":""}],
   "throwables": {
-    "desc": "throwing mechanics description",
+    "desc": "throwing mechanics — ammo pool system, weight class effect on ammo",
     "keyRings": [{"name":"","effect":"","loc":""}],
     "items": [{"name":"","dmg":"","ammoCost":1,"status":"","loc":"","tip":""}]
-  },
+  }
+}
+For spells: ALL spells including DLC, every spell type. For throwables: ALL 60+ individual throwable types including enhanced variants; keyRings = rings that affect throwing.
+${JSON_RULES}`,
+        },
+        {
+          name: "Pass 8: Runes & Upgrade Materials",
+          prompt: `Search ${wikiRoot} for ${gameName} ALL rune gems (all shapes) and ALL upgrade materials.
+
+Return a JSON object with:
+{
   "runes": {
-    "desc": "rune system description",
-    "throwerPriority": [],
+    "desc": "rune socketing system description",
+    "throwerPriority": ["rune1","rune2"],
     "byShape": {
-      "ShapeName": [{"name":"","weaponEffect":"","shieldEffect":""}]
+      "ShapeName": [{"name":"","weaponEffect":"","shieldEffect":"","loc":""}]
     }
   },
-  "upgradeMaterials": [{"tier":"","upgradeRange":"","buy":"","farm":"","find":"","tip":""}]
+  "upgradeMaterials": [{"tier":"","upgradeRange":"","buy":"","farm":"","find":"","tip":""}],
+  "ammoPoolFormula": "formula description for ammo pool calculation"
 }
-Include ALL throwable types including enhanced versions, all rune shapes and every rune within each shape.
+Include ALL rune shapes and EVERY individual rune within each shape with both weapon and shield socket effects. Include ALL upgrade material tiers with exact upgrade ranges and farm locations.
 ${JSON_RULES}`,
         },
         {
-          name: "Pass 4: Rings/Pendants, Spells, Bosses, NPCs",
-          prompt: `Search ${wikiRoot} for ${gameName} rings/pendants/accessories (including Princess' Sting), all spells, all bosses, and all NPCs.
+          name: "Pass 9: Bosses, Enemies & NPCs",
+          prompt: `Search ${wikiRoot} for ${gameName} ALL bosses, notable enemies, NPCs, and merchants.
 
 Return a JSON object with:
 {
-  "rings": [{"name":"","effect":"","loc":""}],
-  "spells": [{"name":"","type":"","damage":"","effect":"","fp":0,"loc":"","req":""}],
-  "bosses": [{"name":"","area":"","drop":"","weakness":"","tip":""}],
-  "npcs": [{"name":"","loc":"","sells":[],"quest":""}]
+  "bosses": [{"name":"","area":"","drop":"","weakness":"","resist":"","tip":"","lore":""}],
+  "npcs": [{"name":"","loc":"","sells":[],"quest":"","note":""}]
 }
-For rings: include EVERY ring, pendant, charm, and accessory with EXACT numeric effects. Princess' Sting, Slinger's Ring, Bloodbane Ring, all missable rings.
+For bosses: ALL bosses including optional, DLC, and hidden ones — exact drops, elemental weaknesses/resistances, and combat tips. For NPCs: ALL merchants and quest NPCs with their inventory and questlines.
 ${JSON_RULES}`,
         },
         {
-          name: "Pass 5: Classes, Stats, Mechanics, Endings, NG+",
-          prompt: `Search ${wikiRoot} for ${gameName} starting classes, stat system (soft/hard caps), status effects, weight classes, endings, NG+ mechanics, and trophy/achievement list.
+          name: "Pass 10: Classes, Stats, Mechanics, Endings, NG+",
+          prompt: `Search ${wikiRoot} for ${gameName} starting classes, complete stat system (all soft/hard caps), status effects, weight class thresholds, all endings, NG+ mechanics, and trophy/achievement list.
 
 Return a JSON object with:
 {
-  "classes": [{"name":"","desc":"","stats":{}}],
-  "stats": {"STATNAME": {"desc":"","softCap":null,"hardCap":0}},
-  "statusEffects": [{"name":"","effect":"","procThreshold":"","bestWeapons":[]}],
-  "weightClasses": {"light":{"threshold":"","effect":""},"medium":{"threshold":"","effect":""},"heavy":{"threshold":"","effect":""},"notes":[]},
-  "endings": [{"name":"","trophy":"","steps":[],"unlocks":"","missableNotes":""}],
-  "ngPlus": {"carryOver":[],"doesNotCarryOver":[],"vestigenRemoval":{},"communityTip":"","throwableNote":"","minimumPlaythroughs":0},
+  "classes": [{"name":"","desc":"","startingStats":{},"startingGear":[]}],
+  "stats": {"STATNAME": {"desc":"","softCaps":[],"hardCap":0,"primaryScaling":""}},
+  "statusEffects": [{"name":"","effect":"","procThreshold":"","bestWeapons":[],"cure":""}],
+  "weightClasses": {"light":{"threshold":"","dodgeType":"","effect":""},"medium":{"threshold":"","dodgeType":"","effect":""},"heavy":{"threshold":"","dodgeType":"","effect":""},"overloaded":{"threshold":"","effect":""},"notes":[]},
+  "endings": [{"name":"","trophy":"","steps":[],"unlocks":"","missableNotes":"","isGood":false}],
+  "ngPlus": {"carryOver":[],"doesNotCarryOver":[],"vestigenRemoval":{},"communityTip":"","throwableNote":"","minimumPlaythroughs":0,"cycles":[]},
   "trophies": {"total":0,"missable":0,"onlineRequired":0,"minimumPlaythroughs":0,"keyTrophies":[{"name":"","type":"","req":"","missable":false}]}
 }
-Be exhaustive — all classes, all stat soft caps, all status effects, all endings, full NG+ info.
+Be completely exhaustive — all classes with full starting stats, all stat soft cap breakpoints, all status effects with cure methods, all ending conditions and missable steps.
 ${JSON_RULES}`,
         },
       ];
@@ -2301,7 +2359,7 @@ ${JSON_RULES}`,
               rawText = resp.content.filter(b => b.type === "text").map(b => (b as { type: "text"; text: string }).text).join("");
             } else {
               const result = await pplx.chat.completions.create(
-                { model: SONAR_DEEP, stream: false as const, max_tokens: 8000, messages: [{ role: "user", content: pass.prompt }] },
+                { model: SONAR_DEEP, stream: false as const, max_tokens: 16000, messages: [{ role: "user", content: pass.prompt }] },
                 { signal: controller.signal }
               );
               rawText = extractText(result as PplxResponse);
@@ -2325,12 +2383,12 @@ ${JSON_RULES}`,
       }
 
       if (passResults.length === 0) {
-        learnEmitter.emit("progress", { gameKey, stage: "Error", detail: "All 5 passes failed — check API key", done: true, error: "All passes failed" } satisfies LearnProgressEvent);
+        learnEmitter.emit("progress", { gameKey, stage: "Error", detail: "All 10 passes failed — check API key", done: true, error: "All passes failed" } satisfies LearnProgressEvent);
         return res.status(500).json({ error: "All passes failed" });
       }
 
       // Merge all pass results into one codex object
-      emit("Merging passes", `${passResults.length}/5 passes succeeded`);
+      emit("Merging passes", `${passResults.length}/10 passes succeeded`);
       const codex: Record<string, unknown> = {};
       for (const result of passResults) {
         for (const [key, val] of Object.entries(result)) {
@@ -2348,9 +2406,59 @@ ${JSON_RULES}`,
         }
       }
 
+      // Synthesis / cleanup pass — Claude deduplicates, fixes types, polishes the merged codex
+      let finalCodex = codex;
+      if (hasClaudeKey) {
+        emit("Synthesis pass", "Claude deduplicating and cleaning merged codex...");
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 180_000);
+          try {
+            const codexSummary = JSON.stringify(finalCodex).slice(0, 80000);
+            const synthResp = await claude.messages.create({
+              model: CLAUDE_MODEL,
+              max_tokens: 8000,
+              system: [
+                {
+                  type: "text",
+                  text: `You are a ${gameName} game database editor. You will receive a merged codex JSON assembled from multiple research passes. Your job is to:
+1. Remove exact duplicate entries (same name in the same array).
+2. Fix misclassified item types (e.g. a weapon mistakenly in rings[], or a ring in weapons[]).
+3. Merge split entries for the same item where one pass has more detail than another.
+4. Ensure weapons[] and armor[] arrays are not duplicated across passes (passes 1+2 both had "weapons"; merge them into one).
+5. Return the cleaned, deduplicated codex as a single JSON object with the same top-level structure.
+Output ONLY the cleaned JSON — no markdown, no commentary.`,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  ...(({ cache_control: { type: "ephemeral" } }) as any),
+                },
+              ],
+              messages: [
+                {
+                  role: "user",
+                  content: `Here is the merged codex from ${passResults.length} research passes. Clean, deduplicate, and return as a single JSON:\n\n${codexSummary}`,
+                },
+              ],
+            });
+            const synthRaw = synthResp.content.filter(b => b.type === "text").map(b => (b as { type: "text"; text: string }).text).join("");
+            const synthParsed = parseJsonResponse<Record<string, unknown>>(synthRaw);
+            if (synthParsed.ok) {
+              finalCodex = synthParsed.value;
+              emit("Synthesis pass done", "Codex cleaned and deduplicated");
+            } else {
+              emit("Synthesis pass skipped", `Parse error: ${synthParsed.error.slice(0, 80)} — using raw merged codex`);
+            }
+          } finally {
+            clearTimeout(timer);
+          }
+        } catch (synthErr) {
+          const synthMsg = synthErr instanceof Error ? synthErr.message : String(synthErr);
+          emit("Synthesis pass skipped", synthMsg.slice(0, 120));
+        }
+      }
+
       // Extract facts and cache them
       emit("Extracting facts", "Processing codex sections...");
-      const facts = extractFactsFromCodex(codex);
+      const facts = extractFactsFromCodex(finalCodex);
       if (facts.length > 0) {
         updateKnowledgeCache(gameKey, gameName, facts, `Codex extraction (${passResults.length} passes) — ${facts.length} facts`);
       }
