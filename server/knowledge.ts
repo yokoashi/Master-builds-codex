@@ -704,6 +704,21 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
   }
 
   // ── 19. Weapons by type → WEAPON / CATALYST ───────────────────────────────
+  // Stat fields like str/agi/rad/inf contain "11 D+" (req + grade). Split them.
+  function extractStatGrade(val: unknown): string {
+    if (val == null) return "";
+    const s = String(val).trim();
+    if (!s || s === "—" || s === "-" || s === "0") return "";
+    const m = s.match(/^\d+\s+(.+)/); // "11 D+" → "D+"
+    return m ? m[1].trim() : s;       // already just a grade → return as-is
+  }
+  function extractStatReq(val: unknown): number | null {
+    if (val == null) return null;
+    const m = String(val).match(/^(\d+)/);
+    const n = m ? parseInt(m[1]) : 0;
+    return n > 0 ? n : null;
+  }
+
   const weaponsSection = codex.weapons as Record<string, unknown> | undefined;
   if (weaponsSection) {
     for (const [weaponType, weaponCategory] of Object.entries(weaponsSection)) {
@@ -712,13 +727,20 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
       for (const w of asArray(cat.weapons)) {
         const name = str(w.name ?? w.n); if (!name) continue;
         const loc = str(w.location ?? w.loc);
-        // Scaling from individual stat fields (str/agi/rad/inf each like "11 D+")
-        const scalingParts: string[] = [];
-        for (const s of ["str", "agi", "rad", "inf"]) {
-          const sv = str((w as Record<string, unknown>)[s]);
-          if (sv && sv !== "—" && sv !== "-") scalingParts.push(`${s.toUpperCase()}:${sv}`);
+        // Scaling grades from str/agi/rad/inf (each like "11 D+")
+        const statKeys = ["str", "agi", "rad", "inf"] as const;
+        const statLabels = ["STR", "AGI", "RAD", "INF"];
+        const gradeParts: string[] = [];
+        const reqParts: string[] = [];
+        for (let i = 0; i < statKeys.length; i++) {
+          const raw = (w as Record<string, unknown>)[statKeys[i]];
+          const grade = extractStatGrade(raw);
+          const req = extractStatReq(raw);
+          if (grade) gradeParts.push(`${statLabels[i]}:${grade}`);
+          if (req) reqParts.push(`${statLabels[i]} ${req}`);
         }
-        const scaling = scalingParts.join(" ");
+        const scalingTableVal = gradeParts.length > 0 ? gradeParts.join(" ") : undefined;
+        const requirementsVal = reqParts.length > 0 ? reqParts.join(" / ") : undefined;
         // Damage from phy/holy/fire/wither
         const dmgParts: string[] = [];
         if (w.phy != null) dmgParts.push(`Phy:${w.phy}`);
@@ -726,16 +748,23 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
         if (w.fire != null) dmgParts.push(`Fire:${w.fire}`);
         if (w.wither != null) dmgParts.push(`Wither:${w.wither}`);
         const dmgStr = dmgParts.join(" ");
-        const apNum = typeof w.phy === "number" ? w.phy : (typeof w.holy === "number" ? w.holy : undefined);
+        const apNum = typeof w.phy === "number" ? w.phy
+          : typeof w.holy === "number" ? w.holy
+          : typeof w.fire === "number" ? w.fire
+          : undefined;
         // Weight field is wgt in this codex
         const wt = w.wgt ?? w.wt ?? w.weight;
-        // Status buildups
+        // Status buildups → statusTable string + primary status name
         const statusParts: string[] = [];
+        let primaryStatus = "";
         for (const s of ["bleed", "smite", "ignite", "frostbite", "poison"]) {
           const sv = (w as Record<string, unknown>)[s];
-          if (sv != null && sv !== 0 && sv !== "0") statusParts.push(`${s}:${sv}`);
+          if (sv != null && sv !== 0 && sv !== "0") {
+            statusParts.push(`${s}:${sv}`);
+            if (!primaryStatus) primaryStatus = s;
+          }
         }
-        const statusStr = statusParts.join(" ");
+        const statusTableVal = statusParts.length > 0 ? statusParts.join(" ") : undefined;
         const special = str(w.special ?? w.tip ?? w.note);
         let type: KnowledgeFact["type"] = "WEAPON";
         if (isCatalystItem({ n: name, eq: weaponType })) type = "CATALYST";
@@ -744,7 +773,12 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
           name,
           location: loc || undefined,
           ap: apNum,
-          raw: `${type}: ${name} (${weaponType})${scaling ? ` | Scaling:${scaling}` : ""}${dmgStr ? ` | Dmg:${dmgStr}` : ""}${statusStr ? ` | Status:${statusStr}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}${special ? ` | Note:${special}` : ""}`,
+          scalingTable: scalingTableVal,
+          statusTable: statusTableVal,
+          status: primaryStatus || undefined,
+          requirements: requirementsVal,
+          weight: typeof wt === "number" ? wt : undefined,
+          raw: `${type}: ${name} (${weaponType})${scalingTableVal ? ` | Scaling:${scalingTableVal}` : ""}${dmgStr ? ` | Dmg:${dmgStr}` : ""}${statusTableVal ? ` | Status:${statusTableVal}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${requirementsVal ? ` | Req:${requirementsVal}` : ""}${loc ? ` | Loc:${loc}` : ""}${special ? ` | Note:${special}` : ""}`,
         });
       }
       // Catalyst sub-arrays (radiance_catalysts, inferno_catalysts, umbral_catalysts)
@@ -807,19 +841,31 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
         const name = str(sh.name ?? sh.n); if (!name) continue;
         const loc = str(sh.location ?? sh.loc);
         const blockObj = sh.block as Record<string, unknown> | undefined;
-        const physBlock = blockObj ? str(blockObj.physical ?? blockObj.phy) : "";
-        const stability = sh.stability != null ? String(sh.stability) : "";
+        const physBlockStr = blockObj ? str(blockObj.physical ?? blockObj.phy) : "";
+        // physDef: strip trailing "%" and parse as number
+        const physDefNum = physBlockStr ? parseFloat(physBlockStr.replace("%", "")) : undefined;
+        const stability = sh.stability != null ? Number(sh.stability) : undefined;
         const wt = sh.wgt ?? sh.weight ?? sh.wt;
         const reqObj = sh.req as Record<string, unknown> | undefined;
         const reqStr = reqObj && typeof reqObj === "object" && !Array.isArray(reqObj)
-          ? Object.entries(reqObj).filter(([, v]) => v != null).map(([k, v]) => `${k}:${v}`).join(" ")
+          ? Object.entries(reqObj).filter(([, v]) => v != null && v !== 0).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(" / ")
           : str(sh.req);
+        // Build block string for raw (all damage types)
+        const blockParts: string[] = [];
+        if (blockObj) {
+          for (const [k, v] of Object.entries(blockObj)) {
+            if (v != null) blockParts.push(`${k}:${v}`);
+          }
+        }
         facts.push({
           type: "SHIELD",
           name,
           location: loc || undefined,
           weight: typeof wt === "number" ? wt : undefined,
-          raw: `SHIELD: ${name}${physBlock ? ` | PhysBlock:${physBlock}` : ""}${stability ? ` | Stability:${stability}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${reqStr ? ` | Req:${reqStr}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+          physDef: !isNaN(physDefNum as number) && physDefNum != null ? physDefNum : undefined,
+          poise: !isNaN(stability as number) && stability != null ? stability : undefined,
+          requirements: reqStr || undefined,
+          raw: `SHIELD: ${name}${blockParts.length ? ` | Block:${blockParts.join(" ")}` : ""}${stability != null ? ` | Stability:${stability}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${reqStr ? ` | Req:${reqStr}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
         });
       }
     }
@@ -851,14 +897,15 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
           const name = str(a.name ?? a.n ?? a.set); if (!name) continue;
           const loc = str(a.location ?? a.loc);
           const wt = a.weight != null ? Number(a.weight) : NaN;
-          const vsPhy = a.vs_physical != null ? String(a.vs_physical) : "";
+          const vsPhy = a.vs_physical != null ? Number(a.vs_physical) : NaN;
           const notes = str(a.notes ?? a.note);
           facts.push({
             type: "ARMOR",
             name,
             location: loc || undefined,
             weight: !isNaN(wt) ? wt : undefined,
-            raw: `ARMOR: ${name} (${tierKey.replace("best_for_", "vs ").replace(/_/g, " ")})${vsPhy ? ` | VsPhy:${vsPhy}` : ""}${!isNaN(wt) ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}${notes ? ` | Notes:${notes}` : ""}`,
+            physDef: !isNaN(vsPhy) ? vsPhy : undefined,
+            raw: `ARMOR: ${name} (${tierKey.replace("best_for_", "vs ").replace(/_/g, " ")})${!isNaN(vsPhy) ? ` | VsPhy:${vsPhy}` : ""}${!isNaN(wt) ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}${notes ? ` | Notes:${notes}` : ""}`,
           });
         }
       }
