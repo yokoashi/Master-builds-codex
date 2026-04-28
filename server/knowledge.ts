@@ -712,10 +712,30 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
       for (const w of asArray(cat.weapons)) {
         const name = str(w.name ?? w.n); if (!name) continue;
         const loc = str(w.location ?? w.loc);
-        const scaling = str(w.scaling);
-        const dmgType = str(w.damage_type ?? w.damageType);
-        const apMax = w.ap_at_max != null ? String(w.ap_at_max) : str(w.ap);
-        const wt = w.wt ?? w.weight;
+        // Scaling from individual stat fields (str/agi/rad/inf each like "11 D+")
+        const scalingParts: string[] = [];
+        for (const s of ["str", "agi", "rad", "inf"]) {
+          const sv = str((w as Record<string, unknown>)[s]);
+          if (sv && sv !== "—" && sv !== "-") scalingParts.push(`${s.toUpperCase()}:${sv}`);
+        }
+        const scaling = scalingParts.join(" ");
+        // Damage from phy/holy/fire/wither
+        const dmgParts: string[] = [];
+        if (w.phy != null) dmgParts.push(`Phy:${w.phy}`);
+        if (w.holy != null) dmgParts.push(`Holy:${w.holy}`);
+        if (w.fire != null) dmgParts.push(`Fire:${w.fire}`);
+        if (w.wither != null) dmgParts.push(`Wither:${w.wither}`);
+        const dmgStr = dmgParts.join(" ");
+        const apNum = typeof w.phy === "number" ? w.phy : (typeof w.holy === "number" ? w.holy : undefined);
+        // Weight field is wgt in this codex
+        const wt = w.wgt ?? w.wt ?? w.weight;
+        // Status buildups
+        const statusParts: string[] = [];
+        for (const s of ["bleed", "smite", "ignite", "frostbite", "poison"]) {
+          const sv = (w as Record<string, unknown>)[s];
+          if (sv != null && sv !== 0 && sv !== "0") statusParts.push(`${s}:${sv}`);
+        }
+        const statusStr = statusParts.join(" ");
         const special = str(w.special ?? w.tip ?? w.note);
         let type: KnowledgeFact["type"] = "WEAPON";
         if (isCatalystItem({ n: name, eq: weaponType })) type = "CATALYST";
@@ -723,9 +743,26 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
           type,
           name,
           location: loc || undefined,
-          ap: firstNum(apMax),
-          raw: `${type}: ${name} (${weaponType})${scaling ? ` | Scaling:${scaling}` : ""}${dmgType ? ` | DmgType:${dmgType}` : ""}${apMax ? ` | AP@Max:${apMax}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}${special ? ` | Note:${special}` : ""}`,
+          ap: apNum,
+          raw: `${type}: ${name} (${weaponType})${scaling ? ` | Scaling:${scaling}` : ""}${dmgStr ? ` | Dmg:${dmgStr}` : ""}${statusStr ? ` | Status:${statusStr}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}${special ? ` | Note:${special}` : ""}`,
         });
+      }
+      // Catalyst sub-arrays (radiance_catalysts, inferno_catalysts, umbral_catalysts)
+      for (const catalystKey of ["radiance_catalysts", "inferno_catalysts", "umbral_catalysts"]) {
+        const school = catalystKey.replace("_catalysts", "");
+        for (const c of asArray(cat[catalystKey])) {
+          const name = str(c.name ?? c.n); if (!name) continue;
+          const loc = str(c.location ?? c.loc);
+          const spellpower = c.spellpower != null ? String(c.spellpower) : "";
+          const spellslots = c.spellslots != null ? String(c.spellslots) : "";
+          const special = str(c.special ?? c.tip ?? c.note);
+          facts.push({
+            type: "CATALYST",
+            name,
+            location: loc || undefined,
+            raw: `CATALYST: ${name} (${school})${spellpower ? ` | Spellpower:${spellpower}` : ""}${spellslots ? ` | Slots:${spellslots}` : ""}${loc ? ` | Loc:${loc}` : ""}${special ? ` | Note:${special}` : ""}`,
+          });
+        }
       }
       const catalystSlot = cat.catalyst_slot as Record<string, unknown> | undefined;
       if (catalystSlot) {
@@ -750,49 +787,78 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
   if (shieldsArmor) {
     const shieldsObj = shieldsArmor.shields as Record<string, unknown> | undefined;
     if (shieldsObj) {
-      for (const shieldKey of ["light_shields", "medium_shields", "heavy_shields", "shields_with_full_stats"]) {
+      // Basic shields (light/medium/heavy) — have name/type/notes, no numeric stats
+      for (const shieldKey of ["light_shields", "medium_shields", "heavy_shields"]) {
         for (const sh of asArray(shieldsObj[shieldKey])) {
           const name = str(sh.name ?? sh.n); if (!name) continue;
           const loc = str(sh.location ?? sh.loc);
-          const stability = sh.stability != null ? String(sh.stability) : "";
-          const block = str(sh.block ?? sh.physical_block);
-          const wt = sh.weight ?? sh.wt;
+          const notes = str(sh.notes ?? sh.note ?? sh.special);
+          const shType = str(sh.type);
           facts.push({
             type: "SHIELD",
             name,
             location: loc || undefined,
-            weight: typeof wt === "number" ? wt : undefined,
-            raw: `SHIELD: ${name} (${shieldKey.replace(/_shields|_/g, (m) => m === "_shields" ? "" : " ").trim()})${stability ? ` | Stability:${stability}` : ""}${block ? ` | Block:${block}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+            raw: `SHIELD: ${name}${shType ? ` (${shType})` : ""}${notes ? ` | Notes:${notes}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
           });
         }
       }
+      // Shields with full stats — block is an object {physical, fire, lightning, magic, umbral}
+      for (const sh of asArray(shieldsObj.shields_with_full_stats)) {
+        const name = str(sh.name ?? sh.n); if (!name) continue;
+        const loc = str(sh.location ?? sh.loc);
+        const blockObj = sh.block as Record<string, unknown> | undefined;
+        const physBlock = blockObj ? str(blockObj.physical ?? blockObj.phy) : "";
+        const stability = sh.stability != null ? String(sh.stability) : "";
+        const wt = sh.wgt ?? sh.weight ?? sh.wt;
+        const reqObj = sh.req as Record<string, unknown> | undefined;
+        const reqStr = reqObj && typeof reqObj === "object" && !Array.isArray(reqObj)
+          ? Object.entries(reqObj).filter(([, v]) => v != null).map(([k, v]) => `${k}:${v}`).join(" ")
+          : str(sh.req);
+        facts.push({
+          type: "SHIELD",
+          name,
+          location: loc || undefined,
+          weight: typeof wt === "number" ? wt : undefined,
+          raw: `SHIELD: ${name}${physBlock ? ` | PhysBlock:${physBlock}` : ""}${stability ? ` | Stability:${stability}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${reqStr ? ` | Req:${reqStr}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+        });
+      }
     }
+    // Notable armor sets (weight is a string category like "Heavy", not numeric)
     for (const armorSet of asArray(shieldsArmor.notable_armor_sets)) {
       const setName = str(armorSet.set_name ?? armorSet.name); if (!setName) continue;
       const loc = str(armorSet.location ?? armorSet.loc);
       const rating = str(armorSet.protection_rating ?? armorSet.rating);
-      const totalWt = armorSet.total_weight ?? armorSet.weight;
+      const weightCat = str(armorSet.weight);
+      const notes = str(armorSet.notes ?? armorSet.note);
       facts.push({
         type: "ARMOR",
         name: setName,
         location: loc || undefined,
-        weight: typeof totalWt === "number" ? totalWt : undefined,
-        raw: `ARMOR: ${setName}${rating ? ` | Rating:${rating}` : ""}${totalWt != null ? ` | TotalWt:${totalWt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+        raw: `ARMOR: ${setName}${weightCat ? ` (${weightCat})` : ""}${rating ? ` | Rating:${rating}` : ""}${notes ? ` | Notes:${notes}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
       });
     }
-    const armorByWeight = shieldsArmor.armor_by_weight as Record<string, unknown> | undefined;
-    if (armorByWeight) {
-      for (const weightKey of ["light_sets", "medium_sets", "heavy_sets"]) {
-        for (const armorItem of asArray(armorByWeight[weightKey])) {
-          const name = str(armorItem.name ?? armorItem.n ?? armorItem.set_name); if (!name) continue;
-          const loc = str(armorItem.location ?? armorItem.loc);
-          const wt = armorItem.weight ?? armorItem.wt ?? armorItem.total_weight;
+    // armor_sets_complete: flat string array → simple ARMOR facts
+    for (const armorStr of asStringArray(shieldsArmor.armor_sets_complete)) {
+      if (armorStr.length < 2) continue;
+      facts.push({ type: "ARMOR", name: armorStr, raw: `ARMOR: ${armorStr}` });
+    }
+    // Armor tier lists (have actual numeric defense stats)
+    const armorSection = shieldsArmor.armor as Record<string, unknown> | undefined;
+    const tierLists = armorSection?.armor_tier_lists as Record<string, unknown> | undefined;
+    if (tierLists) {
+      for (const tierKey of ["best_for_physical", "best_for_holy", "best_for_fire", "best_for_wither", "best_light"]) {
+        for (const a of asArray(tierLists[tierKey])) {
+          const name = str(a.name ?? a.n ?? a.set); if (!name) continue;
+          const loc = str(a.location ?? a.loc);
+          const wt = a.weight != null ? Number(a.weight) : NaN;
+          const vsPhy = a.vs_physical != null ? String(a.vs_physical) : "";
+          const notes = str(a.notes ?? a.note);
           facts.push({
             type: "ARMOR",
             name,
             location: loc || undefined,
-            weight: typeof wt === "number" ? wt : undefined,
-            raw: `ARMOR: ${name} (${weightKey.replace("_sets", "")})${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+            weight: !isNaN(wt) ? wt : undefined,
+            raw: `ARMOR: ${name} (${tierKey.replace("best_for_", "vs ").replace(/_/g, " ")})${vsPhy ? ` | VsPhy:${vsPhy}` : ""}${!isNaN(wt) ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}${notes ? ` | Notes:${notes}` : ""}`,
           });
         }
       }
