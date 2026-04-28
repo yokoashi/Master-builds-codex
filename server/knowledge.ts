@@ -256,7 +256,12 @@ function guessTypeFromName(name: string): KnowledgeFact["type"] {
  * weightClasses, ammoPoolFormula, ngPlus object, trophies.keyTrophies, and
  * per-phase ngCycles arrays.
  */
-export function extractFactsFromCodex(codex: Record<string, unknown>): KnowledgeFact[] {
+export function extractFactsFromCodex(codexInput: Record<string, unknown>): KnowledgeFact[] {
+  // Unwrap single-key document wrapper (e.g. { lotfCodex: {...} })
+  const codex: Record<string, unknown> =
+    (codexInput.lotfCodex && typeof codexInput.lotfCodex === "object" && !Array.isArray(codexInput.lotfCodex))
+      ? (codexInput.lotfCodex as Record<string, unknown>)
+      : codexInput;
   const facts: KnowledgeFact[] = [];
 
   // ── 1. Classes → MECHANIC ──────────────────────────────────────────────────
@@ -278,7 +283,10 @@ export function extractFactsFromCodex(codex: Record<string, unknown>): Knowledge
   // ── 2. Stats → MECHANIC  (object keyed by stat name, NOT an array) ─────────
   const statsSection = codex.stats;
   if (statsSection && typeof statsSection === "object" && !Array.isArray(statsSection)) {
-    for (const [statName, statData] of Object.entries(statsSection as Record<string, unknown>)) {
+    // Rich codex format has primary_stats sub-key — handled in rich sections below; skip old-style iteration
+    for (const [statName, statData] of ((statsSection as Record<string, unknown>).primary_stats
+      ? []
+      : Object.entries(statsSection as Record<string, unknown>))) {
       if (!statName || !statData || typeof statData !== "object" || Array.isArray(statData)) continue;
       const sd = statData as Record<string, unknown>;
       const desc = str(sd.desc ?? sd.description);
@@ -586,6 +594,493 @@ export function extractFactsFromCodex(codex: Record<string, unknown>): Knowledge
     // Also add summary stats as a single LORE fact
     if (trophies.total) {
       facts.push({ type: "LORE", name: "Trophy Summary", raw: `LORE: Trophies total:${trophies.total} | missable:${trophies.missable ?? "?"} | onlineReq:${trophies.onlineRequired ?? "?"} | minPlaythroughs:${trophies.minimumPlaythroughs ?? "?"}` });
+    }
+  }
+
+  // ── 15. Rich stats (primary_stats / secondary_stats) → MECHANIC ─────────────
+  const richStats = codex.stats as Record<string, unknown> | undefined;
+  if (richStats && (richStats.primary_stats || richStats.secondary_stats)) {
+    for (const ps of asArray(richStats.primary_stats)) {
+      const name = str(ps.stat ?? ps.name); if (!name) continue;
+      const governs = str(ps.governs);
+      const buildUse = str(ps.build_use ?? ps.buildUse);
+      const caps = str(ps.caps);
+      const softCaps = asStringArray(ps.soft_caps ?? ps.softCaps).join(", ");
+      facts.push({
+        type: "MECHANIC",
+        name: `Stat: ${name}`,
+        effect: governs || undefined,
+        raw: `MECHANIC: Stat ${name}${caps ? ` | Caps:${caps}` : ""}${softCaps ? ` | SoftCaps:${softCaps}` : ""}${governs ? ` | Governs:${governs}` : ""}${buildUse ? ` | BuildUse:${buildUse}` : ""}`,
+      });
+    }
+    const secondary = richStats.secondary_stats as Record<string, unknown> | undefined;
+    if (secondary && typeof secondary === "object" && !Array.isArray(secondary)) {
+      for (const [statName, statDesc] of Object.entries(secondary)) {
+        const desc = typeof statDesc === "string"
+          ? statDesc
+          : str((statDesc as Record<string, unknown>)?.description ?? (statDesc as Record<string, unknown>)?.desc);
+        if (!desc) continue;
+        facts.push({ type: "MECHANIC", name: `Stat: ${statName}`, effect: desc, raw: `MECHANIC: Stat ${statName} | ${desc}` });
+      }
+    }
+  }
+
+  // ── 16. mechanics section → MECHANIC ──────────────────────────────────────
+  const mechanicsSection = codex.mechanics as Record<string, unknown> | undefined;
+  if (mechanicsSection) {
+    for (const se of asArray(mechanicsSection.status_effects)) {
+      const name = str(se.name); if (!name) continue;
+      const effect = str(se.effect ?? se.desc);
+      const threshold = str(se.threshold ?? se.proc);
+      facts.push({
+        type: "MECHANIC",
+        name: `Status: ${name}`,
+        effect: effect || undefined,
+        raw: `MECHANIC: Status ${name}${threshold ? ` | Threshold:${threshold}` : ""}${effect ? ` | Effect:${effect}` : ""}`,
+      });
+    }
+    for (const tip of asArray(mechanicsSection.combat_tips)) {
+      const tipStr = str((tip as unknown as string).toString !== Object.prototype.toString
+        ? tip
+        : (tip.tip ?? tip.name ?? tip));
+      if (tipStr.length < 10 || tipStr.startsWith("[object")) continue;
+      facts.push({ type: "MECHANIC", name: "Combat Tip", effect: tipStr, raw: `MECHANIC: Combat Tip | ${tipStr}` });
+    }
+    const ngPlus = mechanicsSection.ng_plus as Record<string, unknown> | undefined;
+    if (ngPlus) {
+      const carry = asStringArray(ngPlus.carryOver ?? ngPlus.carry_over);
+      const doesNot = asStringArray(ngPlus.doesNotCarry ?? ngPlus.does_not_carry);
+      if (carry.length) facts.push({ type: "MECHANIC", name: "NG+ Carry Over", effect: carry.join(", "), raw: `MECHANIC: NG+ CarryOver | ${carry.join(", ")}` });
+      if (doesNot.length) facts.push({ type: "MECHANIC", name: "NG+ Does Not Carry", effect: doesNot.join(", "), raw: `MECHANIC: NG+ DoesNotCarry | ${doesNot.join(", ")}` });
+    }
+  }
+
+  // ── 17. classes rich format (starting_classes / unlockable_classes) → MECHANIC
+  const classesRich = codex.classes as Record<string, unknown> | undefined;
+  if (classesRich && (classesRich.starting_classes || classesRich.unlockable_classes)) {
+    const allClasses = [
+      ...asArray(classesRich.starting_classes),
+      ...asArray(classesRich.unlockable_classes),
+    ];
+    for (const cls of allClasses) {
+      const name = str(cls.name); if (!name) continue;
+      const desc = str(cls.description ?? cls.playstyle ?? cls.desc);
+      const statsObj = cls.stats ?? cls.starting_stats ?? cls.baseStats;
+      const statsStr = statsObj && typeof statsObj === "object" && !Array.isArray(statsObj)
+        ? Object.entries(statsObj as Record<string, unknown>).map(([k, v]) => `${k}:${v}`).join(" ")
+        : "";
+      facts.push({
+        type: "MECHANIC",
+        name: `Class: ${name}`,
+        effect: desc || undefined,
+        raw: `MECHANIC: Class ${name}${desc ? ` | ${desc}` : ""}${statsStr ? ` | Stats:${statsStr}` : ""}`,
+      });
+    }
+  }
+
+  // ── 18. Magic spells (radiance / inferno / umbral) → SPELL ───────────────
+  const magic = codex.magic as Record<string, unknown> | undefined;
+  if (magic) {
+    const spellsSection = magic.spells as Record<string, unknown> | undefined;
+    if (spellsSection) {
+      for (const school of ["radiance", "inferno", "umbral"]) {
+        for (const sp of asArray(spellsSection[school])) {
+          const name = str(sp.name); if (!name) continue;
+          const effect = str(sp.effect ?? sp.description ?? sp.desc);
+          const loc = str(sp.location ?? sp.loc);
+          const mana = sp.mana_cost != null ? String(sp.mana_cost) : str(sp.mana ?? sp.fp_cost);
+          const missable = sp.missable ? " [MISSABLE]" : "";
+          const reqs = str(sp.reqs ?? sp.requirements);
+          facts.push({
+            type: "SPELL",
+            name,
+            location: loc || undefined,
+            effect: effect || undefined,
+            raw: `SPELL: ${name} (${school})${missable}${mana ? ` | Mana:${mana}` : ""}${reqs ? ` | Req:${reqs}` : ""}${loc ? ` | Loc:${loc}` : ""}${effect ? ` | Effect:${effect}` : ""}`,
+          });
+        }
+      }
+    }
+  }
+
+  // ── 19. Weapons by type → WEAPON / CATALYST ───────────────────────────────
+  const weaponsSection = codex.weapons as Record<string, unknown> | undefined;
+  if (weaponsSection) {
+    for (const [weaponType, weaponCategory] of Object.entries(weaponsSection)) {
+      if (!weaponCategory || typeof weaponCategory !== "object") continue;
+      const cat = weaponCategory as Record<string, unknown>;
+      for (const w of asArray(cat.weapons)) {
+        const name = str(w.name ?? w.n); if (!name) continue;
+        const loc = str(w.location ?? w.loc);
+        const scaling = str(w.scaling);
+        const dmgType = str(w.damage_type ?? w.damageType);
+        const apMax = w.ap_at_max != null ? String(w.ap_at_max) : str(w.ap);
+        const wt = w.wt ?? w.weight;
+        const special = str(w.special ?? w.tip ?? w.note);
+        let type: KnowledgeFact["type"] = "WEAPON";
+        if (isCatalystItem({ n: name, eq: weaponType })) type = "CATALYST";
+        facts.push({
+          type,
+          name,
+          location: loc || undefined,
+          ap: firstNum(apMax),
+          raw: `${type}: ${name} (${weaponType})${scaling ? ` | Scaling:${scaling}` : ""}${dmgType ? ` | DmgType:${dmgType}` : ""}${apMax ? ` | AP@Max:${apMax}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}${special ? ` | Note:${special}` : ""}`,
+        });
+      }
+      const catalystSlot = cat.catalyst_slot as Record<string, unknown> | undefined;
+      if (catalystSlot) {
+        const cname = str(catalystSlot.name ?? catalystSlot.n);
+        if (cname) {
+          const cloc = str(catalystSlot.location ?? catalystSlot.loc);
+          const ceff = str(catalystSlot.effect ?? catalystSlot.note);
+          facts.push({
+            type: "CATALYST",
+            name: cname,
+            location: cloc || undefined,
+            effect: ceff || undefined,
+            raw: `CATALYST: ${cname}${cloc ? ` | Loc:${cloc}` : ""}${ceff ? ` | Effect:${ceff}` : ""}`,
+          });
+        }
+      }
+    }
+  }
+
+  // ── 20. Shields and Armor → SHIELD / ARMOR ────────────────────────────────
+  const shieldsArmor = codex.shields_and_armor as Record<string, unknown> | undefined;
+  if (shieldsArmor) {
+    const shieldsObj = shieldsArmor.shields as Record<string, unknown> | undefined;
+    if (shieldsObj) {
+      for (const shieldKey of ["light_shields", "medium_shields", "heavy_shields", "shields_with_full_stats"]) {
+        for (const sh of asArray(shieldsObj[shieldKey])) {
+          const name = str(sh.name ?? sh.n); if (!name) continue;
+          const loc = str(sh.location ?? sh.loc);
+          const stability = sh.stability != null ? String(sh.stability) : "";
+          const block = str(sh.block ?? sh.physical_block);
+          const wt = sh.weight ?? sh.wt;
+          facts.push({
+            type: "SHIELD",
+            name,
+            location: loc || undefined,
+            weight: typeof wt === "number" ? wt : undefined,
+            raw: `SHIELD: ${name} (${shieldKey.replace(/_shields|_/g, (m) => m === "_shields" ? "" : " ").trim()})${stability ? ` | Stability:${stability}` : ""}${block ? ` | Block:${block}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+          });
+        }
+      }
+    }
+    for (const armorSet of asArray(shieldsArmor.notable_armor_sets)) {
+      const setName = str(armorSet.set_name ?? armorSet.name); if (!setName) continue;
+      const loc = str(armorSet.location ?? armorSet.loc);
+      const rating = str(armorSet.protection_rating ?? armorSet.rating);
+      const totalWt = armorSet.total_weight ?? armorSet.weight;
+      facts.push({
+        type: "ARMOR",
+        name: setName,
+        location: loc || undefined,
+        weight: typeof totalWt === "number" ? totalWt : undefined,
+        raw: `ARMOR: ${setName}${rating ? ` | Rating:${rating}` : ""}${totalWt != null ? ` | TotalWt:${totalWt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+      });
+    }
+    const armorByWeight = shieldsArmor.armor_by_weight as Record<string, unknown> | undefined;
+    if (armorByWeight) {
+      for (const weightKey of ["light_sets", "medium_sets", "heavy_sets"]) {
+        for (const armorItem of asArray(armorByWeight[weightKey])) {
+          const name = str(armorItem.name ?? armorItem.n ?? armorItem.set_name); if (!name) continue;
+          const loc = str(armorItem.location ?? armorItem.loc);
+          const wt = armorItem.weight ?? armorItem.wt ?? armorItem.total_weight;
+          facts.push({
+            type: "ARMOR",
+            name,
+            location: loc || undefined,
+            weight: typeof wt === "number" ? wt : undefined,
+            raw: `ARMOR: ${name} (${weightKey.replace("_sets", "")})${wt != null ? ` | Wt:${wt}` : ""}${loc ? ` | Loc:${loc}` : ""}`,
+          });
+        }
+      }
+    }
+  }
+
+  // ── 21. Accessories → RING / GEM ──────────────────────────────────────────
+  const accessories = codex.accessories as Record<string, unknown> | undefined;
+  if (accessories) {
+    for (const ring of asArray(accessories.rings)) {
+      const name = str(ring.name ?? ring.n); if (!name) continue;
+      const ef = str(ring.effect ?? ring.ef);
+      const loc = str(ring.location ?? ring.loc);
+      const missable = ring.missable ? " [MISSABLE]" : "";
+      facts.push({
+        type: "RING",
+        name,
+        effect: ef || undefined,
+        location: loc || undefined,
+        raw: `RING/ACC: ${name}${missable} | Effect:${ef || "none"}${loc ? ` | Loc:${loc}` : ""}`,
+      });
+    }
+    for (const pendant of asArray(accessories.pendants)) {
+      const name = str(pendant.name ?? pendant.n); if (!name) continue;
+      const ef = str(pendant.effect ?? pendant.ef);
+      const loc = str(pendant.location ?? pendant.loc);
+      const missable = pendant.missable ? " [MISSABLE]" : "";
+      facts.push({
+        type: "RING",
+        name: `Pendant: ${name}`,
+        effect: ef || undefined,
+        location: loc || undefined,
+        raw: `RING/ACC: Pendant: ${name}${missable} | Effect:${ef || "none"}${loc ? ` | Loc:${loc}` : ""}`,
+      });
+    }
+    const umbralEyes = accessories.umbral_eyes as Record<string, unknown> | undefined;
+    if (umbralEyes) {
+      for (const eye of asArray(umbralEyes.all_eyes ?? umbralEyes.eyes)) {
+        const name = str(eye.name ?? eye.n); if (!name) continue;
+        const ef = str(eye.effect ?? eye.ef);
+        const loc = str(eye.location ?? eye.how_to_obtain ?? eye.loc);
+        facts.push({
+          type: "GEM",
+          name,
+          effect: ef || undefined,
+          location: loc || undefined,
+          raw: `GEM: Umbral Eye: ${name}${loc ? ` | Loc:${loc}` : ""}${ef ? ` | Effect:${ef}` : ""}`,
+        });
+      }
+    }
+  }
+
+  // ── 22. Ammo / throwables (new format) → ITEM ─────────────────────────────
+  const ammoThrowables = codex.ammo_throwables as Record<string, unknown> | undefined;
+  if (ammoThrowables) {
+    for (const arrow of asArray(ammoThrowables.arrows)) {
+      const name = str(arrow.name ?? arrow.n); if (!name) continue;
+      const dmg = str(arrow.damage ?? arrow.ap);
+      const source = str(arrow.source ?? arrow.location ?? arrow.loc);
+      const status = str(arrow.status ?? arrow.st);
+      facts.push({
+        type: "ITEM",
+        name,
+        location: source || undefined,
+        ap: firstNum(dmg),
+        status: status || undefined,
+        raw: `ITEM: Arrow ${name}${dmg ? ` | Dmg:${dmg}` : ""}${status ? ` | Status:${status}` : ""}${source ? ` | Source:${source}` : ""}`,
+      });
+    }
+    for (const bolt of asArray(ammoThrowables.bolts)) {
+      const name = str(bolt.name ?? bolt.n); if (!name) continue;
+      const dmg = str(bolt.damage ?? bolt.ap);
+      const source = str(bolt.source ?? bolt.location ?? bolt.loc);
+      const status = str(bolt.status ?? bolt.st);
+      facts.push({
+        type: "ITEM",
+        name,
+        location: source || undefined,
+        ap: firstNum(dmg),
+        status: status || undefined,
+        raw: `ITEM: Bolt ${name}${dmg ? ` | Dmg:${dmg}` : ""}${status ? ` | Status:${status}` : ""}${source ? ` | Source:${source}` : ""}`,
+      });
+    }
+    for (const th of asArray(ammoThrowables.throwables)) {
+      const name = str(th.name ?? th.n); if (!name) continue;
+      const dmg = str(th.base_damage ?? th.damage ?? th.ap);
+      const dmgType = str(th.damage_type ?? th.type);
+      const status = str(th.status_buildup ?? th.status ?? th.st);
+      const ammoCost = th.ammo_cost != null ? String(th.ammo_cost) : str(th.ammoCost);
+      const source = str(th.source ?? th.location ?? th.loc);
+      const tip = str(th.tip ?? th.note);
+      facts.push({
+        type: "ITEM",
+        name,
+        location: source || undefined,
+        ap: firstNum(dmg),
+        status: status || undefined,
+        raw: `ITEM: Throwable ${name}${dmgType ? ` (${dmgType})` : ""}${dmg ? ` | Dmg:${dmg}` : ""}${status ? ` | Status:${status}` : ""}${ammoCost ? ` | AmmoCost:${ammoCost}` : ""}${source ? ` | Source:${source}` : ""}${tip ? ` | Tip:${tip}` : ""}`,
+      });
+    }
+  }
+
+  // ── 23. Areas → MAP ───────────────────────────────────────────────────────
+  for (const area of asArray(codex.areas)) {
+    const name = str(area.name ?? area.area ?? area.n); if (!name) continue;
+    const recLevel = area.recommended_level != null ? String(area.recommended_level) : str(area.level);
+    const boss = str(area.boss ?? area.mainBoss);
+    const areaType = str(area.type ?? area.realm);
+    facts.push({
+      type: "MAP",
+      name,
+      raw: `MAP: ${name}${areaType ? ` (${areaType})` : ""}${recLevel ? ` | RecLevel:${recLevel}` : ""}${boss ? ` | Boss:${boss}` : ""}`,
+    });
+  }
+
+  // ── 24. Bosses / Enemies (new format) → BUILD ─────────────────────────────
+  const bossesEnemies = codex.bosses_enemies as Record<string, unknown> | undefined;
+  if (bossesEnemies) {
+    for (const boss of asArray(bossesEnemies.bosses)) {
+      const name = str(boss.name ?? boss.n); if (!name) continue;
+      const area = str(boss.area ?? boss.location);
+      const weakness = Array.isArray(boss.weaknesses)
+        ? (boss.weaknesses as unknown[]).map(String).join(", ")
+        : str(boss.weakness ?? boss.weaknesses);
+      const rewards = str(boss.rewards ?? boss.drop ?? boss.reward);
+      const missable = boss.missable ? " [MISSABLE]" : "";
+      const endingLock = boss.ending_lock ? ` [EndingLock:${str(boss.ending_lock)}]` : "";
+      const strategy = str(boss.strategy ?? boss.tip);
+      facts.push({
+        type: "BUILD",
+        name,
+        location: area || undefined,
+        effect: rewards || undefined,
+        raw: `BUILD: Boss ${name}${missable}${endingLock}${area ? ` | Area:${area}` : ""}${weakness ? ` | Weakness:${weakness}` : ""}${rewards ? ` | Rewards:${rewards}` : ""}${strategy ? ` | Tip:${strategy}` : ""}`,
+      });
+    }
+    for (const enemy of asArray(bossesEnemies.enemies)) {
+      const name = str(enemy.name ?? enemy.n ?? enemy.type ?? enemy.enemy_type); if (!name) continue;
+      const locs = Array.isArray(enemy.locations)
+        ? (enemy.locations as unknown[]).map(String).join(", ")
+        : str(enemy.location ?? enemy.locations);
+      const drops = str(enemy.drops ?? enemy.drop ?? enemy.reward);
+      const weakness = str(enemy.weakness ?? enemy.weaknesses);
+      facts.push({
+        type: "BUILD",
+        name: `Enemy: ${name}`,
+        location: locs || undefined,
+        effect: drops || undefined,
+        raw: `BUILD: Enemy ${name}${locs ? ` | Locs:${locs}` : ""}${weakness ? ` | Weakness:${weakness}` : ""}${drops ? ` | Drops:${drops}` : ""}`,
+      });
+    }
+  }
+
+  // ── 25. NPCs (rich format: npcs.all_npcs) → LORE ─────────────────────────
+  const npcsRich = codex.npcs as Record<string, unknown> | undefined;
+  if (npcsRich && (npcsRich.all_npcs || npcsRich.npcs) && !Array.isArray(npcsRich)) {
+    for (const npc of asArray(npcsRich.all_npcs ?? npcsRich.npcs)) {
+      const name = str(npc.name ?? npc.n); if (!name) continue;
+      const loc = str(npc.location ?? npc.loc);
+      const role = str(npc.role ?? npc.desc);
+      const sells = asStringArray(npc.sells ?? npc.items).join(", ");
+      const missable = npc.missable ? " [MISSABLE]" : "";
+      const quest = str(npc.quest_involvement ?? npc.quest ?? npc.questline);
+      facts.push({
+        type: "LORE",
+        name,
+        location: loc || undefined,
+        raw: `LORE: NPC ${name}${missable}${loc ? ` | Loc:${loc}` : ""}${role ? ` | Role:${role}` : ""}${sells ? ` | Sells:${sells}` : ""}${quest ? ` | Quest:${quest}` : ""}`,
+      });
+    }
+  }
+
+  // ── 26. Quests (new format: quests.quests) → LORE ─────────────────────────
+  const questsSection = codex.quests as Record<string, unknown> | undefined;
+  if (questsSection && !Array.isArray(questsSection)) {
+    for (const quest of asArray(questsSection.quests ?? questsSection.questlines)) {
+      const name = str(quest.name ?? quest.n); if (!name) continue;
+      const giver = str(quest.giver ?? quest.npc);
+      const missable = str(quest.missable_warning ?? quest.missable);
+      const rewards = str(quest.rewards ?? quest.reward);
+      const steps = asStringArray(quest.steps).join(" → ");
+      facts.push({
+        type: "LORE",
+        name: `Quest: ${name}`,
+        raw: `LORE: Quest ${name}${giver ? ` | Giver:${giver}` : ""}${missable ? ` | Missable:${missable}` : ""}${rewards ? ` | Rewards:${rewards}` : ""}${steps ? ` | Steps:${steps.slice(0, 200)}` : ""}`,
+      });
+    }
+  }
+
+  // ── 27. Lore section → LORE ───────────────────────────────────────────────
+  const loreSection = codex.lore as Record<string, unknown> | undefined;
+  if (loreSection && !Array.isArray(loreSection)) {
+    const cosm = loreSection.cosmology as Record<string, unknown> | undefined;
+    if (cosm) {
+      for (const [cosmKey, cosmVal] of Object.entries(cosm)) {
+        const desc = typeof cosmVal === "string"
+          ? cosmVal
+          : str((cosmVal as Record<string, unknown>)?.description ?? (cosmVal as Record<string, unknown>)?.desc);
+        if (!desc || desc.length < 10) continue;
+        facts.push({ type: "LORE", name: `Cosmology: ${cosmKey}`, effect: desc, raw: `LORE: Cosmology ${cosmKey} | ${desc.slice(0, 250)}` });
+      }
+    }
+    for (const faction of asArray(loreSection.factions)) {
+      const name = str(faction.name ?? faction.n); if (!name) continue;
+      const desc = str(faction.description ?? faction.desc ?? faction.summary);
+      facts.push({ type: "LORE", name: `Faction: ${name}`, effect: desc || undefined, raw: `LORE: Faction ${name}${desc ? ` | ${desc.slice(0, 200)}` : ""}` });
+    }
+  }
+
+  // ── 28. Endings (new format: endings.endings) → LORE ─────────────────────
+  const endingsRich = codex.endings as Record<string, unknown> | undefined;
+  if (endingsRich && !Array.isArray(endingsRich) && (endingsRich.endings || endingsRich.ending_list)) {
+    for (const ending of asArray(endingsRich.endings ?? endingsRich.ending_list)) {
+      const name = str(ending.name ?? ending.n); if (!name) continue;
+      const trophy = str(ending.trophy);
+      const ngUnlock = str(ending.ng_class_unlock ?? ending.ngClassUnlock);
+      const missableBoss = str(ending.missable_boss ?? ending.missableBoss);
+      const reqs = asStringArray(ending.requirements ?? ending.steps).join(" → ");
+      facts.push({
+        type: "LORE",
+        name: `Ending: ${name}`,
+        raw: `LORE: Ending ${name}${trophy ? ` | Trophy:${trophy}` : ""}${ngUnlock ? ` | NG+Class:${ngUnlock}` : ""}${missableBoss ? ` | MissableBoss:${missableBoss}` : ""}${reqs ? ` | Reqs:${reqs}` : ""}`,
+      });
+    }
+  }
+
+  // ── 29. Meta builds / farming guide → BUILD / MECHANIC ────────────────────
+  const meta = codex.meta as Record<string, unknown> | undefined;
+  if (meta) {
+    const metaBuilds = meta.builds as Record<string, unknown> | undefined;
+    if (metaBuilds) {
+      for (const build of asArray(metaBuilds.top_builds ?? metaBuilds.builds)) {
+        const name = str(build.name ?? build.n); if (!name) continue;
+        const stats = str(build.stats ?? build.stat_spread ?? build.key_stats);
+        const strategy = str(build.strategy ?? build.desc);
+        const keyItems = asStringArray(build.key_items ?? build.keyItems).join(", ");
+        const ngViab = str(build.ng_viability ?? build.ng_plus);
+        facts.push({
+          type: "BUILD",
+          name: `Meta Build: ${name}`,
+          effect: strategy || undefined,
+          raw: `BUILD: Meta ${name}${stats ? ` | Stats:${stats}` : ""}${keyItems ? ` | KeyItems:${keyItems}` : ""}${strategy ? ` | Strategy:${strategy.slice(0, 150)}` : ""}${ngViab ? ` | NG:${ngViab}` : ""}`,
+        });
+      }
+    }
+    const farmGuide = meta.farming_guide as Record<string, unknown> | undefined;
+    if (farmGuide) {
+      for (const [section, content] of Object.entries(farmGuide)) {
+        const desc = typeof content === "string"
+          ? content
+          : str((content as Record<string, unknown>)?.desc ?? (content as Record<string, unknown>)?.description);
+        if (!desc || desc.length < 10) continue;
+        facts.push({ type: "MECHANIC", name: `Farming: ${section}`, effect: desc, raw: `MECHANIC: Farming ${section} | ${desc.slice(0, 200)}` });
+      }
+    }
+  }
+
+  // ── 30. Cross-references / missable checklist → LORE ──────────────────────
+  const crossRefs = codex.cross_references as Record<string, unknown> | undefined;
+  if (crossRefs) {
+    const missableChecklist = crossRefs.missable_checklist as Record<string, unknown> | undefined;
+    if (missableChecklist) {
+      for (const [category, items] of Object.entries(missableChecklist)) {
+        const itemList = asStringArray(items);
+        if (itemList.length === 0) continue;
+        facts.push({
+          type: "LORE",
+          name: `Missable ${category}`,
+          effect: itemList.join(", "),
+          raw: `LORE: Missable ${category} | ${itemList.join(", ")}`,
+        });
+      }
+    }
+  }
+
+  // ── 31. Build family recommendations → MECHANIC ───────────────────────────
+  const buildFamilies = codex.build_family_recommendations as Record<string, unknown> | undefined;
+  if (buildFamilies) {
+    for (const rec of asArray(buildFamilies.table)) {
+      const family = str(rec.family ?? rec.name); if (!family) continue;
+      const keyStats = str(rec.key_stats ?? rec.stats);
+      const weapons = str(rec.weapons ?? rec.weapon);
+      const rings = str(rec.rings ?? rec.accessories);
+      facts.push({
+        type: "MECHANIC",
+        name: `Build Family: ${family}`,
+        raw: `MECHANIC: Build Family ${family}${keyStats ? ` | Stats:${keyStats}` : ""}${weapons ? ` | Weapons:${weapons}` : ""}${rings ? ` | Rings:${rings}` : ""}`,
+      });
     }
   }
 
