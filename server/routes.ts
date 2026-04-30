@@ -130,9 +130,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: "gameKey, gameName, and codex are required" });
     }
     try {
-      const rawText    = JSON.stringify(codex, null, 2);
+      // Store minified JSON — removes all whitespace, cuts token count by ~50%
+      // vs. pretty-printed, so the full codex fits easily in any provider's context.
+      const rawText    = JSON.stringify(codex); // no indentation
       const entryCount = countCodexEntries(codex);
       storage.upsertCodexRaw(gameKey, rawText, entryCount);
+      console.log(`[codex] Imported ${gameName}: ${rawText.length.toLocaleString()} chars, ${entryCount} entries`);
       return res.json({ ok: true, entryCount });
     } catch (err) {
       console.error("Codex import error:", err);
@@ -214,7 +217,14 @@ Rules:
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
+      console.log(`[step1] AI response (first 600 chars): ${text.slice(0, 600)}`);
       const parsed = parseJson(text);
+      // Validate that the critical phase keys are present
+      const p = parsed as Record<string, unknown>;
+      if (!p.phase1 && !p.phase2) {
+        console.error("[step1] MISSING phases in parsed response:", JSON.stringify(p).slice(0, 400));
+        return res.status(500).json({ error: "AI did not return phase1/phase2. Try again or check your codex." });
+      }
       res.json(parsed);
     } catch (err) {
       console.error("Step1 error:", err);
@@ -274,7 +284,13 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
+      console.log(`[step2] AI response (first 600 chars): ${text.slice(0, 600)}`);
       const parsed = parseJson(text);
+      const p = parsed as Record<string, unknown>;
+      if (!p.phase3 && !p.phase4) {
+        console.error("[step2] MISSING phases in parsed response:", JSON.stringify(p).slice(0, 400));
+        return res.status(500).json({ error: "AI did not return phase3/phase4. Try again." });
+      }
       res.json(parsed);
     } catch (err) {
       console.error("Step2 error:", err);

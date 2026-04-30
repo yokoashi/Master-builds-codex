@@ -1,13 +1,14 @@
 import { storage } from "./storage";
 
-// Per-provider char limits (leave ~10K chars for prompts on top)
-// Claude Sonnet 4.6: 200K token ctx ≈ 800K chars; use 600K to be safe
-// PPLX sonar-pro:    127K token ctx ≈ 500K chars; use 400K
-// OpenRouter:        varies; default conservatively to 80K
+// Per-provider char limits for minified JSON (no whitespace).
+// Minified JSON is ~50% smaller than pretty-printed, so these fit easily.
+// Claude Sonnet 4.6: 200K token ctx; 300K minified chars ≈ 75K tokens, leaves 125K for output
+// PPLX sonar-pro:    127K token ctx; 150K minified chars ≈ 38K tokens
+// OpenRouter:        varies; 60K chars is conservative
 export const CODEX_CHAR_LIMITS: Record<string, number> = {
-  claude:     600_000,
-  pplx:       400_000,
-  openrouter:  80_000,
+  claude:     300_000,
+  pplx:       150_000,
+  openrouter:  60_000,
 };
 
 /**
