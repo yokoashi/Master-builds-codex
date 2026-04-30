@@ -18,6 +18,11 @@
 // is loaded at runtime from the path we control.
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+// ESM does not provide __dirname — recreate it from import.meta.url
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 // process.resourcesPath is injected by Electron (undefined in plain Node).
 declare const process: NodeJS.Process & { resourcesPath?: string };
