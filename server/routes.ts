@@ -3,7 +3,7 @@ import type { Server } from "http";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { storage } from "./storage";
-import { buildKnowledgeBlock, countCodexEntries, CODEX_CHAR_LIMITS } from "./knowledge";
+import { buildKnowledgeBlock, countCodexEntries, formatCodexForAI, CODEX_CHAR_LIMITS } from "./knowledge";
 import { parseJsonResponse } from "./parse-json";
 import { SEED_GAMES, SEED_BUILDS } from "@shared/seed-data";
 import type {
@@ -130,12 +130,16 @@ export async function registerRoutes(
       return res.status(400).json({ error: "gameKey, gameName, and codex are required" });
     }
     try {
-      // Store minified JSON — removes all whitespace, cuts token count by ~50%
-      // vs. pretty-printed, so the full codex fits easily in any provider's context.
-      const rawText    = JSON.stringify(codex); // no indentation
+      const minJson    = JSON.stringify(codex); // minified
+      const formatted  = formatCodexForAI(minJson); // compact text
       const entryCount = countCodexEntries(codex);
-      storage.upsertCodexRaw(gameKey, rawText, entryCount);
-      console.log(`[codex] Imported ${gameName}: ${rawText.length.toLocaleString()} chars, ${entryCount} entries`);
+      storage.upsertCodexRaw(gameKey, minJson, entryCount); // store minified JSON
+      console.log(
+        `[codex] Imported ${gameName}: ${entryCount} entries | ` +
+        `minified=${minJson.length.toLocaleString()} chars → ` +
+        `formatted=${formatted.length.toLocaleString()} chars (` +
+        `${((1 - formatted.length / minJson.length) * 100).toFixed(0)}% smaller)`,
+      );
       return res.json({ ok: true, entryCount });
     } catch (err) {
       console.error("Codex import error:", err);
