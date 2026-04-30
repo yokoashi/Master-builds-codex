@@ -19,6 +19,10 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
+
+// ESM does not provide require() — create one bound to this file's URL.
+const require = createRequire(import.meta.url);
 
 // ESM does not provide __dirname — recreate it from import.meta.url
 const __filename = fileURLToPath(import.meta.url);
