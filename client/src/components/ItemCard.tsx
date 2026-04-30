@@ -103,7 +103,29 @@ export default function ItemCard({ item, accent }: Props) {
 
           {/* Info grid */}
           <div className="grid grid-cols-1 gap-1.5">
-            {item.loc && <InfoRow icon="📍" label="Location" value={item.loc} accent={accent} />}
+            {/* Show steps instead of plain loc when available */}
+            {item.steps && item.steps.length > 0 ? (
+              <div>
+                <div className="flex gap-1.5 items-center mb-1.5">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ backgroundColor: hexToRgba(accent, 0.18), color: accent }}>
+                    QUESTLINE
+                  </span>
+                </div>
+                <ol className="space-y-1.5">
+                  {item.steps.map((step, i) => (
+                    <li key={i} className="flex gap-2 text-xs leading-relaxed">
+                      <span className="flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
+                        style={{ backgroundColor: hexToRgba(accent, 0.18), color: accent }}>
+                        {i + 1}
+                      </span>
+                      <span style={{ color: "var(--color-text)" }}>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : (
+              item.loc && <InfoRow icon="📍" label="Location" value={item.loc} accent={accent} />
+            )}
             {item.up && <InfoRow icon="⬆" label="Upgrade" value={item.up} accent={accent} />}
             {item.durability !== undefined && (
               <InfoRow icon="🛡" label="Durability" value={String(item.durability)} accent={accent} />

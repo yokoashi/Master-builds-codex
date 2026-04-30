@@ -313,7 +313,8 @@ Return this EXACT JSON structure:
     "weapons": [
       { "n": "Weapon Name", "ap": 150, "wt": 6.0, "ef": "Effect or null", "st": "Status or null",
         "eq": "Right Hand", "d": "Role in build", "loc": "Exact location",
-        "up": "Upgrade path", "tip": "Build tip", "lore": "Lore note", "durability": 200 }
+        "up": "Upgrade path", "tip": "Build tip", "lore": "Lore note", "durability": 200,
+        "steps": null }
     ],
     "armor": [ { "n": "...", "wt": 4.0, "eq": "Chest", "d": "...", "loc": "...", "up": "None", "tip": "...", "lore": "...", "durability": 300 } ],
     "acc":   [ { "n": "Ring Name", "wt": 0.0, "eq": "Ring", "d": "...", "loc": "...", "up": "None", "tip": "...", "lore": "..." } ],
@@ -335,7 +336,8 @@ Rules:
 - Include lore and durability for every item
 - Rings go in "acc" array; spells/pyromancies/miracles go in "spells"
 - Stats must fit the soul level range
-- accent must be a dark hex color`;
+- accent must be a dark hex color
+- steps: include a ["Step 1: ...", "Step 2: ..."] array ONLY for items requiring NPC questlines or multi-step acquisition (e.g. Logan's Catalyst, Moonlight Greatsword). Leave null for simple drops, loot, or merchant purchases.`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);

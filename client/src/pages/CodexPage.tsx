@@ -6,12 +6,13 @@ import { cn, hexToRgba } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import BuildTab from "@/components/BuildTab";
 import MaterialsTab from "@/components/MaterialsTab";
+import ProgressionTab from "@/components/ProgressionTab";
 import ProsConsTab from "@/components/ProsConsTab";
 import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 
-const TABS = ["Your Build", "Materials", "Pros & Cons", "Quick Ref"] as const;
+const TABS = ["Your Build", "Progression", "Materials", "Pros & Cons", "Quick Ref"] as const;
 type Tab = typeof TABS[number];
 
 export default function CodexPage() {
@@ -304,6 +305,7 @@ export default function CodexPage() {
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === "Your Build" && <BuildTab build={build} game={game} />}
+              {activeTab === "Progression" && <ProgressionTab build={build} />}
               {activeTab === "Materials" && <MaterialsTab build={build} game={game} />}
               {activeTab === "Pros & Cons" && <ProsConsTab build={build} />}
               {activeTab === "Quick Ref" && <QuickRefTab build={build} />}

@@ -74,6 +74,7 @@ export interface Item {
   tip: string;      // build-specific tip
   lore?: string;    // short lore blurb
   durability?: number; // base durability value
+  steps?: string[];  // step-by-step acquisition guide for questline/complex items
 }
 
 export interface Loadout {
