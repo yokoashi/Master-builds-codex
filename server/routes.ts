@@ -3,7 +3,7 @@ import type { Server } from "http";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { storage } from "./storage";
-import { buildKnowledgeBlock, countCodexEntries } from "./knowledge";
+import { buildKnowledgeBlock, countCodexEntries, CODEX_CHAR_LIMITS } from "./knowledge";
 import { parseJsonResponse } from "./parse-json";
 import { SEED_GAMES, SEED_BUILDS } from "@shared/seed-data";
 import type {
@@ -65,9 +65,10 @@ async function callAI(
   return completion.choices[0]?.message?.content ?? "";
 }
 
-// ── System prompt builder (injects full codex) ────────────────────────────────
-function buildSystemPrompt(gameKey: string, gameName: string, extra = ""): string {
-  const knowledge = buildKnowledgeBlock(gameKey);
+// ── System prompt builder (injects full codex, provider-aware size limit) ─────
+function buildSystemPrompt(gameKey: string, gameName: string, provider: AiProvider, extra = ""): string {
+  const maxChars = CODEX_CHAR_LIMITS[provider] ?? 80_000;
+  const knowledge = buildKnowledgeBlock(gameKey, maxChars);
   return `${knowledge}
 
 You are an expert ${gameName} build guide writer. You have the full game codex above.
@@ -156,7 +157,7 @@ export async function registerRoutes(
       return s ? `\nSeed stats for ${ph}: ${JSON.stringify(s)}` : "";
     };
 
-    const systemPrompt = buildSystemPrompt(gameKey, gameName);
+    const systemPrompt = buildSystemPrompt(gameKey, gameName, provider);
 
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
@@ -227,7 +228,7 @@ Rules:
     const { gameKey, gameName, partialBuild, provider, model } = body;
 
     const systemPrompt = buildSystemPrompt(
-      gameKey, gameName,
+      gameKey, gameName, provider,
       `Continue the "${partialBuild.label}" build. Generate the final two phases.`,
     );
 
@@ -286,7 +287,7 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
     const body = req.body as GenerateStep3Request;
     const { gameKey, gameName, partialBuild, provider, model } = body;
 
-    const systemPrompt = buildSystemPrompt(gameKey, gameName);
+    const systemPrompt = buildSystemPrompt(gameKey, gameName, provider);
 
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 

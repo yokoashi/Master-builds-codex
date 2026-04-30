@@ -1,7 +1,14 @@
 import { storage } from "./storage";
 
-// Max chars injected into a prompt (~30K tokens, well within any provider's context)
-const MAX_CODEX_CHARS = 120_000;
+// Per-provider char limits (leave ~10K chars for prompts on top)
+// Claude Sonnet 4.6: 200K token ctx ≈ 800K chars; use 600K to be safe
+// PPLX sonar-pro:    127K token ctx ≈ 500K chars; use 400K
+// OpenRouter:        varies; default conservatively to 80K
+export const CODEX_CHAR_LIMITS: Record<string, number> = {
+  claude:     600_000,
+  pplx:       400_000,
+  openrouter:  80_000,
+};
 
 /**
  * Count leaf entries in the imported codex so the UI can show a meaningful number.
@@ -26,16 +33,16 @@ export function countCodexEntries(codex: Record<string, unknown>): number {
 
 /**
  * Build the knowledge block injected into every AI system prompt.
- * Returns the full raw codex text (truncated if huge).
+ * maxChars defaults to 600K (Claude); pass a smaller value for other providers.
  */
-export function buildKnowledgeBlock(gameKey: string): string {
+export function buildKnowledgeBlock(gameKey: string, maxChars = 600_000): string {
   const raw = storage.getCodexRaw(gameKey);
   if (!raw) {
     return "No codex loaded for this game. Generate the build using general game knowledge only.";
   }
-  const text =
-    raw.rawText.length > MAX_CODEX_CHARS
-      ? raw.rawText.slice(0, MAX_CODEX_CHARS) + "\n[...codex truncated at 120K chars...]"
-      : raw.rawText;
+  const truncated = raw.rawText.length > maxChars;
+  const text = truncated
+    ? raw.rawText.slice(0, maxChars) + `\n[...codex truncated — ${raw.rawText.length.toLocaleString()} chars total, showing first ${maxChars.toLocaleString()}...]`
+    : raw.rawText;
   return `=== GAME CODEX ===\nUse ONLY items, locations, and mechanics found in this codex.\n\n${text}`;
 }
