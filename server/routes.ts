@@ -131,6 +131,16 @@ function normaliseStep1(p: Record<string, unknown>): Record<string, unknown> {
     }
   }
 
+  // 6. Parser extracted a bare phase object instead of the build wrapper (happens when
+  //    the response was truncated and tryDepthWalk picked the largest inner sub-object).
+  //    Detect by presence of phase-specific keys and promote to phase1/phase2.
+  const isPhase = ("sn" in p || "dmg" in p) && ("weapons" in p || "armor" in p);
+  if (isPhase) {
+    const name = String(p.name ?? "");
+    if (midKeys.test(name)) return { phase2: p };
+    return { phase1: p }; // default to phase1 (Early Game or unknown)
+  }
+
   return p;
 }
 

@@ -115,7 +115,10 @@ function extractTextBlocks(raw: string): string[] {
 }
 
 function tryAllStrategies(text: string): unknown {
-  const strategies = [tryDirect, tryBraceExtract, tryDepthWalk, tryRepair];
+  // tryRepair before tryDepthWalk: for a truncated build response, repair closes
+  // the outer object (preserving metadata + phase1), whereas depth-walk would
+  // extract only the largest complete inner object (just the phase1 sub-tree).
+  const strategies = [tryDirect, tryBraceExtract, tryRepair, tryDepthWalk];
   for (const strategy of strategies) {
     try {
       return strategy(text);
