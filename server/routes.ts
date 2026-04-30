@@ -51,9 +51,24 @@ async function callAI(
   const apiKey = provider === "pplx"
     ? (process.env.PPLX_API_KEY ?? "")
     : (process.env.OPENROUTER_API_KEY ?? "");
+
+  if (!apiKey) {
+    throw new Error(
+      provider === "pplx"
+        ? "PPLX_API_KEY environment variable is not set."
+        : "OPENROUTER_API_KEY environment variable is not set.",
+    );
+  }
+
   const resolvedModel = model || (provider === "pplx" ? PPLX_MODEL : "anthropic/claude-sonnet-4-5");
 
-  const oa = new OpenAI({ baseURL, apiKey });
+  const oa = new OpenAI({
+    baseURL,
+    apiKey,
+    defaultHeaders: provider === "openrouter"
+      ? { "HTTP-Referer": "http://localhost:5000", "X-Title": "Master Build Codex" }
+      : undefined,
+  });
   const completion = await oa.chat.completions.create({
     model: resolvedModel,
     max_tokens: 8000,
@@ -63,6 +78,78 @@ async function callAI(
     ],
   });
   return completion.choices[0]?.message?.content ?? "";
+}
+
+// ── Phase normalisation ───────────────────────────────────────────────────────
+// The AI occasionally wraps phases under a "phases" object, uses camelCase,
+// or returns an array instead of the exact keys we asked for.
+
+function phaseByName(obj: Record<string, unknown>, patterns: RegExp): unknown {
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const name = String((v as Record<string, unknown>).name ?? "");
+      if (patterns.test(name)) return v;
+    }
+  }
+  return undefined;
+}
+
+function normaliseStep1(p: Record<string, unknown>): Record<string, unknown> {
+  // Already correct
+  if (p.phase1 || p.phase2) return p;
+
+  // Nested under "phases" object key
+  const nested = p.phases as Record<string, unknown> | undefined;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    if (nested.phase1 || nested.phase2) return { ...p, ...nested };
+  }
+
+  // Phases array [earlyGame, midGame, ...]
+  if (Array.isArray(p.phases) && p.phases.length >= 2) {
+    return { ...p, phase1: p.phases[0], phase2: p.phases[1] };
+  }
+
+  // By name (earlyGame / midGame keys or camelCase variants)
+  const earlyKeys = /early.?game|phase.?1|earlyGame/i;
+  const midKeys   = /mid.?game|phase.?2|midGame/i;
+  const phase1 =
+    p.phase_1 ?? p.earlyGame ?? p.early_game ??
+    phaseByName(p, earlyKeys);
+  const phase2 =
+    p.phase_2 ?? p.midGame ?? p.mid_game ??
+    phaseByName(p, midKeys);
+  if (phase1 || phase2) return { ...p, phase1, phase2 };
+
+  return p;
+}
+
+function normaliseStep2(p: Record<string, unknown>): Record<string, unknown> {
+  // Already correct
+  if (p.phase3 || p.phase4) return p;
+
+  // Nested under "phases" object key
+  const nested = p.phases as Record<string, unknown> | undefined;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    if (nested.phase3 || nested.phase4) return { ...p, ...nested };
+  }
+
+  // Phases array [endGame, ngPlus]
+  if (Array.isArray(p.phases) && p.phases.length >= 2) {
+    return { ...p, phase3: p.phases[0], phase4: p.phases[1] };
+  }
+
+  // By name / camelCase variants
+  const endKeys = /end.?game|late.?game|phase.?3|endGame/i;
+  const ngKeys  = /ng\+|new.?game\+?|phase.?4|ngPlus/i;
+  const phase3 =
+    p.phase_3 ?? p.endGame ?? p.end_game ?? p.endgame ??
+    phaseByName(p, endKeys);
+  const phase4 =
+    p.phase_4 ?? p.ngPlus ?? p.ng_plus ?? p.ng ??
+    phaseByName(p, ngKeys);
+  if (phase3 || phase4) return { ...p, phase3, phase4 };
+
+  return p;
 }
 
 // ── System prompt builder (injects full codex, provider-aware size limit) ─────
@@ -222,14 +309,13 @@ Rules:
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
       console.log(`[step1] AI response (first 600 chars): ${text.slice(0, 600)}`);
-      const parsed = parseJson(text);
-      // Validate that the critical phase keys are present
-      const p = parsed as Record<string, unknown>;
+      const raw = parseJson(text) as Record<string, unknown>;
+      const p   = normaliseStep1(raw);
       if (!p.phase1 && !p.phase2) {
-        console.error("[step1] MISSING phases in parsed response:", JSON.stringify(p).slice(0, 400));
-        return res.status(500).json({ error: "AI did not return phase1/phase2. Try again or check your codex." });
+        console.error("[step1] MISSING phases after normalise:", JSON.stringify(raw).slice(0, 600));
+        return res.status(500).json({ error: "AI did not return Early Game / Mid Game phases. Try again or check your codex." });
       }
-      res.json(parsed);
+      res.json(p);
     } catch (err) {
       console.error("Step1 error:", err);
       res.status(500).json({ error: String(err) });
@@ -289,13 +375,15 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
       console.log(`[step2] AI response (first 600 chars): ${text.slice(0, 600)}`);
-      const parsed = parseJson(text);
-      const p = parsed as Record<string, unknown>;
+      const parsed = parseJson(text) as Record<string, unknown>;
+
+      // Normalise: AI sometimes uses different key names or nests the phases
+      const p = normaliseStep2(parsed);
       if (!p.phase3 && !p.phase4) {
-        console.error("[step2] MISSING phases in parsed response:", JSON.stringify(p).slice(0, 400));
-        return res.status(500).json({ error: "AI did not return phase3/phase4. Try again." });
+        console.error("[step2] MISSING phases after normalise:", JSON.stringify(parsed).slice(0, 600));
+        return res.status(500).json({ error: "AI did not return End Game / NG+ phases. Try again — if this keeps happening, try a shorter build description." });
       }
-      res.json(parsed);
+      res.json(p);
     } catch (err) {
       console.error("Step2 error:", err);
       res.status(500).json({ error: String(err) });
