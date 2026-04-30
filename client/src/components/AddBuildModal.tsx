@@ -27,14 +27,14 @@ const STAGE_LABELS: Record<Stage, string> = {
 const PROVIDER_DEFAULTS: Record<AiProvider, string> = {
   claude:      "claude-sonnet-4-6",
   pplx:        "sonar-pro",
-  openrouter:  "openai/gpt-4o",
+  openrouter:  "openai/gpt-5.4",
 };
 
 const OPENROUTER_MODELS = [
-  { id: "openai/gpt-4o",      label: "GPT-4o" },
-  { id: "openai/gpt-4o-mini", label: "GPT-4o mini" },
-  { id: "openai/o3",          label: "o3" },
-  { id: "openai/o4-mini",     label: "o4-mini" },
+  { id: "openai/gpt-5.4",                  label: "GPT-5.4" },
+  { id: "anthropic/claude-sonnet-4-6",     label: "Sonnet 4.6" },
+  { id: "deepseek/deepseek-v3.2",          label: "DeepSeek V3.2" },
+  { id: "xiaomi/mimo-v2-pro",              label: "MiMo-V2-Pro" },
 ];
 
 const PROVIDER_LABELS: Record<AiProvider, string> = {
