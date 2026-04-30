@@ -1,21 +1,19 @@
 import type { Express } from "express";
 import type { Server } from "http";
-import { EventEmitter } from "events";
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join, resolve } from "path";
-import Perplexity from "@perplexity-ai/perplexity_ai";
 import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
 import { storage } from "./storage";
 import {
-  extractFactsFromBuild,
   extractFactsFromCodex,
   updateKnowledgeCache,
   buildKnowledgeBlock,
-  parseLearnLines,
 } from "./knowledge";
-import { fetchWikiPrePass, parseWikiPage } from "./wiki-fetch";
 import { parseJsonResponse } from "./parse-json";
+
+function parseJson<T = Record<string, unknown>>(text: string): T {
+  const result = parseJsonResponse<T>(text);
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+}
 import { SEED_GAMES, SEED_BUILDS } from "@shared/seed-data";
 import type {
   Build,
@@ -23,647 +21,47 @@ import type {
   GenerateStep1Request,
   GenerateStep2Request,
   GenerateStep3Request,
-  UpdateRequest,
   KnowledgeFact,
 } from "@shared/types";
 
-// ── AI Clients ───────────────────────────────────────────────────────────────
-// Dual-AI pipeline:
-//   Perplexity — web research, real-time item data, wiki crawling
-//   Claude     — JSON structuring, extended thinking, synthesis validation
-let pplx = new Perplexity({
-  apiKey: process.env.PERPLEXITY_API_KEY ?? "",
-});
-let claude = new Anthropic({
+// ── AI Client ─────────────────────────────────────────────────────────────────
+const claude = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY ?? "",
 });
-let openRouter = new OpenAI({
-  apiKey: process.env.OPEN_ROUTER_API_KEY ?? "",
-  baseURL: "https://openrouter.ai/api/v1",
-  defaultHeaders: {
-    "HTTP-Referer": "https://github.com/yokoashi/Master-builds-codex",
-    "X-Title": "Master Builds Codex",
-  },
-});
+const CLAUDE_MODEL = "claude-sonnet-4-6";
 
-// Perplexity models
-const SONAR_PRO = "sonar-pro";           // 200K ctx, live web search
-const SONAR_REASONING = "sonar-reasoning-pro"; // CoT, used only as fallback
-const CLAUDE_MODEL = "claude-sonnet-4-6"; // JSON structuring + extended thinking
-// OpenRouter — default model (user can change in settings)
-const OR_DEFAULT_MODEL = "google/gemini-2.5-pro-preview-03-25";
+// ── Route registration ────────────────────────────────────────────────────────
+export async function registerRoutes(
+  _server: Server,
+  app: Express
+): Promise<void> {
 
-// ── Learn progress broadcaster ───────────────────────────────────────────────
-// Emits {gameKey, stage, detail, done} events that the SSE endpoint forwards
-// to any connected client listeners.
-export interface LearnProgressEvent {
-  gameKey: string;
-  stage: string;   // short label shown in the UI
-  detail?: string; // optional extra info (e.g. category name)
-  done?: boolean;  // signals the stream can close
-  error?: string;
-}
-const learnEmitter = new EventEmitter();
-learnEmitter.setMaxListeners(20);
-const SONAR_DEEP = "sonar-deep-research";
-
-// ── App settings (persisted to settings.json next to the DB) ─────────────────
-interface AppSettings {
-  aiMode: "dual" | "perplexity" | "claude" | "openrouter";
-  orModel: string;             // OpenRouter model slug (single-model fallback, unused in ensemble)
-  learnSynthMode: "claude" | "openrouter";                      // Who runs the synthesis/dedup pass
-  learnResearchMode: "perplexity" | "openrouter" | "claude";    // Who runs the 18-category deep research phase
-}
-const SETTINGS_PATH = process.env.DB_PATH
-  ? join(dirname(process.env.DB_PATH), "settings.json")
-  : join(process.cwd(), "settings.json");
-
-function loadSettings(): AppSettings {
-  try {
-    if (existsSync(SETTINGS_PATH)) {
-      const saved = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"));
-      return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude", ...saved };
-    }
-  } catch { /* ignore */ }
-  return { aiMode: "dual", orModel: OR_DEFAULT_MODEL, learnSynthMode: "claude", learnResearchMode: "claude" };
-}
-function saveSettings(s: AppSettings) {
-  try { writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf-8"); } catch { /* ignore */ }
-}
-let appSettings = loadSettings();
-
-// ── Helper: extract text from Perplexity non-streaming response ──────────────
-// The SDK's create() return type union is overly broad; we know stream:false gives us
-// a non-streaming StreamChunk. Use a local shape to keep things simple.
-interface PplxResponse {
-  choices: Array<{ message: { content: string | null | unknown[] } }>;
-}
-function extractText(response: PplxResponse): string {
-  const content = response.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((chunk) => (typeof (chunk as { text?: string }).text === "string" ? (chunk as { text: string }).text : ""))
-      .join("");
-  }
-  return "";
-}
-
-// ── Claude JSON generator — takes research text + prompt → structured JSON ──
-// Claude never does web search (no sonar); it only structures the data it receives.
-// max_tokens: 8000 minimum per spec.
-async function claudeJson<T>(
-  systemPrompt: string,
-  userPrompt: string,
-  extendedThinking = false
-): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const params: any = {
-      model: CLAUDE_MODEL,
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    };
-    if (extendedThinking) {
-      params.thinking = { type: "enabled", budget_tokens: 5000 };
-      params.max_tokens = 16000;
-    }
-    const msg = await claude.messages.create(params);
-    const text = msg.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("");
-    const parsed = parseJsonResponse<T>(text);
-    if (parsed.ok) return parsed;
-    return { ok: false, error: parsed.error };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-// ── OpenRouter multi-model ensemble ───────────────────────────────────────────
-// Runs panel models IN PARALLEL, then a judge picks the best response.
-// Each call has a hard 60 s timeout to prevent hanging the generation modal.
-//
-// BUILDER panel — flagship models optimised for complex JSON generation
-//   • anthropic/claude-3.7-sonnet      — newer Anthropic reasoning (best JSON)
-//   • openai/gpt-4o                    — reliable structured output
-//   • google/gemini-pro-1.5            — Google's reasoning-capable Pro tier
-//   • deepseek/deepseek-r1             — strong reasoning for complex schemas
-// Judge: claude-3.7-sonnet (most accurate JSON evaluator)
-
-const OR_BUILDER_PANEL: string[] = [
-  "anthropic/claude-3.7-sonnet",
-  "openai/gpt-4o",
-  "google/gemini-pro-1.5",
-  "deepseek/deepseek-r1",
-];
-const OR_BUILDER_JUDGE = "anthropic/claude-3.7-sonnet";
-
-// LEARN panel — different models optimised for classification/dedup of item
-// lines (a simpler mechanical task). Distinct providers and faster tiers so
-// the learn pipeline doesn't share confirmation bias with the builder pipeline.
-//   • anthropic/claude-3-5-sonnet      — proven classification workhorse
-//   • openai/gpt-4o-mini               — fast, accurate for mechanical tasks
-//   • google/gemini-2.0-flash          — speed-optimised alternative
-//   • mistralai/mistral-large-2411     — different provider for diversity
-// Judge: claude-3-5-sonnet (classification-focused)
-
-const OR_LEARN_PANEL: string[] = [
-  "anthropic/claude-3-5-sonnet",
-  "openai/gpt-4o-mini",
-  "google/gemini-2.0-flash",
-  "mistralai/mistral-large-2411",
-];
-const OR_LEARN_JUDGE = "anthropic/claude-3-5-sonnet";
-
-const OR_CALL_TIMEOUT_MS = 90_000; // 90 s per model call (reasoning models are slower)
-
-async function callOrModel(
-  model: string,
-  systemPrompt: string,
-  userPrompt: string,
-  jsonMode: boolean = true,
-): Promise<string> {
-  const timeout = () => new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`OR model ${model} timed out after ${OR_CALL_TIMEOUT_MS / 1000}s`)), OR_CALL_TIMEOUT_MS)
-  );
-  const messages = [
-    { role: "system" as const, content: systemPrompt },
-    { role: "user"   as const, content: userPrompt },
-  ];
-  // Text-mode (synth/judge over plain text): no response_format.
-  if (!jsonMode) {
-    const completion = await Promise.race([
-      openRouter.chat.completions.create({ model, max_tokens: 8000, messages }),
-      timeout(),
-    ]);
-    return completion.choices[0]?.message?.content ?? "";
-  }
-  // JSON mode: try with json_object first (forces clean JSON on supporting models).
-  try {
-    const completion = await Promise.race([
-      openRouter.chat.completions.create({
-        model,
-        max_tokens: 8000,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        response_format: { type: "json_object" } as any,
-        messages,
-      }),
-      timeout(),
-    ]);
-    return completion.choices[0]?.message?.content ?? "";
-  } catch (err) {
-    // Some models (reasoning models, older Gemini, etc.) reject response_format.
-    // Retry once without it — parseJsonResponse's multi-strategy parser will
-    // recover markdown-fenced or think-tagged output.
-    const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
-    const isUnsupportedFormat = msg.includes("response_format") || msg.includes("json_object") || msg.includes("not supported");
-    if (!isUnsupportedFormat) throw err;
-    const completion = await Promise.race([
-      openRouter.chat.completions.create({ model, max_tokens: 8000, messages }),
-      timeout(),
-    ]);
-    return completion.choices[0]?.message?.content ?? "";
-  }
-}
-
-async function openrouterJson<T>(
-  systemPrompt: string,
-  userPrompt: string,
-): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
-  try {
-    // 1. Run all BUILDER panel models in parallel (JSON mode)
-    const panelResults = await Promise.allSettled(
-      OR_BUILDER_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt, true))
-    );
-
-    // 2. Collect fulfilled responses
-    const candidates: { model: string; text: string }[] = [];
-    for (let i = 0; i < OR_BUILDER_PANEL.length; i++) {
-      const r = panelResults[i];
-      if (r.status === "fulfilled" && r.value.trim()) {
-        candidates.push({ model: OR_BUILDER_PANEL[i], text: r.value });
-      }
-    }
-
-    if (candidates.length === 0) {
-      return { ok: false, error: "All OpenRouter panel models failed to respond" };
-    }
-
-    // 3. If only one succeeded, use it directly
-    if (candidates.length === 1) {
-      const parsed = parseJsonResponse<T>(candidates[0].text);
-      if (parsed.ok) return parsed;
-      return { ok: false, error: parsed.error };
-    }
-
-    // 4. Ask the builder judge to pick the best candidate
-    const judgeSystem = `You are a JSON quality judge. You will receive ${candidates.length} candidate JSON responses from different AI models answering the same prompt.
-Your job: return ONLY the single best candidate as-is — the one that is most complete, accurate, and correctly structured.
-Do NOT modify, merge, or summarise. Output the winning JSON verbatim. No explanation. Pure JSON only.`;
-
-    const judgeUser = candidates
-      .map((c, i) => `=== CANDIDATE ${i + 1} (${c.model}) ===\n${c.text}`)
-      .join("\n\n");
-
-    let winnerText: string;
-    try {
-      winnerText = await callOrModel(OR_BUILDER_JUDGE, judgeSystem, judgeUser, true);
-    } catch {
-      // Judge failed — fall back to first valid parse
-      winnerText = candidates[0].text;
-    }
-
-    // 5. Parse the winner
-    const parsed = parseJsonResponse<T>(winnerText);
-    if (parsed.ok) return parsed;
-
-    // 6. Judge returned garbage — try each candidate in order until one parses
-    for (const c of candidates) {
-      const fallback = parseJsonResponse<T>(c.text);
-      if (fallback.ok) return fallback;
-    }
-
-    return { ok: false, error: "No valid JSON from any panel model or judge" };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-// ── OpenRouter text-mode ensemble (for synthesis pass) ──────────────────────
-// Uses the LEARN panel (distinct from builder panel) in text mode — the task
-// is mechanical classification/dedup of item lines, not JSON generation.
-// Different providers + faster tiers avoid shared bias with the builder pipeline.
-async function openrouterSynth(systemPrompt: string, userPrompt: string): Promise<string> {
-  // Run all LEARN panel models in parallel (text mode, no response_format)
-  const panelResults = await Promise.allSettled(
-    OR_LEARN_PANEL.map((model) => callOrModel(model, systemPrompt, userPrompt, false))
-  );
-  const candidates: { model: string; text: string }[] = [];
-  for (let i = 0; i < OR_LEARN_PANEL.length; i++) {
-    const r = panelResults[i];
-    if (r.status === "fulfilled" && r.value.trim()) {
-      candidates.push({ model: OR_LEARN_PANEL[i], text: r.value });
-    }
-  }
-  if (candidates.length === 0) return "";
-  if (candidates.length === 1) return candidates[0].text;
-
-  // Learn judge picks the best cleaned fact list (text mode)
-  const judgeSystem = `You are a game item database quality judge. You will receive ${candidates.length} cleaned item line lists from different AI models.
-Your job: return ONLY the single best list verbatim — the one with the most items, best prefix classification (WEAPON:/ARMOR:/etc.), and most numeric data.
-Do NOT modify, merge, or summarise. Return the winning list exactly as-is.`;
-  const judgeUser = candidates
-    .map((c, i) => `=== CANDIDATE ${i + 1} (${c.model}) ===\n${c.text}`)
-    .join("\n\n");
-  try {
-    const winner = await callOrModel(OR_LEARN_JUDGE, judgeSystem, judgeUser, false);
-    return winner.trim() || candidates[0].text;
-  } catch {
-    return candidates[0].text;
-  }
-}
-
-// ── OpenRouter deep-research helper ────────────────────────────────────────
-// Routes a single category prompt through OR's perplexity/sonar-deep-research.
-// Uses the OpenAI-compatible chat completions shape (same as all other OR calls).
-// Returns the raw text response, identical shape to what pplx.chat.completions
-// returns so the caller can use extractText() on it.
-const OR_SONAR_DEEP = "perplexity/sonar-deep-research";
-async function orDeepResearch(
-  prompt: string,
-  signal?: AbortSignal,
-  maxTokens = 8000
-): Promise<string> {
-  const resp = await openRouter.chat.completions.create(
-    {
-      model: OR_SONAR_DEEP,
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }],
-    },
-    { signal }
-  );
-  return resp.choices?.[0]?.message?.content ?? "";
-}
-
-// ── JSON Schema definitions for structured output ───────────────────────────
-// Perplexity enforces the schema so the model must emit valid JSON.
-// We use a practical "loose" schema that validates the top-level keys
-// without over-constraining nested items (avoids schema preparation delay).
-
-const ITEM_SCHEMA = {
-  type: "object",
-  properties: {
-    n: { type: "string" },
-    ap: { type: "number" },
-    wt: { type: "number" },
-    ef: { type: "string" },
-    st: { type: "string" },
-    eq: { type: "string" },
-    d: { type: "string" },
-    loc: { type: "string" },
-    up: { type: "string" },
-    tip: { type: "string" },
-  },
-  required: ["n"],
-  additionalProperties: true,
-};
-
-const PHASE_SCHEMA = {
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    range: { type: "string" },
-    stats: { type: "object", additionalProperties: { type: "number" } },
-    sn: { type: "string" },
-    weapons: { type: "array", items: ITEM_SCHEMA },
-    armor: { type: "array", items: ITEM_SCHEMA },
-    acc: { type: "array", items: ITEM_SCHEMA },
-    spells: { type: "array", items: ITEM_SCHEMA },
-    dmg: {
-      type: "object",
-      properties: {
-        ps: { type: "number" },
-        sp: { type: "number" },
-        bs: { type: "number" },
-        n: { type: "string" },
-      },
-      additionalProperties: true,
-    },
-  },
-  required: ["name", "stats", "weapons"],
-  additionalProperties: true,
-};
-
-const STEP1_SCHEMA = {
-  type: "object",
-  properties: {
-    key: { type: "string" },
-    gameKey: { type: "string" },
-    label: { type: "string" },
-    sub: { type: "string" },
-    icon: { type: "string" },
-    accent: { type: "string" },
-    playstyle: { type: "string" },
-    cls: { type: "string" },
-    caps: { type: "array", items: { type: "string" } },
-    weaponReq: { type: "array", items: { type: "string" } },
-    loadouts: { type: "array", items: { type: "object", additionalProperties: true } },
-    phases: { type: "array", items: PHASE_SCHEMA },
-  },
-  required: ["key", "gameKey", "label", "phases"],
-  additionalProperties: true,
-};
-
-const STEP2_SCHEMA = {
-  type: "object",
-  properties: {
-    phases_4_to_7: { type: "array", items: PHASE_SCHEMA },
-  },
-  required: ["phases_4_to_7"],
-  additionalProperties: true,
-};
-
-const STEP3_SCHEMA = {
-  type: "object",
-  properties: {
-    sim: { type: "array", items: { type: "object", additionalProperties: true } },
-    oth: { type: "array", items: { type: "object", additionalProperties: true } },
-    ref: { type: "array", items: { type: "object", additionalProperties: true } },
-  },
-  required: ["sim", "oth", "ref"],
-  additionalProperties: true,
-};
-
-const UPDATE_SCHEMA = {
-  type: "object",
-  properties: {
-    patchVersion: { type: "string" },
-    summary: { type: "string" },
-    changes: { type: "array", items: { type: "string" } },
-    newFacts: { type: "array", items: { type: "object", additionalProperties: true } },
-  },
-  required: ["patchVersion", "summary", "changes", "newFacts"],
-  additionalProperties: true,
-};
-
-// ── Error helpers ────────────────────────────────────────────────────────────
-function truncateError(msg: string): string {
-  if (msg.length > 200) return msg.substring(0, 197) + "...";
-  return msg;
-}
-
-function friendlyPplxError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes("rate_limit") || msg.includes("429")) {
-    return "Perplexity API rate limit reached. Please wait a moment and try again.";
-  }
-  if (msg.includes("401") || msg.includes("authentication")) {
-    return "Perplexity API key is invalid or missing. Check your PERPLEXITY_API_KEY environment variable.";
-  }
-  return truncateError(msg);
-}
-
-// ── Route registration ───────────────────────────────────────────────────────
-
-// ── Shared Perplexity web research helper ─────────────────────────────────────
-// Used by both "dual" and "claude" modes to ground AI output in real search data.
-async function pplxResearch(queries: string[], maxTokens = 4000): Promise<string> {
-  try {
-    const results = await Promise.allSettled(
-      queries.map((q) =>
-        pplx.chat.completions.create({
-          model: SONAR_PRO,
-          stream: false as const,
-          max_tokens: maxTokens,
-          messages: [{ role: "user", content: q }],
-        })
-      )
-    );
-    return results
-      .map((r, i) =>
-        r.status === "fulfilled"
-          ? `[Search ${i + 1}: ${queries[i].slice(0, 60)}]\n${extractText(r.value as PplxResponse)}`
-          : `[Search ${i + 1} failed]`
-      )
-      .join("\n\n");
-  } catch {
-    return "(Web research unavailable)";
-  }
-}
-
-// ── Claude HTML extractor — Strategy 4 fallback for wiki pre-pass ─────────────
-// Converts wiki page HTML to readable text (preserving table structure), then
-// asks Claude to extract all game items as structured JSON. Works on any wiki
-// layout — Fextralife, Fandom, custom wikis — completely layout-agnostic.
-async function claudeExtractFromHtml(html: string, url: string): Promise<KnowledgeFact[]> {
-  // Convert HTML tables → pipe-delimited lines so Claude can parse them clearly
-  const text = html
-    .replace(/<tr[^>]*>/gi, "\n")
-    .replace(/<\/tr>/gi, "")
-    .replace(/<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/gi, "| $1 ")
-    .replace(/<\/?(h[1-6]|p|div|li|ul|ol|br)[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&nbsp;/g, " ").replace(/&#\d+;/g, "")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
-    .slice(0, 14000);
-
-  if (text.length < 100) return [];
-
-  try {
-    const msg = await claude.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 8000,
-      messages: [{
-        role: "user",
-        content: `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
-
-Extract all game items listed on this wiki page.
-
-Page URL: ${url}
-Page content (extracted from HTML, tables shown as pipe-delimited lines):
-${text}
-
-Return this exact JSON structure:
-{
-  "items": [
-    {
-      "name": "Item Name",
-      "type": "WEAPON",
-      "ap": 150,
-      "weight": 8.5,
-      "physDef": null,
-      "magicDef": null,
-      "fireDef": null,
-      "lightningDef": null,
-      "holyDef": null,
-      "poise": null,
-      "scalingTable": "STR:B DEX:D",
-      "requirements": "STR 18 / DEX 12",
-      "status": "Bleed:45",
-      "effect": null,
-      "location": "Zone Name, source",
-      "upgrade": "Standard"
-    }
-  ]
-}
-
-Rules:
-- type must be: WEAPON | ARMOR | SPELL | SHIELD | RING | BUFF | ITEM | CATALYST
-- Set numeric fields to null when the value is NOT shown on the page — do NOT guess values
-- Include ALL items visible (may be 50+ on category pages)
-- Skip navigation links, category headings, and wiki metadata
-- For armor: fill physDef, magicDef, fireDef, lightningDef, holyDef, poise, weight
-- For weapons: fill ap, weight, scalingTable (e.g. "STR:B DEX:D"), requirements
-- For spells: fill requirements (FP cost + stat reqs), effect`,
-      }],
-    });
-
-    const responseText = msg.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("");
-
-    const parsed = parseJsonResponse<{ items: unknown[] }>(responseText);
-    if (!parsed.ok || !Array.isArray(parsed.value.items)) return [];
-
-    const validTypes = new Set(["WEAPON", "ARMOR", "SPELL", "SHIELD", "RING", "BUFF", "ITEM", "CATALYST", "BUILD", "MECHANIC"]);
-    const facts: KnowledgeFact[] = [];
-
-    for (const item of parsed.value.items) {
-      if (typeof item !== "object" || !item) continue;
-      const it = item as Record<string, unknown>;
-      const name = typeof it.name === "string" ? it.name.trim().slice(0, 80) : "";
-      if (name.length < 2) continue;
-
-      const rawType = typeof it.type === "string" ? it.type.toUpperCase() : "WEAPON";
-      const type = (validTypes.has(rawType) ? rawType : "WEAPON") as KnowledgeFact["type"];
-
-      const fact: KnowledgeFact = { type, name, raw: "" };
-
-      const numField = (key: string): number | undefined => {
-        const v = it[key];
-        return typeof v === "number" && !isNaN(v) ? v : undefined;
-      };
-      const strField = (key: string): string | undefined => {
-        const v = it[key];
-        return typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : undefined;
-      };
-
-      const ap = numField("ap"); if (ap !== undefined) fact.ap = ap;
-      const weight = numField("weight"); if (weight !== undefined) fact.weight = weight;
-      const physDef = numField("physDef"); if (physDef !== undefined) fact.physDef = physDef;
-      const magicDef = numField("magicDef"); if (magicDef !== undefined) fact.magicDef = magicDef;
-      const fireDef = numField("fireDef"); if (fireDef !== undefined) fact.fireDef = fireDef;
-      const lightningDef = numField("lightningDef"); if (lightningDef !== undefined) fact.lightningDef = lightningDef;
-      const holyDef = numField("holyDef"); if (holyDef !== undefined) fact.holyDef = holyDef;
-      const poise = numField("poise"); if (poise !== undefined) fact.poise = poise;
-      const scalingTable = strField("scalingTable"); if (scalingTable) fact.scalingTable = scalingTable;
-      const requirements = strField("requirements"); if (requirements) fact.requirements = requirements;
-      const status = strField("status"); if (status) fact.status = status;
-      const effect = strField("effect"); if (effect) fact.effect = effect;
-      const location = strField("location"); if (location) fact.location = location;
-      const upgrade = strField("upgrade"); if (upgrade) fact.upgrade = upgrade;
-
-      const parts = [`${type}: ${name}`];
-      if (fact.ap != null) parts.push(`ap:${fact.ap}`);
-      if (fact.weight != null) parts.push(`wt:${fact.weight}`);
-      if (fact.physDef != null) parts.push(`physDef:${fact.physDef}`);
-      if (fact.scalingTable) parts.push(`scaling:${fact.scalingTable}`);
-      if (fact.requirements) parts.push(`req:${fact.requirements}`);
-      if (fact.location) parts.push(`loc:${fact.location}`);
-      fact.raw = parts.join(" | ").slice(0, 600);
-
-      facts.push(fact);
-    }
-
-    return facts;
-  } catch {
-    return [];
-  }
-}
-
-export function registerRoutes(httpServer: Server, app: Express) {
-
-  // ── GET /api/games — all games (seed + dynamic) ────────────────────────────
+  // ── GET /api/games ──────────────────────────────────────────────────────────
   app.get("/api/games", (_req, res) => {
-    const dynamicGames = storage.getDynamicGames();
-    const customGames: Game[] = dynamicGames.map((g) => ({
-      ...JSON.parse(g.data),
-      isCustom: true,
-    }));
-    res.json([...SEED_GAMES, ...customGames]);
+    const dynamic = storage
+      .getDynamicGames()
+      .map((r) => JSON.parse(r.data) as Game);
+    res.json([...SEED_GAMES, ...dynamic]);
   });
 
-  // ── GET /api/builds — all builds (seed + dynamic, minus hidden) ────────────
+  // ── GET /api/builds ─────────────────────────────────────────────────────────
   app.get("/api/builds", (req, res) => {
-    const { gameKey } = req.query as { gameKey?: string };
-    const hiddenKeys = new Set(
+    const gameKey = req.query.gameKey as string | undefined;
+    const hidden = new Set(
       storage.getHiddenStaticBuilds().map((h) => h.buildKey)
     );
-
-    const seedBuilds = (gameKey
-      ? SEED_BUILDS.filter((b) => b.gameKey === gameKey)
-      : SEED_BUILDS
-    ).filter((b) => !hiddenKeys.has(b.key));
-
-    const dynamicRows = storage.getDynamicBuilds(gameKey);
-    const dynamicBuilds: Build[] = dynamicRows.map((r) => ({
-      ...JSON.parse(r.data),
-      isAI: true,
-    }));
-
-    res.json([...seedBuilds, ...dynamicBuilds]);
+    const seed = SEED_BUILDS.filter(
+      (b) => (!gameKey || b.gameKey === gameKey) && !hidden.has(b.key)
+    );
+    const dynamic = storage
+      .getDynamicBuilds(gameKey)
+      .map((r) => JSON.parse(r.data) as Build);
+    res.json([...seed, ...dynamic]);
   });
 
-  // ── DELETE /api/builds/:key — delete a dynamic build ──────────────────────
+  // ── DELETE /api/builds/:key ─────────────────────────────────────────────────
   app.delete("/api/builds/:key", (req, res) => {
-    const { key } = req.params;
+    const key = req.params.key;
     const isSeed = SEED_BUILDS.some((b) => b.key === key);
     if (isSeed) {
       storage.hideStaticBuild(key);
@@ -673,2031 +71,371 @@ export function registerRoutes(httpServer: Server, app: Express) {
     res.json({ ok: true });
   });
 
-  // ── GET /api/knowledge/:gameKey — knowledge cache status ──────────────────
+  // ── GET /api/knowledge/:gameKey ─────────────────────────────────────────────
   app.get("/api/knowledge/:gameKey", (req, res) => {
-    const { gameKey } = req.params;
-    const cache = storage.getKnowledgeCache(gameKey);
-    if (!cache) return res.json({ count: 0, patchNote: null, updatedAt: null });
-    try {
-      const facts = JSON.parse(cache.facts);
-      res.json({
-        count: facts.length,
-        patchNote: cache.patchNote,
-        updatedAt: cache.updatedAt,
-      });
-    } catch {
-      res.json({ count: 0, patchNote: null, updatedAt: null });
-    }
-  });
-
-  // ── DELETE /api/knowledge/:gameKey — clear all cached facts for a game ─────
-  app.delete("/api/knowledge/:gameKey", (req, res) => {
-    const { gameKey } = req.params;
-    storage.clearKnowledgeCache(gameKey);
-    res.json({ ok: true });
-  });
-
-  // ── GET /api/knowledge/:gameKey/facts — full fact list for cache viewer ─────
-  app.get("/api/knowledge/:gameKey/facts", (req, res) => {
-    const { gameKey } = req.params;
-    const cache = storage.getKnowledgeCache(gameKey);
+    const cache = storage.getKnowledgeCache(req.params.gameKey);
     if (!cache) return res.json({ facts: [], patchNote: null, updatedAt: null });
-    try {
-      const facts = JSON.parse(cache.facts);
-      res.json({ facts, patchNote: cache.patchNote, updatedAt: cache.updatedAt });
-    } catch {
-      res.json({ facts: [], patchNote: null, updatedAt: null });
-    }
+    let facts: KnowledgeFact[] = [];
+    try { facts = JSON.parse(cache.facts); } catch { /* ignore */ }
+    return res.json({ facts, patchNote: cache.patchNote, updatedAt: cache.updatedAt });
   });
 
-  // ── POST /api/debug/wiki-test — diagnose wiki URL parsing ───────────────────
-  // Fetches a single URL, runs parseWikiPage, and returns a diagnostic report:
-  // table count, headers found, fact count, sample facts, structured field hits.
-  // Used to verify whether Strategy 0/1/2/3 are working for a given wiki URL.
-  app.post("/api/debug/wiki-test", async (req, res) => {
-    try {
-      const { url, gameKey = "debug" } = req.body as { url: string; gameKey?: string };
-      if (!url) return res.status(400).json({ error: "url required" });
-
-      const sourceType = url.includes("fextralife.com") ? "fextralife"
-        : (url.includes("fandom.com") || url.includes("gamepedia.com")) ? "fandom"
-        : "generic";
-
-      const start = Date.now();
-      const facts = await parseWikiPage(url, gameKey, sourceType,
-        process.env.CLAUDE_API_KEY ? claudeExtractFromHtml : undefined);
-      const elapsed = Date.now() - start;
-
-      // Count structured field coverage
-      const withAp       = facts.filter(f => f.ap != null).length;
-      const withPhysDef  = facts.filter(f => f.physDef != null).length;
-      const withWeight   = facts.filter(f => f.weight != null).length;
-      const withScaling  = facts.filter(f => f.scalingTable != null).length;
-      const withStatus   = facts.filter(f => f.status != null).length;
-      const withEffect   = facts.filter(f => f.effect != null).length;
-      const withLocation = facts.filter(f => f.location != null).length;
-      const withDmgTable = facts.filter(f => f.damageTable != null).length;
-      const withReqs     = facts.filter(f => f.requirements != null).length;
-
-      // Type breakdown
-      const byType: Record<string, number> = {};
-      for (const f of facts) byType[f.type] = (byType[f.type] ?? 0) + 1;
-
-      res.json({
-        url,
-        sourceType,
-        strategy4_available: Boolean(process.env.CLAUDE_API_KEY),
-        elapsed_ms: elapsed,
-        total_facts: facts.length,
-        by_type: byType,
-        structured_fields: {
-          ap: withAp,
-          physDef: withPhysDef,
-          weight: withWeight,
-          scalingTable: withScaling,
-          status: withStatus,
-          effect: withEffect,
-          location: withLocation,
-          damageTable: withDmgTable,
-          requirements: withReqs,
-        },
-        sample: facts.slice(0, 10).map(f => ({
-          type: f.type,
-          name: f.name,
-          ap: f.ap,
-          physDef: f.physDef,
-          weight: f.weight,
-          scalingTable: f.scalingTable,
-          status: f.status,
-          effect: f.effect,
-          raw: f.raw.slice(0, 120),
-        })),
-      });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // ── POST /api/debug/wiki-structure — dump real HTML structure of a URL ────────
-  app.post("/api/debug/wiki-structure", async (req, res) => {
-    try {
-      const { url } = req.body as { url: string };
-      if (!url) return res.status(400).json({ error: "url required" });
-
-      const fetchHtml = async (u: string, timeout = 15000) => {
-        const ctrl = new AbortController();
-        setTimeout(() => ctrl.abort(), timeout);
-        const r = await fetch(u, { signal: ctrl.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
-        return r.ok ? r.text() : "";
-      };
-
-      const html = await fetchHtml(url);
-      if (!html) return res.json({ error: "fetch returned empty (403/timeout?)" });
-
-      // 1. All tables: class + headers + first 2 data rows
-      const tables: { cls: string; headers: string[]; rows: string[][] }[] = [];
-      const tblPat = /<table([^>]*)>([\s\S]*?)<\/table>/gi;
-      let tm: RegExpExecArray | null;
-      while ((tm = tblPat.exec(html)) !== null && tables.length < 8) {
-        const cls = (tm[1].match(/class="([^"]*)"/) ?? [])[1] ?? "(no class)";
-        const body = tm[2];
-        const headers: string[] = [];
-        const thPat = /<th[^>]*>([\s\S]*?)<\/th>/gi; let th: RegExpExecArray | null;
-        while ((th = thPat.exec(body)) !== null && headers.length < 12) headers.push(th[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,60));
-        const rows: string[][] = [];
-        const trPat2 = /<tr[^>]*>([\s\S]*?)<\/tr>/gi; let tr: RegExpExecArray | null;
-        while ((tr = trPat2.exec(body)) !== null && rows.length < 2) {
-          if (/<th/i.test(tr[1])) continue;
-          const cells: string[] = [];
-          const tdPat = /<td[^>]*>([\s\S]*?)<\/td>/gi; let td: RegExpExecArray | null;
-          while ((td = tdPat.exec(tr[1])) !== null && cells.length < 10) cells.push(td[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,80));
-          if (cells.length) rows.push(cells);
-        }
-        if (headers.length || rows.length) tables.push({ cls, headers, rows });
-      }
-
-      // 2. Most-used div class names (reveals content structure when tables=0)
-      const divClasses: Record<string, number> = {};
-      const divPat = /<div[^>]+class="([^"]+)"/gi; let dm: RegExpExecArray | null;
-      while ((dm = divPat.exec(html)) !== null) {
-        for (const cls of dm[1].split(/\s+/)) {
-          if (cls.length > 2 && cls.length < 40) divClasses[cls] = (divClasses[cls] ?? 0) + 1;
-        }
-      }
-      const topDivClasses = Object.entries(divClasses)
-        .filter(([,n]) => n >= 3)
-        .sort((a,b) => b[1]-a[1])
-        .slice(0, 20)
-        .map(([cls, n]) => `${cls}(×${n})`);
-
-      // 3. All item-looking links on the page (skip nav/wiki chrome)
-      const navSkip = /^\/(?:home|login|search|edit|forum|blog|news|category|special|help|The\+Lords|Lords-of)/i;
-      const itemLinks: string[] = [];
-      const linkPat = /<a[^>]+href="(\/[A-Za-z0-9%+][^"#?]{2,80})"[^>]*>([\s\S]*?)<\/a>/gi;
-      let lm: RegExpExecArray | null;
-      while ((lm = linkPat.exec(html)) !== null && itemLinks.length < 20) {
-        const href = lm[1];
-        const text = lm[2].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
-        if (navSkip.test(href)) continue;
-        if (text.length < 3 || text.length > 80) continue;
-        if (/\bwiki\b/i.test(text) || /\b(home|login|search|edit|forum|sign in)\b/i.test(text)) continue;
-        if (/^\d+$/.test(text)) continue;
-        itemLinks.push(`"${text}" → ${href}`);
-      }
-
-      // 4. Fetch the most-promising item link and dump its full structure
-      // Pick the first link that doesn't look like a hub/category page
-      const hubWords = /^(Weapons|Armor|Shields|Magic|Accessories|Runes|Spells|Rings|Items|Equipment|Bosses|Areas|Maps|Lore|Guides?)$/i;
-      let itemUrl = "";
-      for (const link of itemLinks) {
-        const href = link.match(/→ (.+)$/)?.[1] ?? "";
-        const name = link.match(/"([^"]+)"/)?.[1] ?? "";
-        if (!hubWords.test(name) && href) {
-          itemUrl = new URL(href, url).toString();
-          break;
-        }
-      }
-
-      let itemPage: { url: string; title: string; tableClasses: string[]; infoboxRows: { key: string; val: string }[]; divClasses: string[]; rawSnippet: string } | null = null;
-      if (itemUrl) {
-        const ihtml = await fetchHtml(itemUrl, 10000);
-        if (ihtml) {
-          const h1 = ihtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-          const title = h1 ? h1[1].replace(/<[^>]+>/g," ").trim() : itemUrl;
-
-          // Table classes
-          const itblClasses: string[] = [];
-          const itPat = /<table([^>]*)>/gi; let it: RegExpExecArray | null;
-          while ((it = itPat.exec(ihtml)) !== null) { const c = it[1].match(/class="([^"]*)"/); if (c) itblClasses.push(c[1]); }
-          const tableClasses = itblClasses.filter((c,i) => itblClasses.indexOf(c) === i).slice(0, 10);
-
-          // All tr rows (th or td key + td value)
-          const infoboxRows: { key: string; val: string }[] = [];
-          const irPat = /<tr[^>]*>([\s\S]*?)<\/tr>/gi; let ir: RegExpExecArray | null;
-          while ((ir = irPat.exec(ihtml)) !== null && infoboxRows.length < 40) {
-            const cells: string[] = [];
-            const cellPat = /<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/gi; let cell: RegExpExecArray | null;
-            while ((cell = cellPat.exec(ir[1])) !== null) cells.push(cell[1].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,120));
-            if (cells.length >= 2) infoboxRows.push({ key: cells[0], val: cells.slice(1).join(" | ") });
-          }
-
-          // Div classes on item page
-          const idivClasses: Record<string, number> = {};
-          const idivPat = /<div[^>]+class="([^"]+)"/gi; let idm: RegExpExecArray | null;
-          while ((idm = idivPat.exec(ihtml)) !== null) {
-            for (const cls of idm[1].split(/\s+/)) { if (cls.length > 2 && cls.length < 40) idivClasses[cls] = (idivClasses[cls] ?? 0) + 1; }
-          }
-          const itemDivClasses = Object.entries(idivClasses).filter(([,n]) => n >= 2).sort((a,b) => b[1]-a[1]).slice(0,15).map(([c,n]) => `${c}(×${n})`);
-
-          // Raw HTML snippet around first h2/h3 section (reveals content layout)
-          const snipMatch = ihtml.match(/<(?:h2|h3|div[^>]+class="[^"]*(?:infobox|info|stat|weapon|armor)[^"]*")[^>]*>[\s\S]{0,2000}/i);
-          const rawSnippet = snipMatch ? snipMatch[0].replace(/<script[\s\S]*?<\/script>/gi,"").slice(0,800) : "";
-
-          itemPage = { url: itemUrl, title, tableClasses, infoboxRows, divClasses: itemDivClasses, rawSnippet };
-        }
-      }
-
-      res.json({ url, tableCount: tables.length, tables, topDivClasses, itemLinks: itemLinks.slice(0,15), itemPage });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // ── GET /api/config — read API key status (never returns actual key values) ──
-  app.get("/api/config", (_req, res) => {
-    const hasPerplexity = Boolean(process.env.PERPLEXITY_API_KEY);
-    const hasClaude = Boolean(process.env.CLAUDE_API_KEY);
-    const hasOpenRouter = Boolean(process.env.OPEN_ROUTER_API_KEY);
-    // Mask key: show first 8 + last 4 chars so user can verify which key is loaded
-    function mask(k: string | undefined): string {
-      if (!k || k.length < 12) return k ? "••••••••" : "";
-      return k.slice(0, 8) + "••••••••" + k.slice(-4);
-    }
-    res.json({
-      hasPerplexity,
-      hasClaude,
-      hasOpenRouter,
-      perplexityMask: mask(process.env.PERPLEXITY_API_KEY),
-      claudeMask: mask(process.env.CLAUDE_API_KEY),
-      openRouterMask: mask(process.env.OPEN_ROUTER_API_KEY),
-    });
-  });
-
-  // ── POST /api/config — write keys to config.json + hot-reload env vars ───
-  app.post("/api/config", (req, res) => {
-    const { perplexityKey, claudeKey, openRouterKey } = req.body as {
-      perplexityKey?: string;
-      claudeKey?: string;
-      openRouterKey?: string;
+  // ── POST /api/codex/import ──────────────────────────────────────────────────
+  // Import a codex JSON file — parses it into KnowledgeFacts and stores in cache.
+  app.post("/api/codex/import", (req, res) => {
+    const { gameKey, gameName, codex } = req.body as {
+      gameKey: string;
+      gameName: string;
+      codex: Record<string, unknown>;
     };
-    const configPath = process.env.CONFIG_PATH;
-    if (!configPath) {
-      // In dev mode CONFIG_PATH isn't set — update env vars in-memory only
-      if (perplexityKey) process.env.PERPLEXITY_API_KEY = perplexityKey;
-      if (claudeKey) process.env.CLAUDE_API_KEY = claudeKey;
-      if (openRouterKey) process.env.OPEN_ROUTER_API_KEY = openRouterKey;
-      // Refresh SDK instances
-      if (perplexityKey) pplx = new Perplexity({ apiKey: perplexityKey });
-      if (claudeKey) claude = new Anthropic({ apiKey: claudeKey });
-      if (openRouterKey) openRouter = new OpenAI({
-        apiKey: openRouterKey,
-        baseURL: "https://openrouter.ai/api/v1",
-        defaultHeaders: { "HTTP-Referer": "https://github.com/yokoashi/Master-builds-codex", "X-Title": "Master Builds Codex" },
-      });
-      return res.json({ ok: true, persisted: false });
+    if (!gameKey || !gameName || !codex) {
+      return res.status(400).json({ error: "gameKey, gameName, and codex are required" });
     }
     try {
-      const { readFileSync, writeFileSync, existsSync } = require("fs") as typeof import("fs");
-      const existing = existsSync(configPath)
-        ? JSON.parse(readFileSync(configPath, "utf-8"))
-        : {};
-      const updated = {
-        ...existing,
-        ...(perplexityKey ? { PERPLEXITY_API_KEY: perplexityKey } : {}),
-        ...(claudeKey ? { CLAUDE_API_KEY: claudeKey } : {}),
-        ...(openRouterKey ? { OPEN_ROUTER_API_KEY: openRouterKey } : {}),
-      };
-      writeFileSync(configPath, JSON.stringify(updated, null, 2) + "\n", "utf-8");
-      // Hot-reload into current process
-      if (perplexityKey) {
-        process.env.PERPLEXITY_API_KEY = perplexityKey;
-        pplx = new Perplexity({ apiKey: perplexityKey });
-      }
-      if (claudeKey) {
-        process.env.CLAUDE_API_KEY = claudeKey;
-        claude = new Anthropic({ apiKey: claudeKey });
-      }
-      if (openRouterKey) {
-        process.env.OPEN_ROUTER_API_KEY = openRouterKey;
-        openRouter = new OpenAI({
-          apiKey: openRouterKey,
-          baseURL: "https://openrouter.ai/api/v1",
-          defaultHeaders: { "HTTP-Referer": "https://github.com/yokoashi/Master-builds-codex", "X-Title": "Master Builds Codex" },
-        });
-      }
-      res.json({ ok: true, persisted: true });
+      const facts = extractFactsFromCodex(codex);
+      updateKnowledgeCache(gameKey, gameName, facts, `Codex imported for ${gameName}`);
+      return res.json({ ok: true, factCount: facts.length });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      console.error("Codex import error:", err);
+      return res.status(500).json({ error: "Failed to parse codex" });
     }
   });
 
-  // ── GET /api/settings ─────────────────────────────────────────────────────
-  app.get("/api/settings", (_req, res) => res.json(appSettings));
-
-  // ── PATCH /api/settings ───────────────────────────────────────────────────
-  app.patch("/api/settings", (req, res) => {
-    const { aiMode, orModel, learnSynthMode, learnResearchMode } = req.body as Partial<AppSettings>;
-    if (aiMode === "dual" || aiMode === "perplexity" || aiMode === "claude" || aiMode === "openrouter") appSettings.aiMode = aiMode;
-    if (typeof orModel === "string" && orModel.trim()) appSettings.orModel = orModel.trim();
-    if (learnSynthMode === "claude" || learnSynthMode === "openrouter") appSettings.learnSynthMode = learnSynthMode;
-    if (learnResearchMode === "perplexity" || learnResearchMode === "openrouter" || learnResearchMode === "claude") appSettings.learnResearchMode = learnResearchMode;
-    saveSettings(appSettings);
-    res.json(appSettings);
-  });
-
-  // ── POST /api/generate/step1 — metadata + loadouts + phases 1-3 ───────────
-  // aiMode: "dual" = Perplexity researches + Claude structures
-  //          "perplexity" = Perplexity sonar-pro with JSON schema only
-  //          "claude" = Claude only (no web research, fastest)
+  // ── POST /api/generate/step1 ────────────────────────────────────────────────
+  // Metadata + Early Game and Mid Game phases.
   app.post("/api/generate/step1", async (req, res) => {
-    try {
-      const body = req.body as GenerateStep1Request;
-      const knowledgeBlock = buildKnowledgeBlock(body.gameKey);
+    const body = req.body as GenerateStep1Request;
+    const { gameKey, gameName, buildDescription, statBudget, seedStats, preferredWeapon, knowledgeBlock } = body;
 
-      const systemContent = `You are an expert soulslike game build guide author. You create detailed, accurate build guides in structured JSON format.
+    const systemPrompt = `${knowledgeBlock}
 
-${knowledgeBlock}
+You are an expert ${gameName} build guide writer. You have the full game codex above.
+Your job is to generate a highly detailed, accurate build guide in JSON format.
+Use ONLY items and mechanics from the codex. Every item must have a real location in the game.`;
 
-CRITICAL ACCURACY RULES — FOLLOW THESE ABOVE ALL ELSE:
-- ONLY use items that ACTUALLY EXIST in ${body.gameName}. Search the web to confirm every single item name before including it.
-- NEVER invent, combine, or approximate item names. If you are not 100% certain an item exists, search for it first.
-- If web search returns no result for an item name, DO NOT include it — use a different item you can verify.
-- Every "loc" field must be a real, specific in-game location. Never write "Found in the world" or vague descriptions.
-- Every "up" field must reflect the real upgrade system of ${body.gameName}.
-- If you are unsure about any item, weapon, armor piece or accessory — search for it. Do not guess.
+    const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
-CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }. No prose, no markdown fences, no explanation — pure JSON only.`;
+Generate a ${gameName} build guide for: "${buildDescription}"
+Stat budget: ${statBudget} total stat points
+${seedStats ? `Seed stats: ${JSON.stringify(seedStats)}` : ""}
+${preferredWeapon ? `Preferred weapon: ${preferredWeapon}` : ""}
 
-      // Build mode-specific constraint block
-      const extBody = body as GenerateStep1Request & {
-        mode?: string;
-        manualSkeleton?: object;
-        isCustomGame?: boolean;
-      };
-      const isManual = extBody.mode === "manual";
-      const isCustomGame = extBody.isCustomGame === true;
+Return this exact JSON structure (phase1 = Early Game, phase2 = Mid Game):
 
-      let modeBlock = "";
-      if (isManual && extBody.manualSkeleton) {
-        modeBlock = `
-MANUAL MODE — USER-PROVIDED BUILD SKELETON:
-Preserve all user-provided values exactly as written. Fill in blank/missing fields: descriptions (d), specific locations (loc), upgrade paths (up), tips, ap (attack power), wt (weight), damage box (dmg). Expand the 3 user stages (Early/Mid/Endgame) into 3 schema phases naturally.
-
-USER SKELETON:
-${JSON.stringify(extBody.manualSkeleton, null, 2)}
-`;
-      } else if (body.seedStats) {
-        const statTargets = Object.entries(body.seedStats)
-          .filter(([, v]) => v > 0)
-          .map(([k, v]) => `${k}:${v}`)
-          .join(", ");
-        modeBlock = `
-SEMI-AI MODE — ENDGAME STAT TARGETS (the build MUST naturally reach these by endgame, ±2 points): ${statTargets}
-Total stat budget is ~${body.statBudget}. DO NOT exceed this across all stats combined.
-Earlier phases should naturally lead toward the endgame targets.
-`;
-      }
-
-      const customGameNote = isCustomGame
-        ? `NOTE: ${body.gameName} is a custom game not yet in the codex. Determine its stat system (short codes like VIG, END, STR, DEX, INT, FTH) and use those exact stat codes in every phase stats object.`
-        : "";
-
-      const userContent = `Search the web for "${body.gameName} ${body.buildDescription} build guide" and "${body.gameName} items wiki" BEFORE generating anything. Use only items you find confirmed in search results.
-
-Create the first part of a build guide for ${body.gameName}.
-
-Build description: ${body.buildDescription}
-Stat budget: ${body.statBudget} points
-${body.preferredWeapon ? `Preferred weapon: ${body.preferredWeapon}` : ""}
-${body.referenceUrl ? `Reference URL: ${body.referenceUrl}` : ""}
-${customGameNote}
-${modeBlock}
-
-Generate JSON with this exact structure:
 {
-  "key": "kebab-case-build-key",
-  "gameKey": "${body.gameKey}",
+  "key": "kebab-case-build-name",
+  "gameKey": "${gameKey}",
   "label": "Build Name",
-  "sub": "Short subtitle (e.g. DEX Katana Build)",
+  "sub": "Short Subtitle (e.g. STR/DEX Quality Build)",
   "icon": "single emoji",
   "accent": "#hexcolor",
-  "playstyle": "2-3 sentence playstyle description",
+  "playstyle": "2-3 sentence playstyle overview",
   "cls": "Starting class name",
-  "caps": ["STAT 50", "STAT 40"],
-  "weaponReq": ["STAT 18"],
-  "loadouts": [
-    {
-      "id": "loadout-id",
-      "label": "Loadout Name",
-      "weaponWt": 12.5,
-      "endReq": 35,
-      "armor": "Armor set name",
-      "pros": ["pro 1", "pro 2"],
-      "cons": ["con 1"]
-    }
-  ],
-  "phases": [
-    {
-      "name": "Early Game",
-      "range": "Levels 1-40",
-      "stats": {"VIT": 15, "END": 20, "STR": 18},
-      "sn": "Short note about stat priority for this phase",
-      "weapons": [
-        {
-          "n": "Weapon Name",
-          "ap": 200,
-          "wt": 8.5,
-          "ef": "Bleed 45",
-          "st": "status type",
-          "eq": "Main Hand",
-          "d": "Description",
-          "loc": "Where to find it",
-          "up": "Upgrade path",
-          "tip": "Pro tip"
-        }
-      ],
-      "armor": [],
-      "acc": [],
-      "spells": [],
-      "dmg": {"ps": 200, "sp": 180, "bs": 400, "n": "Damage context note"}
-    },
-    <phase2>,
-    <phase3>
-  ]
+  "caps": ["STAT 40", "STAT 50"],
+  "weaponReq": ["STR 14", "DEX 10"],
+  "loadouts": null,
+  "phase1": {
+    "name": "Early Game",
+    "range": "SL 1–30",
+    "stats": { "VIT": 14, "ATT": 8, "END": 20, "STR": 16, "DEX": 14, "RES": 11, "INT": 9, "FTH": 9 },
+    "sn": "Strategy summary for this phase (2-3 sentences)",
+    "weapons": [
+      {
+        "n": "Weapon Name",
+        "ap": 150,
+        "wt": 6.0,
+        "ef": "Effect or null",
+        "st": "Status buildup or null",
+        "eq": "Right Hand",
+        "d": "Role in the build",
+        "loc": "Exact location or how to acquire",
+        "up": "Upgrade path (e.g. +5 standard)",
+        "tip": "Build-specific tip",
+        "lore": "One sentence lore note",
+        "durability": 200
+      }
+    ],
+    "armor": [ <same Item structure> ],
+    "acc": [ <rings/accessories using same Item structure> ],
+    "spells": [ <spells using same Item structure, ap = spell damage> ],
+    "dmg": { "ps": 180, "sp": 150, "bs": 360, "n": "Damage context note" }
+  },
+  "phase2": {
+    "name": "Mid Game",
+    "range": "SL 30–60",
+    "stats": { "VIT": 20, "ATT": 10, "END": 28, "STR": 20, "DEX": 20, "RES": 11, "INT": 9, "FTH": 9 },
+    "sn": "Strategy for mid game",
+    "weapons": [ <Item[]> ],
+    "armor": [ <Item[]> ],
+    "acc": [ <Item[]> ],
+    "spells": [ <Item[]> ],
+    "dmg": { "ps": 250, "sp": 210, "bs": 500, "n": "Damage context" }
+  }
 }
 
-Include phases 1, 2, and 3 only (Early Game, Core Weapon, Key Accessories).
-Be specific with item locations, upgrade paths, and tips. Use web search to verify current patch accuracy. No placeholder text.`;
+Rules:
+- All item locations must be real in ${gameName}
+- Include lore and durability for every item
+- Rings go in "acc" array
+- Spells / pyromancies / miracles go in "spells" array
+- Stats must make sense for the phase level range
+- accent must be a dark hex color fitting the build theme`;
 
-      let parsed: { ok: true; value: Partial<Build> } | { ok: false; error: string };
-
-      if (appSettings.aiMode === "dual") {
-        // ── Dual-AI: Perplexity researches → Claude structures ───────────────
-        let researchContext = "";
-        try {
-          const researchResp = await pplx.chat.completions.create({
-            model: SONAR_PRO,
-            stream: false as const,
-            max_tokens: 4000,
-            messages: [
-              {
-                role: "user",
-                content: `Search the web for "${body.gameName} ${body.buildDescription} build guide" and "${body.gameName} weapons wiki" and "${body.gameName} items locations".
-
-List the REAL confirmed items for a ${body.buildDescription} build in ${body.gameName}:
-- Weapons (name, AP, location, upgrade path)
-- Armor sets (name, defense values, location)
-- Accessories/rings (name, effect, location)
-- Spells if relevant (name, damage, location)
-- Stat requirements and progression (levels 1→endgame)
-
-Only include items you found confirmed in search results. Exact in-game names only.`,
-              },
-            ],
-          });
-          researchContext = extractText(researchResp as PplxResponse);
-        } catch {
-          researchContext = "(Web research unavailable — use knowledge cache and game expertise)";
-        }
-        parsed = await claudeJson<Partial<Build>>(
-          systemContent,
-          `${userContent}\n\nPERPLEXITY RESEARCH (confirmed real items from web search — use these as ground truth):\n${researchContext.substring(0, 6000)}`,
-          false
-        );
-      } else if (appSettings.aiMode === "claude") {
-        // ── Claude-only + web research: Perplexity searches → Claude structures ─
-        const researchCtx = await pplxResearch([
-          `Search for "${body.gameName} ${body.buildDescription} build guide" — list every recommended weapon with AP, location, and upgrade path`,
-          `Search for "${body.gameName} ${body.buildDescription} armor sets" — list every recommended armor piece with defense stats and how to obtain`,
-          `Search for "${body.gameName} ${body.buildDescription} accessories rings talismans spells" — list each with effect, numbers, and location`,
-        ], 3000);
-        parsed = await claudeJson<Partial<Build>>(
-          systemContent,
-          `${userContent}\n\nWEB RESEARCH (use as ground truth — exact in-game names only):\n${researchCtx.substring(0, 8000)}`,
-          false
-        );
-      } else if (appSettings.aiMode === "openrouter") {
-        // ── OpenRouter: Perplexity researches → chosen OR model structures ───────
-        const researchCtx = await pplxResearch([
-          `Search for "${body.gameName} ${body.buildDescription} build guide" — list every recommended weapon with AP, location, and upgrade path`,
-          `Search for "${body.gameName} ${body.buildDescription} armor sets" — list every recommended armor piece with defense stats and how to obtain`,
-          `Search for "${body.gameName} ${body.buildDescription} accessories rings talismans spells" — list each with effect, numbers, and location`,
-        ], 3000);
-        // Derive expected stat keys: use seedStats keys if provided (semi-mode),
-        // otherwise instruct model to use only this game's native stats.
-        const s1StatConstraint = body.seedStats && Object.keys(body.seedStats).length > 0
-          ? `EXACTLY these stat keys (no others): ${Object.keys(body.seedStats).join(", ")}`
-          : `ONLY the stat keys native to ${body.gameName}. Do NOT add stats from other games — look at the web research and game name to determine the correct keys.`;
-        const orCompletenessBlock = `
-
-MANDATORY COMPLETENESS REQUIREMENTS — DO NOT SKIP ANY:
-- stats: Every phase MUST include ${s1StatConstraint}
-- weapons: Every phase MUST have 2-4 weapons minimum, each with n, ap (number), loc, up, eq, d, tip, wt fields populated.
-- armor: Every phase MUST have 2-4 armor entries (chest/helmet/legs/gauntlets as separate entries) with n, loc, wt, d fields.
-- acc: Every phase MUST have 2-4 accessories (rings/talismans/seals) with n, ef, loc fields populated.
-- dmg: Every phase MUST have dmg.ps, dmg.sp, dmg.bs as real numeric estimates and dmg.n as a note.
-Empty arrays, missing stat keys, or phases with only 1 item in any category are WRONG. Fully populate every array in every phase.`;
-        parsed = await openrouterJson<Partial<Build>>(
-          systemContent,
-          `${userContent}\n\nWEB RESEARCH (use as ground truth — exact in-game names only):\n${researchCtx.substring(0, 8000)}${orCompletenessBlock}`,
-        );
-      } else {
-        // ── Perplexity-only: sonar-pro with JSON schema ───────────────────────
-        const sonarResp = await pplx.chat.completions.create({
-          model: SONAR_PRO,
-          stream: false as const,
-          max_tokens: 8000,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response_format: { type: "json_schema", json_schema: { schema: STEP1_SCHEMA, name: "build_step1" } } as any,
-          messages: [
-            { role: "system", content: systemContent },
-            { role: "user", content: userContent },
-          ],
-        });
-        const raw = extractText(sonarResp as PplxResponse);
-        const pr = parseJsonResponse<Partial<Build>>(raw);
-        parsed = pr.ok ? pr : { ok: false, error: pr.error };
-      }
-
-      if (!parsed.ok) {
-        return res.status(422).json({
-          error: `Failed to parse AI response: ${parsed.error}`,
-          raw: "",
-        });
-      }
-
-      res.json({ ok: true, partial: parsed.value });
+    try {
+      const response = await claude.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 8000,
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const text = response.content.find((b) => b.type === "text")?.text ?? "";
+      const parsed = parseJson(text);
+      res.json(parsed);
     } catch (err) {
-      res.status(500).json({ error: friendlyPplxError(err) });
+      console.error("Step1 error:", err);
+      res.status(500).json({ error: String(err) });
     }
   });
 
-  // ── POST /api/generate/step2 — phases 4-7 + NG+ cycles ───────────────────
-  // Model: sonar-reasoning-pro (CoT reasoning — replaces Claude extended thinking)
-  // IMPORTANT: sonar-reasoning-pro emits <think>...</think> before the JSON.
-  // parseJsonResponse already strips these via stripThinking() in parse-json.ts.
+  // ── POST /api/generate/step2 ────────────────────────────────────────────────
+  // End Game and NG+ phases (extended thinking enabled).
   app.post("/api/generate/step2", async (req, res) => {
-    try {
-      const body = req.body as GenerateStep2Request;
-      const knowledgeBlock = buildKnowledgeBlock(body.gameKey);
+    const body = req.body as GenerateStep2Request;
+    const { gameKey, gameName, partialBuild, knowledgeBlock } = body;
 
-      const systemContent = `You are an expert soulslike game build guide author specializing in late-game optimization and NG+ strategies.
+    const systemPrompt = `${knowledgeBlock}
 
-${knowledgeBlock}
+You are an expert ${gameName} build guide writer. You have the full game codex above.
+Continue building the "${partialBuild.label}" build guide. Generate the final two phases.`;
 
-CRITICAL ACCURACY RULES — FOLLOW THESE ABOVE ALL ELSE:
-- ONLY use items that ACTUALLY EXIST in ${body.gameName}. Search the web before including any item name.
-- NEVER invent, combine, or approximate item names. If uncertain, search first — if still uncertain, omit it.
-- Every weapon, armor piece, ring, and accessory must be a real item obtainable in ${body.gameName}.
-- Every "loc" must be a specific real in-game location — never vague or generic.
-- NG+ notes must reflect actual game mechanics, not invented difficulty modifiers.
+    const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
-CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }. No prose, no markdown fences — pure JSON only.`;
+Existing build so far:
+${JSON.stringify({ label: partialBuild.label, cls: partialBuild.cls, caps: partialBuild.caps, phase1: (partialBuild as Record<string, unknown>).phase1, phase2: (partialBuild as Record<string, unknown>).phase2 }, null, 2)}
 
-      const userContent = `Search the web for "${body.gameName} late game items" and "${body.gameName} endgame build guide" BEFORE generating anything. Only include items confirmed by search results.
+Now generate phase3 (End Game) and phase4 (NG+) for this ${gameName} build.
 
-Complete the build guide for ${body.gameName} by generating phases 4-7 including NG+ cycles.
-
-Build key: ${body.buildKey}
-Build so far: ${JSON.stringify(body.partialBuild).substring(0, 2000)}
-
-Generate JSON:
 {
-  "phases_4_to_7": [
-    {
-      "name": "Unlock Spells",
-      "range": "Levels 60-80",
-      "stats": {"VIT": 25, "END": 35, "STR": 40},
-      "sn": "Short note",
-      "weapons": [],
-      "armor": [],
-      "acc": [],
-      "spells": [],
-      "dmg": {"ps": 300, "sp": 260, "bs": 600, "n": "note"}
-    },
-    <phase5_mid_to_late>,
-    <phase6_endgame>,
-    {
-      "name": "NG+",
-      "range": "NG+1 and beyond",
-      "stats": {"VIT": 40, "END": 40},
-      "sn": "NG+ focus note",
-      "weapons": [],
-      "armor": [],
-      "acc": [],
-      "spells": [],
-      "dmg": {"ps": 0, "sp": 0, "bs": 0, "n": "same as endgame"},
-      "ngCycles": [
-        {
-          "label": "NG+1",
-          "stats": {"VIT": 40},
-          "notes": "Detailed NG+1 notes with strategy changes"
-        },
-        {"label": "NG+3", "stats": {}, "notes": "..."},
-        {"label": "NG+5", "stats": {}, "notes": "..."},
-        {"label": "NG+7", "stats": {}, "notes": "..."}
-      ]
-    }
-  ]
+  "phase3": {
+    "name": "End Game",
+    "range": "SL 80–120",
+    "stats": { ... },
+    "sn": "Endgame strategy — what to focus on, which soft caps to hit",
+    "weapons": [ <fully upgraded, lore + durability included> ],
+    "armor": [ <Item[]> ],
+    "acc": [ <Item[]> ],
+    "spells": [ <Item[]> ],
+    "dmg": { "ps": 0, "sp": 0, "bs": 0, "n": "Peak damage context" }
+  },
+  "phase4": {
+    "name": "NG+",
+    "range": "NG+1 and beyond",
+    "stats": { ... },
+    "sn": "NG+ strategy — same build, what changes",
+    "weapons": [],
+    "armor": [],
+    "acc": [],
+    "spells": [],
+    "dmg": { "ps": 0, "sp": 0, "bs": 0, "n": "Same peak damage, enemy scaling increases" },
+    "ngCycles": [
+      { "label": "NG+1", "stats": { ... }, "notes": "~20% HP increase, strategy notes" },
+      { "label": "NG+3", "stats": { ... }, "notes": "~50% HP increase, notes" },
+      { "label": "NG+5", "stats": { ... }, "notes": "~90% HP increase, notes" },
+      { "label": "NG+7", "stats": { ... }, "notes": "~150% HP increase, notes" }
+    ]
+  }
 }
 
-Be detailed about late-game item locations and NG+ strategy changes. No placeholder text.`;
+Rules: All items must have real locations in the game. Include lore and durability for every item.`;
 
-      let parsed2: { ok: true; value: { phases_4_to_7: Build["phases"] } } | { ok: false; error: string };
-
-      if (appSettings.aiMode === "dual" || appSettings.aiMode === "claude") {
-        // Claude extended thinking — best for complex multi-phase planning
-        let s2UserContent = userContent;
-        if (appSettings.aiMode === "claude") {
-          // Inject live research for late-game items so Claude isn't guessing
-          const researchCtx2 = await pplxResearch([
-            `Search for "${body.gameName} late game endgame weapons upgrades NG+" — list items with exact names and locations`,
-            `Search for "${body.gameName} NG+ cycle changes enemy scaling boss drops" — list all relevant late-game details`,
-          ], 3000);
-          s2UserContent = `${userContent}\n\nWEB RESEARCH (late-game + NG+ ground truth):\n${researchCtx2.substring(0, 6000)}`;
-        }
-        parsed2 = await claudeJson<{ phases_4_to_7: Build["phases"] }>(systemContent, s2UserContent, true);
-      } else if (appSettings.aiMode === "openrouter") {
-        // OpenRouter: Perplexity researches late-game → OR model structures
-        const researchCtx2 = await pplxResearch([
-          `Search for "${body.gameName} late game endgame weapons upgrades NG+" — list items with exact names and locations`,
-          `Search for "${body.gameName} NG+ cycle changes enemy scaling boss drops" — list all relevant late-game details`,
-        ], 3000);
-        // Extract stat keys from step1 output so step2 uses the exact same keys
-        const phase0Stats = body.partialBuild?.phases?.[0]?.stats;
-        const s2StatConstraint = phase0Stats && Object.keys(phase0Stats).length > 0
-          ? `EXACTLY these stat keys — copy from step1, do not add or remove any: ${Object.keys(phase0Stats).join(", ")}`
-          : `ONLY the stat keys native to ${body.gameName} — do NOT add stats from other games`;
-        const s2CompletenessBlock = `
-
-MANDATORY COMPLETENESS REQUIREMENTS — DO NOT SKIP ANY:
-- stats: EVERY phase (4, 5, 6, and NG+) MUST include ${s2StatConstraint}.
-- weapons/armor/acc: EVERY phase must have 2-4 entries minimum in each array. Empty arrays are WRONG.
-- ngCycles: Include all 4 NG+ entries (NG+1, NG+3, NG+5, NG+7) with real strategy notes and stat deltas.
-- dmg: Every phase needs dmg.ps, dmg.sp, dmg.bs as real numbers and dmg.n as a note.
-Phases with only 1-2 stats, empty item arrays, or missing NG+ cycles are incomplete and WRONG.`;
-        parsed2 = await openrouterJson<{ phases_4_to_7: Build["phases"] }>(
-          systemContent,
-          `${userContent}\n\nWEB RESEARCH (late-game + NG+ ground truth):\n${researchCtx2.substring(0, 6000)}${s2CompletenessBlock}`,
-        );
-      } else {
-        // sonar-reasoning-pro — CoT, strips <think> tags via parseJsonResponse
-        const sonarResp = await pplx.chat.completions.create({
-          model: SONAR_REASONING,
-          stream: false as const,
-          max_tokens: 8000,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response_format: { type: "json_schema", json_schema: { schema: STEP2_SCHEMA, name: "build_step2" } } as any,
-          messages: [
-            { role: "system", content: systemContent },
-            { role: "user", content: userContent },
-          ],
-        });
-        const raw = extractText(sonarResp as PplxResponse);
-        const pr = parseJsonResponse<{ phases_4_to_7: Build["phases"] }>(raw);
-        parsed2 = pr.ok ? pr : { ok: false, error: pr.error };
-      }
-
-      if (!parsed2.ok) {
-        return res.status(422).json({ error: `Step 2 parse failed: ${parsed2.error}`, raw: "" });
-      }
-
-      res.json({ ok: true, phases47: parsed2.value.phases_4_to_7 });
+    try {
+      const response = await claude.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 8000,
+        thinking: { type: "enabled", budget_tokens: 5000 },
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const text = response.content.find((b) => b.type === "text")?.text ?? "";
+      const parsed = parseJson(text);
+      res.json(parsed);
     } catch (err) {
-      res.status(500).json({ error: friendlyPplxError(err) });
+      console.error("Step2 error:", err);
+      res.status(500).json({ error: String(err) });
     }
   });
 
-  // ── POST /api/generate/step3 — sim, oth, ref (graceful fallback) ──────────
-  // Model: sonar-pro (web search enriches similar/alt build suggestions)
+  // ── POST /api/generate/step3 ────────────────────────────────────────────────
+  // Pros/cons + quick-ref rows.
   app.post("/api/generate/step3", async (req, res) => {
-    try {
-      const body = req.body as GenerateStep3Request;
-      const knowledgeBlock = buildKnowledgeBlock(body.gameKey);
+    const body = req.body as GenerateStep3Request;
+    const { gameName, partialBuild, knowledgeBlock } = body;
 
-      const systemContent = `You are an expert soulslike build author creating Similar Builds, Alternative OP Builds, and Quick Reference tables in JSON format.
+    const systemPrompt = `${knowledgeBlock}
 
-${knowledgeBlock}
+You are an expert ${gameName} build guide writer with the full game codex above.`;
 
-CRITICAL ACCURACY RULES — FOLLOW THESE ABOVE ALL ELSE:
-- ONLY reference items, builds, and strategies that ACTUALLY EXIST in ${body.gameName}.
-- Search the web to verify every item name, build concept, and location before including it.
-- NEVER invent item names, combine real names, or use approximate names. Real names only.
-- Similar and Other OP builds must be real community-known archetypes for ${body.gameName}, not invented.
-- Quick Reference items must all be real obtainable items with accurate stats.
+    const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
-CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }. Pure JSON only.`;
+Build: "${partialBuild.label}" (${partialBuild.sub})
+Playstyle: ${partialBuild.playstyle}
+Caps: ${JSON.stringify(partialBuild.caps)}
 
-      const userContent = `Search the web for "${body.gameName} best builds" and "${body.gameName} overpowered weapons" BEFORE generating anything. Only reference real confirmed items and community builds.
+Generate pros, cons, and quick-reference rows for this build.
 
-Generate the final sections for this ${body.gameName} build guide.
-
-Build: ${JSON.stringify(body.partialBuild).substring(0, 1500)}
-
-Generate JSON:
 {
-  "sim": [
-    {
-      "label": "Similar Build Name",
-      "sub": "Short subtitle",
-      "icon": "emoji",
-      "a": "#hexcolor",
-      "cls": "class",
-      "why": "Why it's similar",
-      "ph": [
-        {"name": "Early", "stats": {"DEX": 20}, "weapons": ["Weapon A"]},
-        {"name": "Mid", "stats": {"DEX": 35}, "weapons": ["Weapon B"]},
-        {"name": "End", "stats": {"DEX": 40}, "weapons": ["Weapon C"]}
-      ],
-      "key": ["Item 1", "Item 2", "Item 3"],
-      "steps": ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]
-    },
-    <second_similar_build>
+  "pros": [
+    "Pro 1 — specific and accurate to this build",
+    "Pro 2",
+    "Pro 3",
+    "Pro 4",
+    "Pro 5"
   ],
-  "oth": [
-    <two_other_op_builds_same_structure>
+  "cons": [
+    "Con 1 — honest weakness of this build",
+    "Con 2",
+    "Con 3",
+    "Con 4"
   ],
   "ref": [
     {
       "n": "Item Name",
-      "i": "Type (Sword/Ring/etc)",
+      "i": "Type (Weapon/Ring/Armor/Spell)",
       "w": 5.0,
-      "ap": 250,
-      "st": "Status effect",
+      "ap": 270,
+      "st": "Status or —",
       "ar": "Armor rating or —",
-      "s": "Scaling",
-      "a": "Affinity/infusion"
+      "s": "Scaling grade or —",
+      "a": "Affinity or —"
     }
   ]
 }
 
-Generate 2 sim, 2 oth, 5 ref entries.`;
+Include the 5-8 most important items in ref (main weapons, key rings, core armor, main spell).
+Pros and cons must be specific to this ${gameName} build — not generic platitudes.`;
 
-      type Step3Result = { sim: Build["sim"]; oth: Build["oth"]; ref: Build["ref"] };
-      let parsed3: { ok: true; value: Step3Result } | { ok: false; error: string };
-
-      if (appSettings.aiMode === "dual" || appSettings.aiMode === "claude") {
-        let s3UserContent = userContent;
-        if (appSettings.aiMode === "claude") {
-          // Research similar builds and alternatives for richer suggestions
-          const researchCtx3 = await pplxResearch([
-            `Search for "${body.gameName} ${body.partialBuild?.label ?? body.buildKey} similar builds alternatives" — list viable alternatives with key differences`,
-          ], 2000);
-          s3UserContent = `${userContent}\n\nWEB RESEARCH (similar/alternative builds):\n${researchCtx3.substring(0, 4000)}`;
-        }
-        parsed3 = await claudeJson<Step3Result>(systemContent, s3UserContent, false);
-      } else if (appSettings.aiMode === "openrouter") {
-        // OpenRouter: research alternatives → OR model structures
-        const researchCtx3 = await pplxResearch([
-          `Search for "${body.gameName} ${body.partialBuild?.label ?? body.buildKey} similar builds alternatives" — list viable alternatives with key differences`,
-        ], 2000);
-        const s3CompletenessBlock = `
-
-MANDATORY COMPLETENESS REQUIREMENTS:
-- sim: Include exactly 2 similar build entries. Each MUST have: key, label, icon, sub, diff (3+ sentences explaining differences).
-- oth: Include exactly 2 other OP build entries. Each MUST have: key, label, icon, sub, diff (3+ sentences).
-- ref: Include exactly 5 quick-reference tip entries. Each MUST have: cat, tip (detailed, actionable), src fields.
-Empty arrays or fewer entries than required are WRONG. Populate all arrays fully.`;
-        parsed3 = await openrouterJson<Step3Result>(
-          systemContent,
-          `${userContent}\n\nWEB RESEARCH (similar/alternative builds):\n${researchCtx3.substring(0, 4000)}${s3CompletenessBlock}`,
-        );
-      } else {
-        const sonarResp = await pplx.chat.completions.create({
-          model: SONAR_PRO,
-          stream: false as const,
-          max_tokens: 8000,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response_format: { type: "json_schema", json_schema: { schema: STEP3_SCHEMA, name: "build_step3" } } as any,
-          messages: [
-            { role: "system", content: systemContent },
-            { role: "user", content: userContent },
-          ],
-        });
-        const raw = extractText(sonarResp as PplxResponse);
-        const pr = parseJsonResponse<Step3Result>(raw);
-        parsed3 = pr.ok ? pr : { ok: false, error: pr.error };
-      }
-
-      if (!parsed3.ok) {
-        return res.json({ ok: true, sim: [], oth: [], ref: [] });
-      }
-
-      res.json({
-        ok: true,
-        sim: parsed3.value.sim ?? [],
-        oth: parsed3.value.oth ?? [],
-        ref: parsed3.value.ref ?? [],
-      });
-    } catch {
-      res.json({ ok: true, sim: [], oth: [], ref: [] });
-    }
-  });
-
-  // ── POST /api/generate/finalize — save the completed build ────────────────
-  app.post("/api/generate/finalize", (req, res) => {
     try {
-      const body = req.body as Build & { _customGameName?: string; _customGameKey?: string };
-      const { _customGameName, _customGameKey, ...build } = body;
-      const finalBuild = build as Build;
-
-      if (!finalBuild.key || !finalBuild.gameKey) {
-        return res.status(400).json({ error: "Missing build key or gameKey" });
-      }
-
-      // If this is a custom game, create a dynamic game entry first
-      if (_customGameName && _customGameKey) {
-        const existingGames = storage.getDynamicGames();
-        const alreadyExists = existingGames.some((g: any) => g.key === _customGameKey);
-        if (!alreadyExists) {
-          // Create a minimal game entry — stat info will be inferred from the build phases
-          const phaseStats = finalBuild.phases?.[0]?.stats ?? {};
-          const inferredStatKeys = Object.keys(phaseStats);
-          storage.createDynamicGame({
-            key: _customGameKey,
-            data: JSON.stringify({
-              key: _customGameKey,
-              name: _customGameName,
-              icon: finalBuild.icon ?? "🎮",
-              statMax: 99,
-              endgameBudget: 200,
-              softCaps: Object.fromEntries(inferredStatKeys.map((k) => [k, null])),
-              mats: [],
-              weightInfo: [
-                { label: "Light", range: "0–25%", note: "Fastest roll" },
-                { label: "Medium", range: "25–50%", note: "Standard roll" },
-                { label: "Heavy", range: "50–100%", note: "Slow roll" },
-                { label: "Over", range: "100%+", note: "No dodge" },
-              ],
-              isCustom: true,
-            }),
-          });
-        }
-      }
-
-      // Extract facts and update knowledge cache
-      const facts = extractFactsFromBuild(finalBuild);
-      const seedGame = SEED_GAMES.find((g) => g.key === finalBuild.gameKey);
-      const gameName = _customGameName ?? seedGame?.name ?? finalBuild.gameKey;
-      updateKnowledgeCache(finalBuild.gameKey, gameName, facts);
-
-      // Normalize build — guarantee required arrays/fields are always present
-      // so the frontend never crashes on missing data from partial AI responses
-      const normalizedBuild: Build = {
-        ...finalBuild,
-        caps: Array.isArray(finalBuild.caps) ? finalBuild.caps : [],
-        weaponReq: Array.isArray(finalBuild.weaponReq) ? finalBuild.weaponReq : [],
-        loadouts: Array.isArray(finalBuild.loadouts) ? finalBuild.loadouts : [],
-        sim: Array.isArray(finalBuild.sim) ? finalBuild.sim : [],
-        oth: Array.isArray(finalBuild.oth) ? finalBuild.oth : [],
-        ref: Array.isArray(finalBuild.ref) ? finalBuild.ref : [],
-        phases: (finalBuild.phases ?? []).map((ph: any) => ({
-          ...ph,
-          stats: ph.stats ?? {},
-          weapons: Array.isArray(ph.weapons) ? ph.weapons : [],
-          armor: Array.isArray(ph.armor) ? ph.armor : [],
-          acc: Array.isArray(ph.acc) ? ph.acc : [],
-          spells: Array.isArray(ph.spells) ? ph.spells : [],
-          dmg: ph.dmg ?? { ps: 0, sp: 0, bs: 0, n: "" },
-          sn: ph.sn ?? "",
-        })),
-      };
-
-      // Save build to DB — upsert in case the same key was generated before
-      // (avoids UNIQUE constraint error on re-generation of same build description)
-      const existingBuild = storage.getDynamicBuild(normalizedBuild.key);
-      if (existingBuild) {
-        storage.updateDynamicBuild(normalizedBuild.key, {
-          key: normalizedBuild.key,
-          gameKey: normalizedBuild.gameKey,
-          data: JSON.stringify(normalizedBuild),
-        });
-      } else {
-        storage.createDynamicBuild({
-          key: normalizedBuild.key,
-          gameKey: normalizedBuild.gameKey,
-          data: JSON.stringify(normalizedBuild),
-        });
-      }
-
-      res.json({ ok: true, build: normalizedBuild });
-    } catch (err) {
-      res.status(500).json({
-        error: `Finalize failed: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
-  });
-
-  // ── POST /api/update — patch update flow (sonar-pro: grounded in live web) ─
-  app.post("/api/update", async (req, res) => {
-    try {
-      const body = req.body as UpdateRequest;
-      const knowledgeBlock = buildKnowledgeBlock(body.gameKey);
-      const game = SEED_GAMES.find((g) => g.key === body.gameKey);
-
-      const prompt = `You are a ${body.gameName} expert. Search for the latest patch notes and balance changes for this game right now.
-
-${knowledgeBlock}
-
-Return JSON:
-{
-  "patchVersion": "v1.5.40",
-  "summary": "Brief summary of recent changes",
-  "changes": ["Change 1", "Change 2", "Change 3"],
-  "newFacts": [
-    {
-      "type": "WEAPON",
-      "name": "Item Name",
-      "location": "Where to find",
-      "raw": "WEAPON: Item Name | AP:250 | Status:Bleed | Loc:location | Up:upgrade path"
-    }
-  ]
-}
-
-Focus on nerfs, buffs, stat changes, new items, and location changes in the most recent patches.
-CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.`;
-
-      const response = await pplx.chat.completions.create({
-        model: SONAR_PRO,
-        stream: false as const,
+      const response = await claude.messages.create({
+        model: CLAUDE_MODEL,
         max_tokens: 8000,
-        messages: [{ role: "user", content: prompt }],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            schema: UPDATE_SCHEMA,
-          },
-        },
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: userPrompt }],
       });
-
-      const rawText = extractText(response);
-      const parsed = parseJsonResponse<{
-        patchVersion: string;
-        summary: string;
-        changes: string[];
-        newFacts: import("@shared/types").KnowledgeFact[];
-      }>(rawText);
-
-      if (!parsed.ok) {
-        return res.status(422).json({
-          error: `Update parse failed: ${parsed.error}`,
-        });
+      const text = response.content.find((b) => b.type === "text")?.text ?? "";
+      let parsed: { pros?: string[]; cons?: string[]; ref?: unknown[] } = {};
+      try { parsed = parseJson<{ pros?: string[]; cons?: string[]; ref?: unknown[] }>(text); } catch {
+        parsed = { pros: [], cons: [], ref: [] };
       }
-
-      const { patchVersion, summary, changes, newFacts } = parsed.value;
-
-      // Merge into knowledge cache
-      updateKnowledgeCache(
-        body.gameKey,
-        game?.name ?? body.gameName,
-        newFacts ?? [],
-        patchVersion
-      );
-
-      res.json({
-        ok: true,
-        patchVersion,
-        summary,
-        changes,
-        count: newFacts?.length ?? 0,
-      });
+      res.json(parsed);
     } catch (err) {
-      res.status(500).json({ error: friendlyPplxError(err) });
+      console.error("Step3 error:", err);
+      res.json({ pros: [], cons: [], ref: [] });
     }
   });
 
-  // ── POST /api/learn — full 14-category knowledge database build ─────────────
-  // Uses sonar-deep-research (20-40 internal searches per category) to build a
-  // comprehensive item database: 8 distinct categories including SHIELD, CATALYST, BUFF.
-  // Pre-pass: wiki-fetch.ts discovers real sources (Trello, Fextralife, Fandom) and
-  // seeds the cache with verified names BEFORE the AI category queries run.
-  // Researcher → Synthesizer: deep-research gathers, sonar-reasoning-pro validates.
-  // ── GET /api/learn/progress — SSE stream for learn progress events ─────────
-  app.get("/api/learn/progress", (req, res) => {
-    const gameKey = (req.query.gameKey as string) ?? "";
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders();
-
-    // Send a heartbeat every 15s so the connection stays alive
-    const hb = setInterval(() => res.write(": heartbeat\n\n"), 15000);
-
-    const handler = (ev: LearnProgressEvent) => {
-      if (ev.gameKey !== gameKey) return;
-      res.write(`data: ${JSON.stringify(ev)}\n\n`);
-      if (ev.done || ev.error) {
-        clearInterval(hb);
-        res.end();
-        learnEmitter.off("progress", handler);
-      }
+  // ── POST /api/generate/finalize ─────────────────────────────────────────────
+  // Assemble the full Build object, save, and extract facts from its items.
+  app.post("/api/generate/finalize", async (req, res) => {
+    const { gameKey, gameName, buildKey, step1, step2, step3 } = req.body as {
+      gameKey: string;
+      gameName: string;
+      buildKey: string;
+      step1: Record<string, unknown>;
+      step2: Record<string, unknown>;
+      step3: { pros: string[]; cons: string[]; ref: unknown[] };
     };
-    learnEmitter.on("progress", handler);
 
-    req.on("close", () => {
-      clearInterval(hb);
-      learnEmitter.off("progress", handler);
-    });
-  });
+    const build: Build = {
+      key: buildKey,
+      gameKey,
+      label: String(step1.label ?? ""),
+      sub: String(step1.sub ?? ""),
+      icon: String(step1.icon ?? "⚔️"),
+      accent: String(step1.accent ?? "#888888"),
+      playstyle: String(step1.playstyle ?? ""),
+      cls: String(step1.cls ?? ""),
+      caps: (step1.caps as string[]) ?? [],
+      weaponReq: (step1.weaponReq as string[]) ?? [],
+      loadouts: null,
+      phases: [
+        step1.phase1,
+        step1.phase2,
+        step2.phase3,
+        step2.phase4,
+      ].filter(Boolean) as Build["phases"],
+      pros: step3.pros ?? [],
+      cons: step3.cons ?? [],
+      ref: (step3.ref as Build["ref"]) ?? [],
+      isAI: true,
+    };
 
-  // ── Helper: strip HTML to plain text for Claude's page-content injection ──
-  function htmlToText(html: string): string {
-    return html
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-      .replace(/<header[\s\S]*?<\/header>/gi, "")
-      .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-      .replace(/<aside[\s\S]*?<\/aside>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-  }
-
-  // Map a category name to the best-matching user-supplied URL from hintUrls.
-  // Returns undefined if no URL matches.
-  function matchCategoryUrl(catName: string, hintUrls: string[]): string | undefined {
-    if (!hintUrls.length) return undefined;
-    const n = catName.toLowerCase();
-    const isWeapon  = /weapon|polearm|halberd|spear|colossal|ranged|bow|crossbow|status|elemental/.test(n);
-    const isShield  = /shield|offhand/.test(n);
-    const isCat     = /catalyst|staff|seal|wand/.test(n);
-    const isArmor   = /armor|armour/.test(n);
-    const isRing    = /ring|talisman|accessory/.test(n);
-    const isSpell   = /spell|sorcery|incantation|pyro|miracle|buff|support/.test(n);
-    const isBoss    = /boss|enemy|ng\+|endgame/.test(n);
-    const isGem     = /gem|ash|infusion|upgrade|material|map|lore/.test(n);
-
-    for (const url of hintUrls) {
-      const p = url.toLowerCase();
-      if (isWeapon  && /weapon/.test(p)) return url;
-      if (isShield  && /shield/.test(p)) return url;
-      if (isCat     && /catalyst|staff|seal/.test(p)) return url;
-      if (isArmor   && /armor|armour/.test(p)) return url;
-      if (isRing    && /ring|accessory|talisman/.test(p)) return url;
-      if (isSpell   && /spell|sorcery|incantation|magic/.test(p)) return url;
-      if (isBoss    && /boss|enemy/.test(p)) return url;
-      if (isGem     && /gem|ash|upgrade|material/.test(p)) return url;
-    }
-    // Fallback: if only one URL supplied, use it for everything
-    if (hintUrls.length === 1) return hintUrls[0];
-    return undefined;
-  }
-
-  app.post("/api/learn", async (req, res) => {
     try {
-      const body = req.body as {
-        gameKey: string;
-        gameName: string;
-        /** Single URL (legacy) or array of category-specific URLs */
-        hintUrl?: string;
-        hintUrls?: string[];
-      };
-      const { gameKey, gameName } = body;
-      // Normalise hintUrls: merge legacy hintUrl + hintUrls array, deduplicate
-      const rawHintUrls = [
-        ...(body.hintUrl ? [body.hintUrl] : []),
-        ...(body.hintUrls ?? []),
-      ].filter((u) => u && u.trim());
-      const hintUrls = Array.from(new Set(rawHintUrls.map((u) => u.trim())));
+      storage.createDynamicBuild({ key: build.key, gameKey, data: JSON.stringify(build) });
+    } catch {
+      // Build may already exist (re-finalize) — that's fine
+    }
 
-      if (!gameKey || !gameName) return res.status(400).json({ error: "gameKey and gameName required" });
-
-      const emit = (stage: string, detail?: string) =>
-        learnEmitter.emit("progress", { gameKey, stage, detail } satisfies LearnProgressEvent);
-
-      // ── API key check — fail fast with clear error rather than silent 0-facts ──
-      const researchMode = appSettings.learnResearchMode;
-      // A key must be at least 20 chars to be real (not a placeholder like "your-key-here")
-      const keyOk = (k: string | undefined) => typeof k === "string" && k.trim().length >= 20;
-      const hasPplxKey = keyOk(process.env.PERPLEXITY_API_KEY);
-      const hasClaudeKey = keyOk(process.env.CLAUDE_API_KEY);
-      const hasOrKey = keyOk(process.env.OPEN_ROUTER_API_KEY);
-
-      // Determine effective research mode: auto-fallback if chosen key is missing
-      let effectiveResearchMode = researchMode;
-      if (researchMode === "perplexity" && !hasPplxKey) {
-        if (hasClaudeKey) {
-          effectiveResearchMode = "claude";
-          emit("Research mode", "No Perplexity key — falling back to Claude for research");
-        } else if (hasOrKey) {
-          effectiveResearchMode = "openrouter";
-          emit("Research mode", "No Perplexity key — falling back to OpenRouter for research");
-        } else {
-          learnEmitter.emit("progress", { gameKey, stage: "Error", detail: "No API keys configured. Set PERPLEXITY_API_KEY, CLAUDE_API_KEY, or OPEN_ROUTER_API_KEY.", error: "No API keys configured" } satisfies LearnProgressEvent);
-          return res.status(400).json({ error: "No API keys configured for learn. Set PERPLEXITY_API_KEY, CLAUDE_API_KEY, or OPEN_ROUTER_API_KEY." });
-        }
+    // Extract facts from all phase items and cache them
+    try {
+      const { extractFactsFromBuild } = await import("./knowledge");
+      const newFacts = extractFactsFromBuild(build);
+      if (newFacts.length > 0) {
+        updateKnowledgeCache(gameKey, gameName, newFacts);
       }
-      if (researchMode === "openrouter" && !hasOrKey) {
-        if (hasClaudeKey) { effectiveResearchMode = "claude"; emit("Research mode", "No OpenRouter key — falling back to Claude"); }
-        else if (hasPplxKey) { effectiveResearchMode = "perplexity"; emit("Research mode", "No OpenRouter key — falling back to Perplexity"); }
-      }
-      if (researchMode === "claude" && !hasClaudeKey) {
-        if (hasPplxKey) { effectiveResearchMode = "perplexity"; emit("Research mode", "No Claude key — falling back to Perplexity"); }
-        else if (hasOrKey) { effectiveResearchMode = "openrouter"; emit("Research mode", "No Claude key — falling back to OpenRouter"); }
-      }
-
-      console.log(`[learn] starting: game=${gameKey} mode=${effectiveResearchMode} urls=${hintUrls.length} hasPplx=${hasPplxKey} hasClaude=${hasClaudeKey} hasOR=${hasOrKey}`);
-
-      // ── Wiki pre-pass — run before AI queries ─────────────────────────────
-      let preFacts = 0;
-      let preSources: string[] = [];
-      const existingCache = storage.getKnowledgeCache(gameKey);
-      let existingCount = 0;
-      if (existingCache) {
-        try { existingCount = (JSON.parse(existingCache.facts) as unknown[]).length; } catch { /* ignore */ }
-      }
-      if (existingCount < 50 || hintUrls.length > 0) {
-        try {
-          emit("Wiki pre-pass", `Finding real item sources for ${gameName}...`);
-          const prePass = await fetchWikiPrePass(
-            gameName, gameKey, pplx, hintUrls,
-            appSettings.learnResearchMode === "openrouter"
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ? (openRouter as any)
-              : undefined,
-            process.env.CLAUDE_API_KEY ? claudeExtractFromHtml : undefined
-          );
-          if (prePass.facts.length > 0) {
-            updateKnowledgeCache(gameKey, gameName, prePass.facts, `Wiki pre-pass — ${prePass.facts.length} items`);
-            preFacts = prePass.facts.length;
-            preSources = prePass.sourcesUsed;
-            emit("Wiki pre-pass done", `${preFacts} items from ${prePass.sourcesUsed.length} source(s)`);
-          } else {
-            emit("Wiki pre-pass done", "No structured sources found — continuing with AI");
-          }
-        } catch {
-          // Pre-pass is non-fatal — AI queries continue regardless
-          emit("Wiki pre-pass skipped", "Error during pre-pass — continuing with AI");
-        }
-      }
-
-      const RULES = `\nRules:\n- EXHAUSTIVE — every item in ${gameName} including rare, DLC, NG+-exclusive\n- Exact in-game names only\n- loc: specific zone + NPC/boss/chest — never "Various", "Exploration", "N/A"\n- ALL numeric values required (AP, weight, damage, scaling, buildup)\n- Output ONLY item lines in exact format — no headers, no markdown\n- Each line MUST start with the EXACT prefix shown (e.g. WEAPON:, ARMOR:, GEM:) — never omit or change it`;
-
-      // Damage/scaling format: full +0 to +10 table
-      const WPN = `WEAPON: Name — [weapon type]; AP: N(+0)/N(+1)/N(+2)/N(+3)/N(+4)/N(+5)/N(+6)/N(+7)/N(+8)/N(+9)/N(+10); scaling: G(+0)/G(+1)/G(+2)/G(+3)/G(+4)/G(+5)/G(+6)/G(+7)/G(+8)/G(+9)/G(+10) where G=letter grade; status: [TYPE N(+0)/N(+5)/N(+10) buildup or "none"]; weight: N — loc: [zone + source] — stat: [STR N / DEX N / INT N / FTH N / ARC N; upgrade mat]`;
-      const SHD = `SHIELD: Name — [type: small/medium/great/parrying]; stability: N(+0)/N(+5)/N(+10); guard boost: N%; block: N% phys / N% magic / N% fire / N% lightning / N% holy; weight: N — loc: [zone + source] — stat: [STR N; upgrade mat]`;
-      const CAT = `CATALYST: Name — [type: staff/seal/wand]; spell buff: N(+0)/N(+5)/N(+10); scaling: G(+0)/G(+5)/G(+10); weight: N — loc: [zone + source] — stat: [INT N / FTH N / ARC N]`;
-      // Armor: ALL 5 defense stats + poise + weight
-      const ARM = `ARMOR: Name — [piece: helm/chest/gauntlets/leggings]; set: [set name]; physical def: N; magic def: N; fire def: N; lightning def: N; holy def: N; poise: N; weight: N — loc: [zone + source]`;
-      const RNG = `RING/ACC: Name — [precise effect WITH NUMBERS: "+15% Bleed dmg", "+60 buildup/hit", "+20 Stamina"] — loc: [zone + source]`;
-      const SPL = `SPELL: Name — [school]; damage: N per cast; effect: [precise]; FP: N — loc: [NPC + zone] — stat: [N STAT required; scales with STAT]`;
-      const BUF = `BUFF: Name — [school]; effect: [WITH NUMBERS: "+15% dmg 60s", "heals 300 HP"]; duration: Ns; FP: N — loc: [NPC + zone] — stat: [N STAT required]`;
-      const GEM = `GEM: Name — [type: ash of war/infusion/whetblade]; effect: [precise description WITH NUMBERS]; compatible with: [weapon types]; affinity options: [list] — loc: [zone + source]`;
-      const UPG = `UPGRADE: Name — [type: smithing stone/somber/titanite/bone/etc.]; tier: +N to +N; quantity per run: N; weight: N — loc: [zone + source, drop rate if farmable]`;
-      const MAP_T = `MAP: Name — [type: area/region/dungeon/legacy dungeon]; connects to: [adjacent areas]; key landmarks: [boss, NPC, shortcut]; unlock: [how to reach] — note: [shortcuts or secrets]`;
-      const LRE = `LORE: Name — [type: NPC/questline/item lore/story event]; summary: [2-3 sentences]; reward: [items/endings unlocked]; steps: [brief sequence] — loc: [where NPC/event is found]`;
-
-      const categories = [
-        // ── Weapons ────────────────────────────────────────────────────────────
-        { name: "physical & quality weapons", prompt: `Search ${gameName} wiki. List EVERY physical weapon: swords, greatswords, daggers, axes, hammers, maces, clubs, fists. CRITICAL: each line MUST start with WEAPON: (colon required). Include full +0 to +10 AP table and scaling grade table.\n${WPN}${RULES}` },
-        { name: "colossal & ultra-great weapons", prompt: `Search ${gameName} wiki. List EVERY colossal weapon, ultra-greatsword, great hammer, colossal axe. CRITICAL: start each line with WEAPON:. Full damage table required.\n${WPN}${RULES}` },
-        { name: "polearms, halberds, spears & ranged", prompt: `Search ${gameName} wiki. List EVERY polearm, halberd, spear, lance, whip, bow, crossbow, greatbow. CRITICAL: start each line with WEAPON:. Include damage at each upgrade level.\n${WPN}${RULES}` },
-        { name: "status & elemental weapons", prompt: `Search ${gameName} wiki. List EVERY weapon with status/elemental: Bleed, Poison, Frost, Fire, Lightning, Holy, Scarlet Rot, Madness. CRITICAL: start each line with WEAPON:. Status buildup MUST be shown at each upgrade level (+0 through +10).\n${WPN}${RULES}` },
-        { name: "catalysts, staves & seals", prompt: `Search ${gameName} wiki. List EVERY casting tool: staves, seals, wands, catalysts, foci. CRITICAL: each line MUST start with CATALYST: (not WEAPON:).\n${CAT}${RULES}` },
-        { name: "shields & offhand", prompt: `Search ${gameName} wiki. List EVERY shield: small, medium, greatshield, parrying, torch, lantern. CRITICAL: each line MUST start with SHIELD: (not WEAPON:). Include all block percentages.\n${SHD}${RULES}` },
-        // ── Armor ──────────────────────────────────────────────────────────────
-        { name: "light & medium armor", prompt: `Search ${gameName} wiki. List EVERY light and medium armor piece (helm, chest, gauntlets, leggings for each set). CRITICAL: each line MUST start with ARMOR:. ALL 5 defense stats (physical, magic, fire, lightning, holy) + poise + weight REQUIRED.\n${ARM}${RULES}` },
-        { name: "heavy, boss & special armor", prompt: `Search ${gameName} wiki. List EVERY heavy armor, boss armor set, unique armor, DLC armor. CRITICAL: start each line with ARMOR:. All 5 defense stats required. loc MUST say exactly how to obtain.\n${ARM}${RULES}` },
-        { name: "unique missable & NG+ armor", prompt: `Search ${gameName} wiki. List EVERY missable, questline, covenant, NG+-exclusive armor. CRITICAL: start each line with ARMOR:. All 5 defense stats required. loc must be very specific.\n${ARM}${RULES}` },
-        // ── Rings / Spells ─────────────────────────────────────────────────────
-        { name: "rings, talismans & accessories", prompt: `Search ${gameName} wiki. List EVERY ring, talisman, amulet, charm, accessory. Effects MUST include exact numbers. Start each line with RING/ACC:.\n${RNG}${RULES}` },
-        { name: "offensive spells", prompt: `Search ${gameName} wiki. List EVERY offensive spell/sorcery/incantation/pyromancy. CRITICAL: each line MUST start with SPELL: (not WEAPON: or MECHANIC:). Damage must be real numbers.\n${SPL}${RULES}` },
-        { name: "support & buff spells", prompt: `Search ${gameName} wiki. List EVERY buff/heal/support/utility spell. CRITICAL: each line MUST start with BUFF: (not SPELL:). Effect magnitudes must be numbers.\n${BUF}${RULES}` },
-        // ── Progression / World ────────────────────────────────────────────────
-        { name: "endgame, final bosses & NG+", prompt: `Search ${gameName} wiki for final bosses, their drops, NG+ cycle changes, NG+-exclusive items, recommended stats per NG+ tier. CRITICAL: start each line with BUILD:.\nBUILD: Name — [drops/unlocks]; rec level: N; key stats: [VIG N / STR N] — loc: [area or NG+N]${RULES}` },
-        { name: "unique legendary & boss weapons", prompt: `Search ${gameName} wiki. List EVERY unique/legendary weapon, boss weapon, remembrance weapon. CRITICAL: start each line with WEAPON:. Note "unique/uninfusable" in type. Include full damage table.\n${WPN}${RULES}` },
-        // ── New categories ─────────────────────────────────────────────────────
-        { name: "ashes of war & infusion gems", prompt: `Search ${gameName} wiki. List EVERY ash of war, infusion gem, whetblade, and affinity-modifying item. CRITICAL: each line MUST start with GEM: — NOT WEAPON: or MECHANIC:.\n${GEM}${RULES}` },
-        { name: "upgrade materials & farming", prompt: `Search ${gameName} wiki. List EVERY upgrade material: smithing stones, somber stones, titanite shards, bone fragments, upgrade gems, and special mats. CRITICAL: each line MUST start with UPGRADE:.\n${UPG}${RULES}` },
-        { name: "areas, maps & navigation", prompt: `Search ${gameName} wiki. List EVERY major area, region, legacy dungeon, catacomb, cave, and dungeon. CRITICAL: each line MUST start with MAP:. Include shortcuts, key bosses, and how to unlock.\n${MAP_T}${RULES}` },
-        { name: "lore, NPC questlines & story", prompt: `Search ${gameName} wiki. List EVERY major NPC questline, story event, ending, and lore item. CRITICAL: each line MUST start with LORE: — do NOT use MECHANIC: for NPCs or questlines.\n${LRE}${RULES}` },
-      ];
-
-      const allFacts: import("@shared/types").KnowledgeFact[] = [];
-      const categoryResults: { name: string; count: number }[] = [];
-
-      // Run categories in parallel batches of 3
-      const CONCURRENT = 3;
-      const totalBatches = Math.ceil(categories.length / CONCURRENT);
-      for (let i = 0; i < categories.length; i += CONCURRENT) {
-        const batch = categories.slice(i, i + CONCURRENT);
-        const batchNum = Math.floor(i / CONCURRENT) + 1;
-        emit(
-          `Batch ${batchNum}/${totalBatches}`,
-          batch.map((c) => c.name).join(" · ")
-        );
-        const LEARN_TIMEOUT_MS = 300_000; // 5 min per category
-        const useOrResearch    = effectiveResearchMode === "openrouter";
-        const useClaudeResearch = effectiveResearchMode === "claude";
-        const results = await Promise.allSettled(
-          batch.map(async (cat) => {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), LEARN_TIMEOUT_MS);
-
-            try {
-              if (useClaudeResearch) {
-                // ── Claude research: fetch category page + extract with Claude ──
-                // Match this category to a user-supplied URL (e.g. weapons page).
-                // If a match is found, fetch its HTML and inject as page content.
-                // Claude is excellent at strict format compliance and extraction
-                // from real page content — no hallucination when grounded in HTML.
-                const catUrl = matchCategoryUrl(cat.name, hintUrls);
-                let pageContent = "";
-                if (catUrl) {
-                  try {
-                    const resp = await fetch(catUrl, {
-                      signal: controller.signal,
-                      headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" },
-                    });
-                    if (resp.ok) {
-                      const rawHtml = await resp.text();
-                      pageContent = htmlToText(rawHtml).slice(0, 28000);
-                    }
-                  } catch { /* page fetch failed — fall through to knowledge-only */ }
-                }
-
-                const claudeSystem = `You are an expert ${gameName} game database compiler. Extract items and format each as a single line using the exact prefix format shown. Output ONLY item lines — no headers, no commentary, no markdown.`;
-
-                const claudeUser = pageContent
-                  ? `Extract EVERY item from the following ${gameName} wiki page content and format as item lines.\n\nPAGE CONTENT (use this as ground truth — exact in-game names only):\n${pageContent}\n\n${cat.prompt}`
-                  : `Using your knowledge of ${gameName}, ${cat.prompt}`;
-
-                const claudeResp = await claude.messages.create({
-                  model: CLAUDE_MODEL,
-                  max_tokens: 8000,
-                  system: claudeSystem,
-                  messages: [{ role: "user", content: claudeUser }],
-                });
-                clearTimeout(timer);
-                return claudeResp.content
-                  .filter((b) => b.type === "text")
-                  .map((b) => (b as { type: "text"; text: string }).text)
-                  .join("\n");
-              }
-
-              if (useOrResearch) {
-                // Route through OpenRouter's perplexity/sonar-deep-research
-                const result = await orDeepResearch(cat.prompt, controller.signal);
-                clearTimeout(timer);
-                return result;
-              }
-
-              // Default: native Perplexity sonar-deep-research
-              const result = await pplx.chat.completions.create(
-                {
-                  model: SONAR_DEEP,
-                  stream: false as const,
-                  max_tokens: 8000,
-                  messages: [{ role: "user", content: cat.prompt }],
-                },
-                { signal: controller.signal }
-              );
-              clearTimeout(timer);
-              return result;
-            } catch (err) {
-              clearTimeout(timer);
-              throw err;
-            }
-          })
-        );
-        for (let j = 0; j < results.length; j++) {
-          const r = results[j];
-          if (r.status === "fulfilled") {
-            // orDeepResearch returns string; pplx returns PplxResponse — normalise both
-            const raw = r.value;
-            const text = typeof raw === "string" ? raw : extractText(raw as PplxResponse);
-            const facts = parseLearnLines(text, gameKey, gameName);
-            allFacts.push(...facts);
-            categoryResults.push({ name: batch[j].name, count: facts.length });
-          } else {
-            const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-            console.error(`[learn] category "${batch[j].name}" failed (mode=${effectiveResearchMode}):`, r.reason);
-            categoryResults.push({ name: batch[j].name, count: 0 });
-            emit(`Category failed: ${batch[j].name}`, errMsg.slice(0, 200));
-          }
-        }
-        const batchErrors = results.filter(r => r.status === "rejected").length;
-        emit(
-          `Batch ${batchNum}/${totalBatches} done`,
-          batchErrors > 0
-            ? `${allFacts.length} facts so far (${batchErrors}/${results.length} failed — check API key)`
-            : `${allFacts.length} facts so far`
-        );
-      }
-
-      if (allFacts.length === 0 && categoryResults.every(c => c.count === 0)) {
-        const failedMode = effectiveResearchMode;
-        emit("Error", `All ${categories.length} categories returned 0 facts using ${failedMode} mode. Check that your ${failedMode === "perplexity" ? "PERPLEXITY_API_KEY" : failedMode === "claude" ? "CLAUDE_API_KEY" : "OPEN_ROUTER_API_KEY"} is set and valid in Settings.`);
-      }
-
-      emit("Synthesis pass", `Deduplicating & validating ${allFacts.length} facts...`);
-      // Synthesis pass: sonar-reasoning-pro validates classification and deduplicates.
-      // Send per-category summaries (not raw lines) to stay within token budget while
-      // giving the model full coverage visibility across all 18 categories.
-      let finalFacts = allFacts;
-      if (allFacts.length > 0) {
-        try {
-          // Group facts by type for summary
-          const byType: Record<string, string[]> = {};
-          for (const f of allFacts) {
-            (byType[f.type] ??= []).push(f.name);
-          }
-          const categorySummary = Object.entries(byType)
-            .map(([type, names]) => {
-              const sample = names.slice(0, 8).join(", ");
-              return `${type} (${names.length} items): ${sample}${names.length > 8 ? "..." : ""}`;
-            })
-            .join("\n");
-
-          // Send a manageable sample of raw lines (3000 items max) for dedup check
-          const sampleLines = allFacts.slice(0, 3000).map((f) => f.raw).join("\n");
-
-          const synthPrompt = `You are validating a ${gameName} item database. 18 categories were searched, producing ${allFacts.length} facts.
-
-COVERAGE SUMMARY:
-${categorySummary}
-
-SAMPLE LINES (first 3000 of ${allFacts.length}):
-${sampleLines}
-
-Tasks:
-1. REMOVE exact duplicates from the sample (same item name + same type — keep version with more numeric data)
-2. REMOVE vague placeholders like "AP: ~N" or "damage: varies"
-3. FIX misclassified prefixes:
-   - Shields MUST be SHIELD: (not WEAPON:)
-   - Casting tools MUST be CATALYST: (not WEAPON:)
-   - Support spells MUST be BUFF: (not SPELL:)
-   - Ashes of War MUST be GEM: (not WEAPON: or MECHANIC:)
-   - Upgrade mats MUST be UPGRADE: (not ITEM:)
-   - Areas/dungeons MUST be MAP: (not MECHANIC:)
-   - NPC questlines MUST be LORE: (not MECHANIC:)
-4. Output ONLY cleaned item lines, one per line. No commentary.
-
-Category breakdown: ${categoryResults.map((c) => `${c.name}:${c.count}`).join(", ")}`;
-
-          // Synthesis pass — Claude (default) or OpenRouter ensemble based on learnSynthMode
-          const synthSystem = "You are a database validator. Output ONLY cleaned item lines, one per line. No JSON, no markdown, no commentary.";
-          let synthText = "";
-          if (appSettings.learnSynthMode === "openrouter") {
-            // OpenRouter panel: 4 models in parallel + judge picks best fact list
-            emit("Synthesis pass", "OpenRouter ensemble validating & classifying...");
-            synthText = await openrouterSynth(synthSystem, synthPrompt);
-          } else {
-            // Claude synthesis (default) — best classification validation
-            const claudeMsg = await claude.messages.create({
-              model: CLAUDE_MODEL,
-              max_tokens: 12000,
-              system: synthSystem,
-              messages: [{ role: "user", content: synthPrompt }],
-            });
-            synthText = claudeMsg.content
-              .filter((b) => b.type === "text")
-              .map((b) => (b as { type: "text"; text: string }).text)
-              .join("");
-          }
-          const synthFacts = parseLearnLines(synthText, gameKey, gameName);
-          if (synthFacts.length >= allFacts.length * 0.35) {
-            finalFacts = synthFacts;
-          }
-        } catch {
-          // non-fatal — use raw facts
-        }
-      }
-
-      if (finalFacts.length > 0) {
-        updateKnowledgeCache(gameKey, gameName, finalFacts);
-      }
-
-      learnEmitter.emit("progress", {
-        gameKey,
-        stage: "Complete",
-        detail: `${finalFacts.length} facts cached`,
-        done: true,
-      } satisfies LearnProgressEvent);
-
-      // Count by category for response
-      const breakdown: Record<string, number> = {};
-      for (const f of finalFacts) {
-        breakdown[f.type] = (breakdown[f.type] ?? 0) + 1;
-      }
-
-      return res.json({
-        ok: true,
-        total: finalFacts.length,
-        breakdown,
-        categories: categoryResults,
-        // Pre-pass results for UI display
-        preFacts,
-        preSources,
-      });
     } catch (err) {
-      const msg = friendlyPplxError(err);
-      learnEmitter.emit("progress", {
-        gameKey: (req.body as { gameKey?: string })?.gameKey ?? "",
-        stage: "Error",
-        detail: msg,
-        done: true,
-        error: msg,
-      } satisfies LearnProgressEvent);
-      res.status(500).json({ error: msg });
+      console.error("Fact extraction error (non-fatal):", err);
     }
+
+    res.json(build);
   });
 
-  // ── POST /api/learn/codex — 5-pass JSON codex extraction via Fextralife ────
-  // Each pass asks sonar-deep-research to return a specific JSON section of the
-  // game's full item database. Sections are merged into one codex record and
-  // processed via extractFactsFromCodex. Uses the same SSE progress stream.
-  app.post("/api/learn/codex", async (req, res) => {
-    try {
-      const body = req.body as { gameKey: string; gameName: string; wikiUrl?: string };
-      const { gameKey, gameName } = body;
-      if (!gameKey || !gameName) return res.status(400).json({ error: "gameKey and gameName required" });
-
-      // Default wiki roots for known games
-      const WIKI_ROOTS: Record<string, string> = {
-        "lotf": "thelordsofthefallen.wiki.fextralife.com",
-        "elden-ring": "eldenring.wiki.fextralife.com",
-        "dark-souls": "darksouls.wiki.fextralife.com",
-        "dark-souls-2": "darksouls2.wiki.fextralife.com",
-        "dark-souls-3": "darksouls3.wiki.fextralife.com",
-        "bloodborne": "bloodborne.wiki.fextralife.com",
-        "sekiro": "sekiroshadowsdietwice.wiki.fextralife.com",
-        "lies-of-p": "liesofp.wiki.fextralife.com",
-        "remnant-2": "remnant2.wiki.fextralife.com",
-      };
-      const wikiRoot = body.wikiUrl
-        ? body.wikiUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")
-        : WIKI_ROOTS[gameKey] ?? `${gameKey.replace(/-/g, "")}.wiki.fextralife.com`;
-
-      const emit = (stage: string, detail?: string) =>
-        learnEmitter.emit("progress", { gameKey, stage, detail } satisfies LearnProgressEvent);
-
-      // Mirror the same key-check + auto-fallback as /api/learn
-      const keyOk = (k: string | undefined) => typeof k === "string" && k.trim().length >= 20;
-      const hasPplxKey   = keyOk(process.env.PERPLEXITY_API_KEY);
-      const hasClaudeKey = keyOk(process.env.CLAUDE_API_KEY);
-      const hasOrKey     = keyOk(process.env.OPEN_ROUTER_API_KEY);
-      let effectiveMode = appSettings.learnResearchMode;
-      if (effectiveMode === "perplexity" && !hasPplxKey) {
-        effectiveMode = hasClaudeKey ? "claude" : hasOrKey ? "openrouter" : "perplexity";
-        if (effectiveMode !== "perplexity") emit("Research mode", `No Perplexity key — using ${effectiveMode}`);
-      } else if (effectiveMode === "openrouter" && !hasOrKey) {
-        effectiveMode = hasClaudeKey ? "claude" : hasPplxKey ? "perplexity" : "openrouter";
-        if (effectiveMode !== "openrouter") emit("Research mode", `No OpenRouter key — using ${effectiveMode}`);
-      } else if (effectiveMode === "claude" && !hasClaudeKey) {
-        effectiveMode = hasPplxKey ? "perplexity" : hasOrKey ? "openrouter" : "claude";
-        if (effectiveMode !== "claude") emit("Research mode", `No Claude key — using ${effectiveMode}`);
-      }
-
-      emit("Codex extraction", `Targeting ${wikiRoot} — 10 passes (${effectiveMode})`);
-
-      const JSON_RULES = `CRITICAL: Your ENTIRE response must be a single valid JSON object. Start with { and end with }. No markdown, no code fences, no commentary outside the JSON. Every string value must be properly escaped. Use null for missing numeric values.`;
-
-      // Wiki pages to fetch per pass (relative paths from wikiRoot).
-      // Claude mode fetches these, strips HTML, and injects as ground-truth context.
-      // Perplexity/OR modes ignore these — the prompt text already names the site.
-      const PASS_WIKI_PATHS: string[][] = [
-        ["Weapons", "Straight+Swords", "Axes", "Hammers", "Spears"],                     // pass 1
-        ["Greatswords", "Great+Axes", "Great+Hammers", "Colossal+Weapons", "Unique+Weapons"], // pass 2
-        ["Shields", "Small+Shields", "Medium+Shields", "Greatshields", "Catalysts", "Staves", "Seals"], // pass 3
-        ["Armor", "Helms", "Chest+Armor"],                                                 // pass 4
-        ["Gauntlets", "Leg+Armor", "Boss+Armor"],                                          // pass 5
-        ["Rings", "Pendants", "Accessories"],                                              // pass 6
-        ["Spells", "Throwables", "Ammunition"],                                            // pass 7
-        ["Runes", "Upgrade+Materials", "Consumables"],                                     // pass 8
-        ["Bosses", "Enemies", "NPCs", "Merchants"],                                        // pass 9
-        ["Classes", "Stats", "Status+Effects", "Weight", "Endings", "New+Game+Plus", "Trophies"], // pass 10
-      ];
-
-      /** Fetch a wiki page and strip HTML → plain text (max 20 000 chars) */
-      const fetchWikiPage = async (wikiRootUrl: string, path: string, signal: AbortSignal): Promise<string> => {
-        const url = `https://${wikiRootUrl}/${path}`;
-        try {
-          const resp = await fetch(url, { signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; MasterBuildCodex/1.0)" } });
-          if (!resp.ok) return "";
-          const html = await resp.text();
-          return htmlToText(html).slice(0, 20000);
-        } catch { return ""; }
-      };
-
-      // 10 targeted passes — each returns a partial codex JSON
-      const passes = [
-        {
-          name: "Pass 1: Physical Weapons (1H)",
-          prompt: `Search ${wikiRoot} for ${gameName} complete database of one-handed physical weapons: straight swords, axes, hammers, spears, daggers, halberds, curved swords, twinblades.
-
-Return a JSON object with:
-{
-  "weapons": [{"name":"","type":"","ap":"","scaling":"","status":"","weight":0,"loc":"","req":"","upgrade":"","tip":""}]
-}
-Include EVERY weapon of these types including DLC. ap should be full +0→+10 AR progression. scaling should be letter grades per stat (e.g. "STR B / AGI C"). loc should be exact location or NPC seller.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 2: Heavy & Unique Weapons",
-          prompt: `Search ${wikiRoot} for ${gameName} complete database of two-handed and unique weapons: greatswords, great axes, great hammers, colossal weapons, ultra weapons, ranged weapons (crossbows, bows), unique/boss weapons, and special weapons.
-
-Return a JSON object with:
-{
-  "weapons": [{"name":"","type":"","ap":"","scaling":"","status":"","weight":0,"loc":"","req":"","upgrade":"","tip":""}]
-}
-Include EVERY weapon of these types including DLC and boss drops. ap = full +0→+10 AR. For boss weapons include the boss they drop from in loc.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 3: Shields & Catalysts",
-          prompt: `Search ${wikiRoot} for ${gameName} complete shield and catalyst/staff/seal databases.
-
-Return a JSON object with:
-{
-  "shields": [{"name":"","type":"small|medium|great","stability":"","blockPhys":"","blockMag":"","blockFire":"","blockLight":"","blockHoly":"","weight":0,"loc":"","req":""}],
-  "catalysts": [{"name":"","type":"staff|seal|catalyst","spellBuff":"","scaling":"","weight":0,"loc":"","req":"","tip":""}]
-}
-Include EVERY shield (all sizes) and EVERY catalyst/staff/seal in the game including DLC. blockPhys should include full upgrade values where available.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 4: Armor (Helms & Chest)",
-          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE armor database — every helm and chest piece.
-
-Return a JSON object with:
-{
-  "armor": [{"name":"","piece":"helm|chest","set":"","physDef":0,"magDef":0,"fireDef":0,"lightDef":0,"holyDef":0,"poise":0,"weight":0,"loc":"","tip":""}]
-}
-Include EVERY helm and chest piece including boss armor, DLC armor, questline/missable armor. ALL 5 defense stats + poise + weight are required for each entry.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 5: Armor (Gauntlets & Leggings)",
-          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE armor database — every gauntlet and legging piece, including boss armor sets.
-
-Return a JSON object with:
-{
-  "armor": [{"name":"","piece":"gauntlets|leggings","set":"","physDef":0,"magDef":0,"fireDef":0,"lightDef":0,"holyDef":0,"poise":0,"weight":0,"loc":"","tip":""}]
-}
-Include EVERY gauntlet and legging including boss armor, DLC, questline/missable pieces. ALL 5 defense stats + poise + weight required.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 6: Rings & Pendants",
-          prompt: `Search ${wikiRoot} for ${gameName} COMPLETE rings, pendants, charms, and accessories database.
-
-Return a JSON object with:
-{
-  "rings": [{"name":"","effect":"","loc":"","req":"","tip":""}]
-}
-Include EVERY ring, pendant, charm, and accessory — ALL missable ones, quest rewards, boss drops, hidden ones. For each: EXACT numeric effect values (e.g. "+15% Ranged Damage" not "increases ranged damage"). Specifically include: Princess' Sting, Slinger's Ring, Bloodbane Ring, Briar Ring, Antidote Ring, and all other accessories. loc = exact location or NPC.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 7: Spells & Throwables",
-          prompt: `Search ${wikiRoot} for ${gameName} ALL spells and ALL throwable/ammunition items (there are 60+ throwable types).
-
-Return a JSON object with:
-{
-  "spells": [{"name":"","type":"","damage":"","effect":"","fp":0,"loc":"","req":"","tip":""}],
-  "throwables": {
-    "desc": "throwing mechanics — ammo pool system, weight class effect on ammo",
-    "keyRings": [{"name":"","effect":"","loc":""}],
-    "items": [{"name":"","dmg":"","ammoCost":1,"status":"","loc":"","tip":""}]
-  }
-}
-For spells: ALL spells including DLC, every spell type. For throwables: ALL 60+ individual throwable types including enhanced variants; keyRings = rings that affect throwing.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 8: Runes & Upgrade Materials",
-          prompt: `Search ${wikiRoot} for ${gameName} ALL rune gems (all shapes) and ALL upgrade materials.
-
-Return a JSON object with:
-{
-  "runes": {
-    "desc": "rune socketing system description",
-    "throwerPriority": ["rune1","rune2"],
-    "byShape": {
-      "ShapeName": [{"name":"","weaponEffect":"","shieldEffect":"","loc":""}]
-    }
-  },
-  "upgradeMaterials": [{"tier":"","upgradeRange":"","buy":"","farm":"","find":"","tip":""}],
-  "ammoPoolFormula": "formula description for ammo pool calculation"
-}
-Include ALL rune shapes and EVERY individual rune within each shape with both weapon and shield socket effects. Include ALL upgrade material tiers with exact upgrade ranges and farm locations.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 9: Bosses, Enemies & NPCs",
-          prompt: `Search ${wikiRoot} for ${gameName} ALL bosses, notable enemies, NPCs, and merchants.
-
-Return a JSON object with:
-{
-  "bosses": [{"name":"","area":"","drop":"","weakness":"","resist":"","tip":"","lore":""}],
-  "npcs": [{"name":"","loc":"","sells":[],"quest":"","note":""}]
-}
-For bosses: ALL bosses including optional, DLC, and hidden ones — exact drops, elemental weaknesses/resistances, and combat tips. For NPCs: ALL merchants and quest NPCs with their inventory and questlines.
-${JSON_RULES}`,
-        },
-        {
-          name: "Pass 10: Classes, Stats, Mechanics, Endings, NG+",
-          prompt: `Search ${wikiRoot} for ${gameName} starting classes, complete stat system (all soft/hard caps), status effects, weight class thresholds, all endings, NG+ mechanics, and trophy/achievement list.
-
-Return a JSON object with:
-{
-  "classes": [{"name":"","desc":"","startingStats":{},"startingGear":[]}],
-  "stats": {"STATNAME": {"desc":"","softCaps":[],"hardCap":0,"primaryScaling":""}},
-  "statusEffects": [{"name":"","effect":"","procThreshold":"","bestWeapons":[],"cure":""}],
-  "weightClasses": {"light":{"threshold":"","dodgeType":"","effect":""},"medium":{"threshold":"","dodgeType":"","effect":""},"heavy":{"threshold":"","dodgeType":"","effect":""},"overloaded":{"threshold":"","effect":""},"notes":[]},
-  "endings": [{"name":"","trophy":"","steps":[],"unlocks":"","missableNotes":"","isGood":false}],
-  "ngPlus": {"carryOver":[],"doesNotCarryOver":[],"vestigenRemoval":{},"communityTip":"","throwableNote":"","minimumPlaythroughs":0,"cycles":[]},
-  "trophies": {"total":0,"missable":0,"onlineRequired":0,"minimumPlaythroughs":0,"keyTrophies":[{"name":"","type":"","req":"","missable":false}]}
-}
-Be completely exhaustive — all classes with full starting stats, all stat soft cap breakpoints, all status effects with cure methods, all ending conditions and missable steps.
-${JSON_RULES}`,
-        },
-      ];
-
-      const passResults: Record<string, unknown>[] = [];
-
-      for (let i = 0; i < passes.length; i++) {
-        const pass = passes[i];
-        const passWikiPaths = PASS_WIKI_PATHS[i] ?? [];
-        emit(pass.name, `Searching ${wikiRoot}...`);
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 300_000);
-          let rawText = "";
-          try {
-            const useOr = effectiveMode === "openrouter";
-            if (useOr) {
-              rawText = await orDeepResearch(pass.prompt, controller.signal, 16000);
-            } else if (effectiveMode === "claude") {
-              // Fetch wiki pages first so Claude has real content, not training guesses
-              emit(pass.name, `Fetching ${passWikiPaths.length} wiki pages...`);
-              const pageTexts = await Promise.all(
-                passWikiPaths.map(p => fetchWikiPage(wikiRoot, p, controller.signal))
-              );
-              const combinedContent = pageTexts
-                .map((txt, idx) => txt ? `=== ${passWikiPaths[idx]} ===\n${txt}` : "")
-                .filter(Boolean)
-                .join("\n\n")
-                .slice(0, 60000); // stay well within 200K context
-
-              const userContent = combinedContent
-                ? `Extract ALL items from the following ${gameName} wiki pages and format as the JSON schema below.\n\nWIKI PAGE CONTENT (use as ground truth — exact in-game names only):\n${combinedContent}\n\n${pass.prompt}`
-                : `Using your knowledge of ${gameName}, ${pass.prompt}`;
-
-              if (combinedContent) {
-                emit(pass.name, `Extracting from ${pageTexts.filter(Boolean).length}/${passWikiPaths.length} pages fetched...`);
-              } else {
-                emit(pass.name, "No pages fetched — falling back to training knowledge");
-              }
-
-              const resp = await claude.messages.create({
-                model: CLAUDE_MODEL,
-                max_tokens: 8000,
-                system: [
-                  {
-                    type: "text",
-                    text: `You are a ${gameName} game database compiler. Extract items from the provided wiki content and output ONLY valid JSON — no markdown, no code fences, no commentary. Every string value must be properly escaped.`,
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    ...(combinedContent ? { cache_control: { type: "ephemeral" } } as any : {}),
-                  },
-                ],
-                messages: [{ role: "user", content: userContent }],
-              });
-              rawText = resp.content.filter(b => b.type === "text").map(b => (b as { type: "text"; text: string }).text).join("");
-            } else {
-              const result = await pplx.chat.completions.create(
-                { model: SONAR_DEEP, stream: false as const, max_tokens: 16000, messages: [{ role: "user", content: pass.prompt }] },
-                { signal: controller.signal }
-              );
-              rawText = extractText(result as PplxResponse);
-            }
-          } finally {
-            clearTimeout(timer);
-          }
-          const parsed = parseJsonResponse<Record<string, unknown>>(rawText);
-          if (parsed.ok) {
-            passResults.push(parsed.value);
-            const sectionKeys = Object.keys(parsed.value).join(", ");
-            const sectionCount = Object.values(parsed.value).reduce((n: number, v) => n + (Array.isArray(v) ? v.length : typeof v === "object" && v ? Object.keys(v).length : 1), 0);
-            emit(`${pass.name} done`, `Sections: ${sectionKeys} | ~${sectionCount} items`);
-          } else {
-            emit(`${pass.name} parse error`, parsed.error.slice(0, 120));
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          emit(`${pass.name} failed`, msg.slice(0, 200));
-        }
-      }
-
-      if (passResults.length === 0) {
-        learnEmitter.emit("progress", { gameKey, stage: "Error", detail: "All 10 passes failed — check API key", done: true, error: "All passes failed" } satisfies LearnProgressEvent);
-        return res.status(500).json({ error: "All passes failed" });
-      }
-
-      // Merge all pass results into one codex object
-      emit("Merging passes", `${passResults.length}/10 passes succeeded`);
-      const codex: Record<string, unknown> = {};
-      for (const result of passResults) {
-        for (const [key, val] of Object.entries(result)) {
-          if (!(key in codex)) {
-            codex[key] = val;
-          } else {
-            // Merge arrays; objects get shallow-merged
-            const existing = codex[key];
-            if (Array.isArray(existing) && Array.isArray(val)) {
-              codex[key] = [...existing, ...val];
-            } else if (existing && typeof existing === "object" && !Array.isArray(existing) && typeof val === "object" && !Array.isArray(val)) {
-              codex[key] = { ...(existing as Record<string, unknown>), ...(val as Record<string, unknown>) };
-            }
-          }
-        }
-      }
-
-      // Synthesis / cleanup pass — Claude deduplicates, fixes types, polishes the merged codex
-      let finalCodex = codex;
-      if (hasClaudeKey) {
-        emit("Synthesis pass", "Claude deduplicating and cleaning merged codex...");
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 180_000);
-          try {
-            const codexSummary = JSON.stringify(finalCodex).slice(0, 80000);
-            const synthResp = await claude.messages.create({
-              model: CLAUDE_MODEL,
-              max_tokens: 8000,
-              system: [
-                {
-                  type: "text",
-                  text: `You are a ${gameName} game database editor. You will receive a merged codex JSON assembled from multiple research passes. Your job is to:
-1. Remove exact duplicate entries (same name in the same array).
-2. Fix misclassified item types (e.g. a weapon mistakenly in rings[], or a ring in weapons[]).
-3. Merge split entries for the same item where one pass has more detail than another.
-4. Ensure weapons[] and armor[] arrays are not duplicated across passes (passes 1+2 both had "weapons"; merge them into one).
-5. Return the cleaned, deduplicated codex as a single JSON object with the same top-level structure.
-Output ONLY the cleaned JSON — no markdown, no commentary.`,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  ...(({ cache_control: { type: "ephemeral" } }) as any),
-                },
-              ],
-              messages: [
-                {
-                  role: "user",
-                  content: `Here is the merged codex from ${passResults.length} research passes. Clean, deduplicate, and return as a single JSON:\n\n${codexSummary}`,
-                },
-              ],
-            });
-            const synthRaw = synthResp.content.filter(b => b.type === "text").map(b => (b as { type: "text"; text: string }).text).join("");
-            const synthParsed = parseJsonResponse<Record<string, unknown>>(synthRaw);
-            if (synthParsed.ok) {
-              finalCodex = synthParsed.value;
-              emit("Synthesis pass done", "Codex cleaned and deduplicated");
-            } else {
-              emit("Synthesis pass skipped", `Parse error: ${synthParsed.error.slice(0, 80)} — using raw merged codex`);
-            }
-          } finally {
-            clearTimeout(timer);
-          }
-        } catch (synthErr) {
-          const synthMsg = synthErr instanceof Error ? synthErr.message : String(synthErr);
-          emit("Synthesis pass skipped", synthMsg.slice(0, 120));
-        }
-      }
-
-      // Extract facts and cache them
-      emit("Extracting facts", "Processing codex sections...");
-      const facts = extractFactsFromCodex(finalCodex);
-      if (facts.length > 0) {
-        updateKnowledgeCache(gameKey, gameName, facts, `Codex extraction (${passResults.length} passes) — ${facts.length} facts`);
-      }
-
-      const breakdown: Record<string, number> = {};
-      for (const f of facts) breakdown[f.type] = (breakdown[f.type] ?? 0) + 1;
-
-      learnEmitter.emit("progress", {
-        gameKey,
-        stage: "Complete",
-        detail: `${facts.length} facts cached from ${passResults.length} passes`,
-        done: true,
-      } satisfies LearnProgressEvent);
-
-      return res.json({ ok: true, total: facts.length, breakdown, passes: passResults.length });
-    } catch (err) {
-      const msg = friendlyPplxError(err);
-      learnEmitter.emit("progress", {
-        gameKey: (req.body as { gameKey?: string })?.gameKey ?? "",
-        stage: "Error", detail: msg, done: true, error: msg,
-      } satisfies LearnProgressEvent);
-      res.status(500).json({ error: msg });
-    }
-  });
-
-  // ── GET/POST /api/team-log — AI inter-agent communication channel ────────────
-  // Claude writes summaries; Perplexity reads them as context for next search session.
-  const teamLogPath = resolve("team-log.json");
-
-  app.get("/api/team-log", (_req, res) => {
-    try {
-      const entries = JSON.parse(readFileSync(teamLogPath, "utf8"));
-      res.json({ ok: true, entries });
-    } catch { res.json({ ok: true, entries: [] }); }
-  });
-
-  app.post("/api/team-log", (req, res) => {
-    try {
-      const { from, message, type = "info" } = req.body as { from: string; message: string; type?: string };
-      let entries: unknown[] = [];
-      try { entries = JSON.parse(readFileSync(teamLogPath, "utf8")); } catch { entries = []; }
-      entries = [...entries, { from, message, type, ts: Date.now() }].slice(-80);
-      writeFileSync(teamLogPath, JSON.stringify(entries, null, 2));
-      res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: String(e) }); }
-  });
-
-  // ── POST /api/export — export all builds as JSON ──────────────────────────
+  // ── POST /api/export ────────────────────────────────────────────────────────
   app.post("/api/export", (_req, res) => {
-    const hiddenKeys = new Set(
-      storage.getHiddenStaticBuilds().map((h) => h.buildKey)
-    );
-    const dynamicBuildsData = storage.getDynamicBuilds();
-    const dynamicGamesData = storage.getDynamicGames();
+    const dynamic = storage.getDynamicBuilds().map((r) => JSON.parse(r.data) as Build);
+    const games = storage.getDynamicGames().map((r) => JSON.parse(r.data) as Game);
+    const knowledge: Record<string, KnowledgeFact[]> = {};
+    for (const g of [...SEED_GAMES, ...games]) {
+      const cache = storage.getKnowledgeCache(g.key);
+      if (cache) {
+        try { knowledge[g.key] = JSON.parse(cache.facts); } catch { /* ignore */ }
+      }
+    }
+    res.json({ builds: dynamic, games, knowledge, exportedAt: new Date().toISOString() });
+  });
 
-    const exportData = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      hiddenSeedBuilds: Array.from(hiddenKeys),
-      dynamicGames: dynamicGamesData.map((g) => JSON.parse(g.data)),
-      dynamicBuilds: dynamicBuildsData.map((b) => JSON.parse(b.data)),
+  // ── POST /api/import ────────────────────────────────────────────────────────
+  app.post("/api/import", (req, res) => {
+    const { builds = [], games = [], knowledge = {} } = req.body as {
+      builds: Build[];
+      games: Game[];
+      knowledge: Record<string, KnowledgeFact[]>;
     };
 
-    res.setHeader("Content-Type", "application/json");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="master-build-codex-export-${Date.now()}.json"`
-    );
-    res.json(exportData);
-  });
+    let importedBuilds = 0;
+    let importedGames = 0;
+    let importedFacts = 0;
 
-  // ── POST /api/import — import builds from JSON ────────────────────────────
-  app.post("/api/import", (req, res) => {
-    try {
-      const data = req.body as {
-        version?: number;
-        hiddenSeedBuilds?: unknown;
-        dynamicGames?: unknown;
-        dynamicBuilds?: unknown;
-      };
-
-      let imported = 0;
-
-      /** Build a minimal valid Game object, merging provided fields with defaults. */
-      const makeGameObject = (key: string, partial: Record<string, unknown> = {}) => {
-        const name =
-          typeof partial.name === "string" && partial.name.trim()
-            ? partial.name.trim()
-            : key.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-        return {
-          key,
-          name,
-          icon: typeof partial.icon === "string" && partial.icon ? partial.icon : "🎮",
-          statMax: typeof partial.statMax === "number" ? partial.statMax : 99,
-          endgameBudget: typeof partial.endgameBudget === "number" ? partial.endgameBudget : 150,
-          softCaps:
-            partial.softCaps && typeof partial.softCaps === "object" && !Array.isArray(partial.softCaps)
-              ? (partial.softCaps as Record<string, number | null>)
-              : {},
-          mats: Array.isArray(partial.mats) ? partial.mats : [],
-          weightInfo: Array.isArray(partial.weightInfo) ? partial.weightInfo : [],
-          isCustom: true,
-        };
-      }
-
-      // Restore hidden seeds
-      const hiddenBuilds = Array.isArray(data.hiddenSeedBuilds)
-        ? data.hiddenSeedBuilds
-        : [];
-      for (const key of hiddenBuilds) {
-        if (typeof key === "string") storage.hideStaticBuild(key);
-      }
-
-      // Import dynamic games (partial objects are filled with defaults)
-      const games = Array.isArray(data.dynamicGames) ? data.dynamicGames : [];
-      for (const game of games) {
-        if (!game || typeof game !== "object") continue;
-        const g = game as Record<string, unknown>;
-        const key = typeof g.key === "string" ? g.key : null;
-        if (!key) continue;
-        const existing = storage.getDynamicGame(key);
-        if (!existing) {
-          const gameObj = makeGameObject(key, g);
-          storage.createDynamicGame({ key, data: JSON.stringify(gameObj) });
-          imported++;
-        }
-      }
-
-      // Import dynamic builds; auto-create game if unknown
-      const builds = Array.isArray(data.dynamicBuilds) ? data.dynamicBuilds : [];
-      const importedBuilds: Array<{ key: string; gameKey: string; data: Record<string, unknown> }> = [];
-      for (const build of builds) {
-        if (!build || typeof build !== "object") continue;
-        const b = build as Record<string, unknown>;
-        const key = typeof b.key === "string" ? b.key : null;
-        const gameKey = typeof b.gameKey === "string" ? b.gameKey : null;
-        if (!key || !gameKey) continue;
-
-        // Auto-create the game if it doesn't exist in seeds or dynamic games
-        const seedGame = SEED_GAMES.find((g) => g.key === gameKey);
-        if (!seedGame && !storage.getDynamicGame(gameKey)) {
-          const gameObj = makeGameObject(gameKey);
-          storage.createDynamicGame({ key: gameKey, data: JSON.stringify(gameObj) });
-          imported++;
-        }
-
-        const existing = storage.getDynamicBuild(key);
-        if (!existing) {
-          storage.createDynamicBuild({ key, gameKey, data: JSON.stringify(build) });
-          importedBuilds.push({ key, gameKey, data: b });
-          imported++;
-        }
-      }
-
-      // Extract knowledge facts from newly-imported builds and cache them
-      for (const { gameKey, data: buildData } of importedBuilds) {
-        try {
-          const allGames = [
-            ...SEED_GAMES,
-            ...(storage.getDynamicGames().map((g) => JSON.parse(g.data))),
-          ] as Array<{ key: string; name: string }>;
-          const gameName = allGames.find((g) => g.key === gameKey)?.name ?? gameKey;
-          const facts = extractFactsFromBuild(buildData as unknown as import("@shared/types").Build);
-          if (facts.length > 0) updateKnowledgeCache(gameKey, gameName, facts);
-        } catch { /* non-critical */ }
-      }
-
-      res.json({ ok: true, imported });
-    } catch (err) {
-      res.status(400).json({
-        error: `Import failed: ${err instanceof Error ? err.message : String(err)}`,
-      });
+    for (const g of games) {
+      try {
+        storage.createDynamicGame({ key: g.key, data: JSON.stringify(g) });
+        importedGames++;
+      } catch { /* skip duplicates */ }
     }
-  });
 
-  // ── POST /api/import/codex — ingest a Perplexity knowledge-JSON into the cache ──
-  app.post("/api/import/codex", (req, res) => {
-    try {
-      const body = req.body as Record<string, unknown>;
-
-      // Client sends { gameKey, codex: { ...perplexityJson } } OR the raw JSON itself
-      const gameKeyOverride = typeof body.gameKey === "string" ? body.gameKey : null;
-      const codex: Record<string, unknown> =
-        body.codex && typeof body.codex === "object" && !Array.isArray(body.codex)
-          ? (body.codex as Record<string, unknown>)
-          : body;
-
-      // Detect game from meta if gameKey not provided
-      let gameKey = gameKeyOverride ?? "unknown";
-      let gameName = gameKey;
-      const meta = codex.meta as Record<string, unknown> | undefined;
-      if (!gameKeyOverride && meta) {
-        const title = String(meta.game ?? meta.title ?? "").toLowerCase();
-        if (title.includes("lords of the fallen")) {
-          gameKey = "lotf"; gameName = "Lords of the Fallen";
-        } else if (title.includes("elden ring")) {
-          gameKey = "elden-ring"; gameName = "Elden Ring";
-        } else if (title.includes("dark souls")) {
-          gameKey = "dark-souls"; gameName = "Dark Souls";
-        } else if (title) {
-          gameKey = title.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
-          gameName = String(meta.game ?? meta.title ?? gameKey);
-        }
-      } else if (gameKeyOverride) {
-        const allGames = [
-          ...SEED_GAMES,
-          ...(storage.getDynamicGames().map((g) => JSON.parse(g.data) as { key: string; name: string })),
-        ];
-        gameName = allGames.find((g) => g.key === gameKey)?.name ?? gameKey;
-      }
-
-      // Auto-create game from meta if it doesn't exist
-      if (meta && !SEED_GAMES.find((g) => g.key === gameKey) && !storage.getDynamicGame(gameKey)) {
-        const gameObj = {
-          key: gameKey,
-          name: gameName,
-          icon: "🎮",
-          statMax: typeof meta.statMax === "number" ? meta.statMax : 99,
-          endgameBudget: typeof meta.endgameBudget === "number" ? meta.endgameBudget : 150,
-          softCaps: meta.softCaps && typeof meta.softCaps === "object" && !Array.isArray(meta.softCaps)
-            ? (meta.softCaps as Record<string, number | null>) : {},
-          mats: [],
-          weightInfo: [],
-          isCustom: true,
-        };
-        storage.createDynamicGame({ key: gameKey, data: JSON.stringify(gameObj) });
-      }
-
-      const facts = extractFactsFromCodex(codex);
-      if (facts.length > 0) {
-        updateKnowledgeCache(gameKey, gameName, facts, `Codex import — ${facts.length} facts`);
-      }
-
-      res.json({ ok: true, facts: facts.length, gameKey, gameName });
-    } catch (err) {
-      res.status(400).json({
-        error: `Codex import failed: ${err instanceof Error ? err.message : String(err)}`,
-      });
+    for (const b of builds) {
+      try {
+        storage.createDynamicBuild({ key: b.key, gameKey: b.gameKey, data: JSON.stringify(b) });
+        importedBuilds++;
+      } catch { /* skip duplicates */ }
     }
+
+    for (const [gameKey, facts] of Object.entries(knowledge)) {
+      if (Array.isArray(facts) && facts.length > 0) {
+        updateKnowledgeCache(gameKey, gameKey, facts);
+        importedFacts += facts.length;
+      }
+    }
+
+    res.json({ importedBuilds, importedGames, importedFacts });
   });
 }

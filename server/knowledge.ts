@@ -257,10 +257,14 @@ function guessTypeFromName(name: string): KnowledgeFact["type"] {
  * per-phase ngCycles arrays.
  */
 export function extractFactsFromCodex(codexInput: Record<string, unknown>): KnowledgeFact[] {
-  // Unwrap single-key document wrapper (e.g. { lotfCodex: {...} })
+  // Unwrap single-key document wrapper (e.g. { lotfCodex: {...} }, { ds1rCodex: {...} })
+  const inputKeys = Object.keys(codexInput);
   const codex: Record<string, unknown> =
-    (codexInput.lotfCodex && typeof codexInput.lotfCodex === "object" && !Array.isArray(codexInput.lotfCodex))
-      ? (codexInput.lotfCodex as Record<string, unknown>)
+    inputKeys.length === 1 &&
+    /Codex$/i.test(inputKeys[0]) &&
+    typeof codexInput[inputKeys[0]] === "object" &&
+    !Array.isArray(codexInput[inputKeys[0]])
+      ? (codexInput[inputKeys[0]] as Record<string, unknown>)
       : codexInput;
   const facts: KnowledgeFact[] = [];
 
@@ -727,30 +731,44 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
       for (const w of asArray(cat.weapons)) {
         const name = str(w.name ?? w.n); if (!name) continue;
         const loc = str(w.location ?? w.loc);
-        // Scaling grades from str/agi/rad/inf (each like "11 D+")
-        const statKeys = ["str", "agi", "rad", "inf"] as const;
-        const statLabels = ["STR", "AGI", "RAD", "INF"];
+        // Scaling grades — try per-game stat field name variants:
+        // LotF: str/agi/rad/inf  |  DS1: str/dex/int/fth  |  format "11 D+" or "D+"
+        const statDefs: Array<{ keys: string[]; label: string }> = [
+          { keys: ["str"],           label: "STR" },
+          { keys: ["dex", "agi"],    label: "DEX" },
+          { keys: ["int", "rad"],    label: "INT" },
+          { keys: ["fth", "inf"],    label: "FTH" },
+        ];
         const gradeParts: string[] = [];
         const reqParts: string[] = [];
-        for (let i = 0; i < statKeys.length; i++) {
-          const raw = (w as Record<string, unknown>)[statKeys[i]];
-          const grade = extractStatGrade(raw);
-          const req = extractStatReq(raw);
-          if (grade) gradeParts.push(`${statLabels[i]}:${grade}`);
-          if (req) reqParts.push(`${statLabels[i]} ${req}`);
+        for (const { keys, label } of statDefs) {
+          let rawVal: unknown = undefined;
+          for (const k of keys) {
+            const v = (w as Record<string, unknown>)[k];
+            if (v != null) { rawVal = v; break; }
+          }
+          const grade = extractStatGrade(rawVal);
+          const req = extractStatReq(rawVal);
+          if (grade) gradeParts.push(`${label}:${grade}`);
+          if (req) reqParts.push(`${label} ${req}`);
         }
         const scalingTableVal = gradeParts.length > 0 ? gradeParts.join(" ") : undefined;
         const requirementsVal = reqParts.length > 0 ? reqParts.join(" / ") : undefined;
-        // Damage from phy/holy/fire/wither
+        // Damage — support LotF (phy/holy/fire/wither) and DS1 (phy/mag/fire/lght/dark)
         const dmgParts: string[] = [];
-        if (w.phy != null) dmgParts.push(`Phy:${w.phy}`);
-        if (w.holy != null) dmgParts.push(`Holy:${w.holy}`);
-        if (w.fire != null) dmgParts.push(`Fire:${w.fire}`);
-        if (w.wither != null) dmgParts.push(`Wither:${w.wither}`);
+        if (w.phy != null && w.phy !== 0)    dmgParts.push(`Phy:${w.phy}`);
+        if (w.mag != null && w.mag !== 0)    dmgParts.push(`Mag:${w.mag}`);
+        if (w.fire != null && w.fire !== 0)  dmgParts.push(`Fire:${w.fire}`);
+        if (w.lght != null && w.lght !== 0)  dmgParts.push(`Lght:${w.lght}`);
+        if (w.dark != null && w.dark !== 0)  dmgParts.push(`Dark:${w.dark}`);
+        if (w.holy != null && w.holy !== 0)  dmgParts.push(`Holy:${w.holy}`);
+        if (w.wither != null && w.wither !== 0) dmgParts.push(`Wither:${w.wither}`);
         const dmgStr = dmgParts.join(" ");
-        const apNum = typeof w.phy === "number" ? w.phy
-          : typeof w.holy === "number" ? w.holy
-          : typeof w.fire === "number" ? w.fire
+        // Primary AP: first non-zero physical-ish value
+        const apNum = (typeof w.phy === "number" && w.phy > 0) ? w.phy
+          : (typeof w.mag === "number" && w.mag > 0) ? w.mag
+          : (typeof w.lght === "number" && w.lght > 0) ? w.lght
+          : (typeof w.holy === "number" && w.holy > 0) ? w.holy
           : undefined;
         // Weight field is wgt in this codex
         const wt = w.wgt ?? w.wt ?? w.weight;
@@ -781,9 +799,12 @@ export function extractFactsFromCodex(codexInput: Record<string, unknown>): Know
           raw: `${type}: ${name} (${weaponType})${scalingTableVal ? ` | Scaling:${scalingTableVal}` : ""}${dmgStr ? ` | Dmg:${dmgStr}` : ""}${statusTableVal ? ` | Status:${statusTableVal}` : ""}${wt != null ? ` | Wt:${wt}` : ""}${requirementsVal ? ` | Req:${requirementsVal}` : ""}${loc ? ` | Loc:${loc}` : ""}${special ? ` | Note:${special}` : ""}`,
         });
       }
-      // Catalyst sub-arrays (radiance_catalysts, inferno_catalysts, umbral_catalysts)
-      for (const catalystKey of ["radiance_catalysts", "inferno_catalysts", "umbral_catalysts"]) {
-        const school = catalystKey.replace("_catalysts", "");
+      // Catalyst sub-arrays (LotF: radiance/inferno/umbral_catalysts; DS1: sorcery_catalysts/miracle_catalysts/pyromancy_flames)
+      for (const catalystKey of [
+        "radiance_catalysts", "inferno_catalysts", "umbral_catalysts",
+        "sorcery_catalysts", "miracle_catalysts", "pyromancy_flames",
+      ]) {
+        const school = catalystKey.replace(/_catalysts$|_flames$/, "");
         for (const c of asArray(cat[catalystKey])) {
           const name = str(c.name ?? c.n); if (!name) continue;
           const loc = str(c.location ?? c.loc);

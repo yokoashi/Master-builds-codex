@@ -3,13 +3,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initDb, getDb } from "./db";
-import { updateKnowledgeCache } from "./knowledge";
-import { storage } from "./storage";
-import { SEED_KNOWLEDGE } from "@shared/seed-knowledge";
 
 // ── Schema (CREATE TABLE IF NOT EXISTS) ───────────────────────────────────────
-// Runs once after initDb() resolves. Using IF NOT EXISTS means it is safe to
-// call on every startup — existing data is never touched.
 function runMigrations(): void {
   getDb().run(`
     CREATE TABLE IF NOT EXISTS dynamic_builds (
@@ -43,35 +38,6 @@ function runMigrations(): void {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
   `);
-}
-
-// Seed the knowledge cache on first run (only if a game has no cached facts yet).
-// This gives the AI generation pipeline verified item data before any Learn session.
-function seedKnowledgeCache() {
-  const GAME_NAMES: Record<string, string> = {
-    lotf: "Lords of the Fallen",
-    ds1:  "Dark Souls",
-  };
-  for (const [gameKey, facts] of Object.entries(SEED_KNOWLEDGE)) {
-    if (facts.length === 0) continue;
-    const existing = storage.getKnowledgeCache(gameKey);
-    let existingCount = 0;
-    if (existing) {
-      try { existingCount = (JSON.parse(existing.facts) as unknown[]).length; } catch { /* ignore */ }
-    }
-    // Only seed when the cache is empty so we never overwrite user-learned data
-    if (existingCount === 0) {
-      updateKnowledgeCache(
-        gameKey,
-        GAME_NAMES[gameKey] ?? gameKey,
-        facts,
-        "Seeded from wiki data on first startup"
-      );
-      console.log(`[seed] Seeded ${facts.length} facts for ${gameKey}`);
-    } else {
-      console.log(`[seed] Skipped ${gameKey} — already has ${existingCount} facts`);
-    }
-  }
 }
 
 const app = express();
@@ -116,30 +82,25 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // ── 1. Init database (WASM load + open/create file) ────────────────────────
   await initDb();
   runMigrations();
-  seedKnowledgeCache();
 
-  // ── 2. Register API routes ──────────────────────────────────────────────────
   await registerRoutes(httpServer, app);
 
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
-    const status = (err as { status?: number; statusCode?: number })?.status
-      ?? (err as { statusCode?: number })?.statusCode
-      ?? 500;
-    const message = (err as { message?: string })?.message ?? "Internal Server Error";
+    const status =
+      (err as { status?: number; statusCode?: number })?.status ??
+      (err as { statusCode?: number })?.statusCode ??
+      500;
+    const message =
+      (err as { message?: string })?.message ?? "Internal Server Error";
 
     console.error("Internal Server Error:", err);
 
-    if (res.headersSent) {
-      return next(err);
-    }
-
+    if (res.headersSent) return next(err);
     return res.status(status).json({ message });
   });
 
-  // ── 3. Frontend (Vite dev server or static files) ──────────────────────────
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -147,8 +108,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ── 4. Listen ───────────────────────────────────────────────────────────────
-  // Default to 5000 — the only port not firewalled in this environment.
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     { port, host: "0.0.0.0", reusePort: true },

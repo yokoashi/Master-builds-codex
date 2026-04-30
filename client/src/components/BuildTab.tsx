@@ -1,438 +1,229 @@
-import { useState, useEffect, Component } from "react";
-import type { Build, Game, Phase, Item, NgCycle } from "@shared/types";
-import { cn, hexToRgba, statGain } from "@/lib/utils";
+import { useState, useEffect } from "react";
+import type { Build, Game, Phase } from "@shared/types";
+import { cn, hexToRgba } from "@/lib/utils";
 import ItemCard from "./ItemCard";
 import StatBar from "./StatBar";
 
-class BuildErrorBoundary extends Component<
-  { children: React.ReactNode; accent: string; buildKey: string },
-  { error: string | null }
-> {
-  state = { error: null };
-  static getDerivedStateFromError(e: Error) { return { error: e.message }; }
-  componentDidUpdate(prevProps: { buildKey: string }) {
-    if (prevProps.buildKey !== this.props.buildKey && this.state.error) {
-      this.setState({ error: null });
-    }
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="rounded-lg p-6 text-sm" style={{ background: "var(--color-card)", border: `1px solid ${hexToRgba(this.props.accent, 0.3)}` }}>
-          <p style={{ color: "var(--color-crimson)" }} className="font-semibold mb-2">⚠ Build display error</p>
-          <p style={{ color: "var(--color-dim)" }}>{this.state.error}</p>
-          <p className="mt-3 text-xs" style={{ color: "var(--color-dim)" }}>Try deleting and regenerating this build.</p>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+// Phase 4 names used in navigation
+const PHASE_ICONS: Record<string, string> = {
+  "Early Game": "I",
+  "Mid Game": "II",
+  "End Game": "III",
+  "NG+": "NG+",
+};
+
+interface Props {
+  build: Build;
+  game: Game | null;
 }
 
-interface Props { build: Build; game: Game; onDelete: () => void; twoColumn?: boolean; }
-
-const PHASE_NAMES = ["Early Game", "Core Weapon", "Key Accessories", "Unlock Spells", "Mid-to-Late", "Endgame", "NG+"];
-
-function BuildTabInner({ build, game, onDelete, twoColumn }: Props) {
+export default function BuildTab({ build, game }: Props) {
   const [activePhase, setActivePhase] = useState(0);
   const [activeNg, setActiveNg] = useState(0);
-  const [activeLoadout, setActiveLoadout] = useState(0);
 
   useEffect(() => {
     setActivePhase(0);
     setActiveNg(0);
-    setActiveLoadout(0);
   }, [build.key]);
 
-  const accent = build.accent;
-  const accentBg = hexToRgba(accent, 0.1);
-  const accentBorder = hexToRgba(accent, 0.35);
-  const accentGlow = hexToRgba(accent, 0.2);
+  const accent = build.accent ?? "#d64545";
+  const accentBg = hexToRgba(accent, 0.08);
+  const accentBorder = hexToRgba(accent, 0.3);
 
-  const safePhaseIdx = Math.min(activePhase, (build.phases?.length ?? 1) - 1);
-  const phase: Phase | undefined = build.phases?.[safePhaseIdx];
-  if (!phase) return null;
-  const safeLoadoutIdx = Math.min(activeLoadout, (build.loadouts?.length ?? 1) - 1);
-  const prevPhase: Phase | undefined = build.phases[safePhaseIdx - 1];
+  const phases = build.phases ?? [];
+  const phase: Phase | undefined = phases[activePhase];
+  const ngCycles = phase?.ngCycles ?? [];
+  const activeCycle = ngCycles[activeNg];
 
-  const displayStats = safePhaseIdx === 6 && phase.ngCycles
-    ? phase.ngCycles[activeNg]?.stats ?? phase.stats
-    : phase.stats;
-  const ngNotes = safePhaseIdx === 6 && phase.ngCycles
-    ? phase.ngCycles[activeNg]?.notes ?? null
-    : null;
+  const softCaps = game?.softCaps ?? {};
 
-  const statEntries = Object.entries(displayStats);
-  const totalStats = Object.values(displayStats).reduce((a, b) => a + b, 0);
+  const sectionItems = phase
+    ? [
+        { label: "Weapons", items: phase.weapons ?? [] },
+        { label: "Armor", items: phase.armor ?? [] },
+        { label: "Rings & Accessories", items: phase.acc ?? [] },
+        { label: "Spells", items: phase.spells ?? [] },
+      ].filter((s) => s.items.length > 0)
+    : [];
 
-  // ── Shared sub-trees used in both layouts ─────────────────────────────────
-
-  const heroCard = (
-    <div
-      className="relative rounded-xl p-5 mb-4"
-      style={{
-        background: `linear-gradient(135deg, ${hexToRgba(accent, 0.12)} 0%, var(--color-card) 55%)`,
-        border: `1px solid ${accentBorder}`,
-        boxShadow: `0 0 32px ${hexToRgba(accent, 0.07)}, inset 0 1px 0 ${hexToRgba(accent, 0.15)}`,
-      }}
-      data-testid="build-hero-card"
-    >
-      <button
-        onClick={onDelete}
-        data-testid="btn-delete-build"
-        className="absolute top-3 right-3 w-6 h-6 rounded flex items-center justify-center text-xs transition-all hover:border-red-500/60 hover:text-red-400"
-        style={{ border: "1px solid #3a3028", color: "var(--color-dim2)" }}
-        aria-label="Delete this build"
-      >✕</button>
-      <div className="flex items-start gap-4 pr-8">
-        <div
-          className="text-2xl w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{
-            background: `radial-gradient(circle, ${hexToRgba(accent, 0.25)} 0%, ${hexToRgba(accent, 0.06)} 100%)`,
-            border: `1px solid ${accentBorder}`,
-            boxShadow: `0 0 16px ${hexToRgba(accent, 0.2)}`,
-          }}
-        >{build.icon}</div>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-bold mb-0.5 shimmer-text" style={{ fontFamily: "var(--font-display)" }} data-testid="build-label">
-            {build.label}
-          </h2>
-          <p className="text-sm font-medium mb-1.5" style={{ color: accent, opacity: 0.9 }}>{build.sub}</p>
-          <p className="text-xs mb-3 leading-relaxed" style={{ color: "var(--color-dim)" }}>{build.playstyle}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {build.cls && <Chip label={`Class: ${build.cls}`} accent={accent} />}
-            {(build.caps ?? []).map((c) => <Chip key={c} label={c} accent={accent} />)}
-            {(build.weaponReq ?? []).map((r) => <Chip key={r} label={`Req: ${r}`} accent={accent} dim />)}
+  return (
+    <div className="p-4 space-y-4 animate-fade-in">
+      {/* Hero card */}
+      <div
+        className="rounded-lg p-4"
+        style={{ background: accentBg, border: `1px solid ${accentBorder}` }}
+        data-testid="build-hero-card"
+      >
+        <div className="flex items-start gap-3">
+          <span className="text-3xl">{build.icon}</span>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-display text-xl font-bold" style={{ color: "var(--color-bright)" }}>
+              {build.label}
+            </h2>
+            <p className="text-sm mt-0.5" style={{ color: "var(--color-dim)" }}>{build.sub}</p>
+            <p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--color-text)" }}>
+              {build.playstyle}
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {build.cls && (
+                <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-dim)" }}>
+                  {build.cls}
+                </span>
+              )}
+              {build.caps?.map((c) => (
+                <span key={c} className="text-xs px-2 py-0.5 rounded font-medium" style={{ backgroundColor: accentBg, color: accent, border: `1px solid ${accentBorder}` }}>
+                  {c}
+                </span>
+              ))}
+            </div>
+            {build.weaponReq && build.weaponReq.length > 0 && (
+              <p className="text-xs mt-2" style={{ color: "var(--color-dim)" }}>
+                Requirements: {build.weaponReq.join(" · ")}
+              </p>
+            )}
           </div>
         </div>
       </div>
-    </div>
-  );
 
-  const phaseNote = (
-    <div
-      className="mb-4 px-4 py-2.5 rounded-lg text-xs leading-relaxed flex items-start gap-2"
-      style={{
-        background: `linear-gradient(90deg, ${hexToRgba(accent, 0.08)} 0%, var(--color-card) 100%)`,
-        border: `1px solid ${hexToRgba(accent, 0.15)}`,
-        borderLeft: `3px solid ${accentBorder}`,
-      }}
-      data-testid="phase-note"
-    >
-      <span style={{ color: accent, marginTop: 1 }}>▸</span>
-      <span style={{ color: "var(--color-text)" }}>{ngNotes ?? phase.sn}</span>
-    </div>
-  );
-
-  const loadoutBlock = build.loadouts && build.loadouts.length > 0 ? (
-    <div className="mb-5">
-      <SectionLabel>Loadout</SectionLabel>
-      <div className="flex flex-wrap gap-1.5 mb-3 mt-2">
-        {build.loadouts.map((l, i) => (
-          <button key={l.id} data-testid={`loadout-btn-${l.id}`} onClick={() => setActiveLoadout(i)}
-            className="px-3 py-1.5 rounded text-xs font-medium transition-all"
-            style={safeLoadoutIdx === i ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent } : { border: "1px solid #2a2218", color: "var(--color-dim)" }}
-          >{l.label}</button>
-        ))}
-      </div>
-      {(() => {
-        const l = build.loadouts![safeLoadoutIdx];
-        return (
-          <div className="rounded-lg p-3 text-xs" style={{ background: "var(--color-card-hi)", border: "1px solid #2a2218" }}>
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <Kv label="Weapon Wt" value={String(l.weaponWt)} />
-              <Kv label="End Req" value={String(l.endReq)} />
-              <div className="col-span-2"><Kv label="Armor" value={l.armor} /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-2 pt-2" style={{ borderTop: "1px solid #2a2218" }}>
-              <div>
-                <p className="font-semibold mb-1" style={{ color: "var(--color-green)" }}>Pros</p>
-                {l.pros.map((p) => <p key={p} className="leading-snug" style={{ color: "var(--color-dim)" }}>+ {p}</p>)}
-              </div>
-              <div>
-                <p className="font-semibold mb-1" style={{ color: "var(--color-crimson)" }}>Cons</p>
-                {l.cons.map((c) => <p key={c} className="leading-snug" style={{ color: "var(--color-dim)" }}>− {c}</p>)}
-              </div>
-            </div>
+      {/* Phase navigation */}
+      {phases.length > 0 && (
+        <div>
+          <div className="flex flex-wrap gap-1 mb-3">
+            {phases.map((p, i) => (
+              <button
+                key={i}
+                onClick={() => { setActivePhase(i); setActiveNg(0); }}
+                className={cn(
+                  "px-3 py-1.5 rounded text-xs font-semibold transition-all",
+                  activePhase === i ? "phase-btn-active" : "opacity-50 hover:opacity-80"
+                )}
+                style={{
+                  color: activePhase === i ? accent : "var(--color-text)",
+                  backgroundColor: activePhase === i ? accentBg : "var(--color-card-hi)",
+                  border: `1px solid ${activePhase === i ? accentBorder : "transparent"}`,
+                }}
+                data-testid={`phase-btn-${i}`}
+              >
+                {PHASE_ICONS[p.name] ?? String(i + 1)} {p.name}
+              </button>
+            ))}
           </div>
-        );
-      })()}
-    </div>
-  ) : null;
 
-  const itemSections = (
-    <>
-      {[
-        { label: "Weapons", icon: "⚔", items: phase.weapons },
-        { label: "Armor", icon: "🛡", items: phase.armor },
-        { label: "Accessories / Rings", icon: "◈", items: phase.acc },
-        { label: "Spells / Buffs", icon: "✦", items: phase.spells },
-      ].map(({ label, icon, items }) =>
-        items && items.length > 0 ? (
-          <div key={label} className="mb-4">
-            <SectionLabel icon={icon}>{label}</SectionLabel>
-            <div className="space-y-1.5 mt-2">
-              {items.map((item: Item, i: number) => <ItemCard key={i} item={item} accent={accent} />)}
+          {/* NG+ cycle selector */}
+          {ngCycles.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-3 pl-2">
+              {ngCycles.map((c, i) => (
+                <button
+                  key={i}
+                  onClick={() => setActiveNg(i)}
+                  className={cn(
+                    "px-2 py-1 rounded text-xs transition-all",
+                    activeNg === i ? "opacity-100" : "opacity-40 hover:opacity-70"
+                  )}
+                  style={{
+                    color: "var(--color-gold)",
+                    backgroundColor: activeNg === i ? hexToRgba(accent, 0.12) : "var(--color-card-hi)",
+                    border: `1px solid ${activeNg === i ? hexToRgba(accent, 0.3) : "transparent"}`,
+                  }}
+                  data-testid={`ng-cycle-btn-${i}`}
+                >
+                  {c.label}
+                </button>
+              ))}
             </div>
-          </div>
-        ) : null
-      )}
-    </>
-  );
-
-  const statsBlock = (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-2.5">
-        <SectionLabel>Stats</SectionLabel>
-        <span className="text-xs font-mono" style={{ color: "var(--color-dim)" }}>
-          {totalStats} <span style={{ color: "var(--color-dim2)" }}>/ {game.endgameBudget}</span>
-        </span>
-      </div>
-      <div className="rounded-lg p-3" style={{ background: "var(--color-card)", border: "1px solid #242018" }}>
-        <div className="grid grid-cols-1 gap-2">
-          {statEntries.map(([stat, val]) => (
-            <StatBar
-              key={`${build.key}-${safePhaseIdx}-${stat}`}
-              stat={stat} value={val} prevValue={prevPhase?.stats[stat]}
-              max={game.statMax} softCap={game.softCaps[stat] ?? null} accent={accent}
-            />
-          ))}
+          )}
         </div>
-      </div>
-    </div>
-  );
-
-  const damageBlock = (
-    <div
-      className="rounded-xl p-4 mt-2"
-      style={{
-        background: `linear-gradient(135deg, ${hexToRgba(accent, 0.08)} 0%, var(--color-card) 60%)`,
-        border: `1px solid ${accentBorder}`,
-      }}
-      data-testid="damage-summary"
-    >
-      <SectionLabel>Damage Estimate</SectionLabel>
-      <div className="grid grid-cols-3 gap-4 mt-3 mb-2">
-        <DmgStat label="1H / PvE" value={phase.dmg?.ps ?? 0} accent={accent} />
-        <DmgStat label="2H / Swap" value={phase.dmg?.sp ?? 0} accent={accent} />
-        <DmgStat label="Backstab" value={phase.dmg?.bs ?? 0} accent={accent} />
-      </div>
-      {phase.dmg?.n && (
-        <p className="text-xs mt-3 pt-2.5 leading-relaxed" style={{ borderTop: "1px solid #2a2218", color: "var(--color-dim)" }}>
-          {phase.dmg.n}
-        </p>
       )}
-    </div>
-  );
 
-  const phaseNavBar = (
-    <div
-      style={{
-        display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center",
-        padding: "6px 12px",
-        borderBottom: "1px solid rgba(120,90,25,0.30)",
-        background: "rgba(12,9,3,0.45)",
-        flexShrink: 0,
-      }}
-      role="group" aria-label="Build phases"
-    >
-      {PHASE_NAMES.map((name, i) => {
-        const ph = build.phases[i];
-        if (!ph) return null;
-        const isActive = safePhaseIdx === i;
-        return (
-          <div key={i} className="flex items-center gap-1">
-            {i > 0 && build.phases[i - 1] && <PhaseGain prev={build.phases[i - 1]} curr={ph} accent={accent} />}
-            <button
-              data-testid={`phase-btn-${i}`}
-              onClick={() => { setActivePhase(i); setActiveNg(0); }}
-              className="px-2.5 py-1 rounded text-xs font-medium transition-all"
-              style={isActive
-                ? { background: `linear-gradient(135deg, ${accentBg}, ${hexToRgba(accent, 0.05)})`, border: `1px solid ${accentBorder}`, color: accent, boxShadow: `0 0 10px ${hexToRgba(accent, 0.2)}` }
-                : { border: "1px solid rgba(120,90,25,0.35)", color: "var(--color-dim)", background: "transparent" }
-              }
-            >{i + 1}. {name}</button>
-          </div>
-        );
-      })}
-      {activePhase === 6 && phase.ngCycles && phase.ngCycles.length > 0 && (
+      {phase && (
         <>
-          <span style={{ color: "var(--color-dim2)", margin: "0 4px" }}>·</span>
-          {phase.ngCycles.map((cycle: NgCycle, i: number) => (
-            <button key={i} data-testid={`ng-cycle-btn-${i}`} onClick={() => setActiveNg(i)}
-              className="px-2 py-1 rounded text-xs font-medium transition-all"
-              style={activeNg === i ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent } : { border: "1px solid rgba(120,90,25,0.35)", color: "var(--color-dim)" }}
-            >{cycle.label}</button>
+          {/* Phase header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-display text-base font-semibold" style={{ color: "var(--color-bright)" }}>
+                {phase.name}
+              </h3>
+              <p className="text-xs mt-0.5" style={{ color: accent }}>{phase.range}</p>
+            </div>
+            {phase.dmg && (
+              <div className="text-right text-xs" style={{ color: "var(--color-dim)" }} data-testid="damage-summary">
+                <div><span className="font-mono font-bold" style={{ color: accent }}>{phase.dmg.ps}</span> 1H</div>
+                <div><span className="font-mono font-bold" style={{ color: accent }}>{phase.dmg.bs}</span> BS</div>
+              </div>
+            )}
+          </div>
+
+          {/* Phase note */}
+          {phase.sn && (
+            <div
+              className="px-3 py-2.5 rounded text-sm leading-relaxed"
+              style={{ backgroundColor: "var(--color-card-hi)", borderLeft: `2px solid ${accent}` }}
+              data-testid="phase-note"
+            >
+              {phase.sn}
+            </div>
+          )}
+
+          {/* NG+ cycle notes (if selected) */}
+          {activeCycle && (
+            <div
+              className="px-3 py-2.5 rounded text-sm leading-relaxed"
+              style={{ backgroundColor: hexToRgba(accent, 0.07), border: `1px solid ${hexToRgba(accent, 0.2)}` }}
+            >
+              <p className="text-xs font-medium mb-1" style={{ color: accent }}>{activeCycle.label}</p>
+              <p style={{ color: "var(--color-text)" }}>{activeCycle.notes}</p>
+            </div>
+          )}
+
+          {/* Stats */}
+          {phase.stats && Object.keys(phase.stats).length > 0 && (
+            <div>
+              <div className="section-label mb-2">Stats at {phase.range}</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
+                {Object.entries(activeCycle?.stats ?? phase.stats).map(([stat, val]) => (
+                  <StatBar
+                    key={stat}
+                    stat={stat}
+                    value={val as number}
+                    max={game?.statMax ?? 99}
+                    accent={accent}
+                    softCap={softCaps[stat] ?? null}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Item sections */}
+          {sectionItems.map(({ label, items }) => (
+            <div key={label}>
+              <div className="section-label mb-2">{label}</div>
+              <div className="space-y-1.5">
+                {items.map((item, i) => (
+                  <ItemCard key={i} item={item} accent={accent} />
+                ))}
+              </div>
+            </div>
           ))}
+
+          {/* Damage context */}
+          {phase.dmg?.n && (
+            <div
+              className="px-3 py-2.5 rounded text-xs leading-relaxed"
+              style={{ backgroundColor: "var(--color-card-hi)", color: "var(--color-dim)" }}
+            >
+              <span className="font-medium" style={{ color: "var(--color-dim)" }}>Damage note: </span>
+              {phase.dmg.n}
+            </div>
+          )}
         </>
       )}
-    </div>
-  );
 
-  // ── Two-column open-book layout (Grimoire theme) ───────────────────────────
-  if (twoColumn) {
-    return (
-      <div
-        className="animate-fade-in"
-        style={{ display: "flex", flexDirection: "column", margin: "-16px", minHeight: "calc(100vh - 96px)" }}
-      >
-        {/* Phase nav — spans both pages */}
-        {phaseNavBar}
-
-        {/* Open-book spread */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 4px 1fr", flex: 1, minHeight: 0 }}>
-
-          {/* ── Left page: identity + gear ──────────────────────────────── */}
-          <div className="grimoire-page" style={{ overflowY: "auto", padding: "16px 20px" }}>
-            {heroCard}
-            {phaseNote}
-            {loadoutBlock}
-            {itemSections}
-          </div>
-
-          {/* ── Spine ───────────────────────────────────────────────────── */}
-          <div style={{
-            background: "linear-gradient(180deg, transparent 0%, rgba(190,148,48,0.6) 8%, rgba(220,172,58,0.85) 28%, rgba(160,124,38,0.55) 50%, rgba(220,172,58,0.85) 72%, rgba(190,148,48,0.6) 92%, transparent 100%)",
-            boxShadow: "-10px 0 22px rgba(0,0,0,0.65), 10px 0 22px rgba(0,0,0,0.65)",
-            position: "relative",
-            zIndex: 1,
-          }} />
-
-          {/* ── Right page: stats + damage ──────────────────────────────── */}
-          <div className="grimoire-page" style={{ overflowY: "auto", padding: "16px 20px" }}>
-            {/* Phase label at top of right page */}
-            <div className="mb-4 pb-2.5" style={{ borderBottom: "1px solid rgba(145,108,32,0.28)" }}>
-              <p className="text-xs font-semibold" style={{ color: "var(--color-gold)", fontFamily: "var(--font-display)", letterSpacing: "0.12em" }}>
-                {phase.name}
-              </p>
-              <p className="text-xs" style={{ color: "var(--color-dim)" }}>{phase.range}</p>
-            </div>
-            {statsBlock}
-            {damageBlock}
-          </div>
-
-        </div>
-      </div>
-    );
-  }
-
-  // ── Standard single-column layout ─────────────────────────────────────────
-  return (
-    <div className="animate-fade-in">
-      {heroCard}
-
-      {/* Phase Buttons */}
-      <div className="flex flex-wrap gap-1.5 mb-4" role="group" aria-label="Build phases">
-        {PHASE_NAMES.map((name, i) => {
-          const ph = build.phases[i];
-          if (!ph) return null;
-          const isActive = safePhaseIdx === i;
-          return (
-            <div key={i} className="flex items-center gap-1">
-              {i > 0 && build.phases[i - 1] && <PhaseGain prev={build.phases[i - 1]} curr={ph} accent={accent} />}
-              <button
-                data-testid={`phase-btn-${i}`}
-                onClick={() => { setActivePhase(i); setActiveNg(0); }}
-                className="px-2.5 py-1.5 rounded text-xs font-medium transition-all"
-                style={isActive
-                  ? { background: `linear-gradient(135deg, ${accentBg}, ${hexToRgba(accent, 0.05)})`, border: `1px solid ${accentBorder}`, color: accent, boxShadow: `0 0 10px ${hexToRgba(accent, 0.2)}` }
-                  : { border: "1px solid #2a2218", color: "var(--color-dim)", background: "transparent" }
-                }
-              >{i + 1}. {name}</button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* NG+ Cycle Buttons */}
-      {activePhase === 6 && phase.ngCycles && phase.ngCycles.length > 0 && (
-        <div className="flex gap-1.5 mb-4" aria-label="NG+ cycles">
-          {phase.ngCycles.map((cycle: NgCycle, i: number) => (
-            <button key={i} data-testid={`ng-cycle-btn-${i}`} onClick={() => setActiveNg(i)}
-              className="px-2.5 py-1 rounded text-xs font-medium transition-all"
-              style={activeNg === i ? { background: accentBg, border: `1px solid ${accentBorder}`, color: accent } : { border: "1px solid #2a2218", color: "var(--color-dim)" }}
-            >{cycle.label}</button>
-          ))}
+      {phases.length === 0 && (
+        <div className="text-center py-10" style={{ color: "var(--color-dim)" }}>
+          <p className="text-sm">No phases available for this build.</p>
         </div>
       )}
-
-      {phaseNote}
-      {loadoutBlock}
-      {statsBlock}
-      {itemSections}
-      {damageBlock}
     </div>
-  );
-}
-
-export default function BuildTab(props: Props) {
-  return (
-    <BuildErrorBoundary accent={props.build.accent ?? "#d64545"} buildKey={props.build.key}>
-      <BuildTabInner {...props} />
-    </BuildErrorBoundary>
-  );
-}
-
-function Chip({ label, accent, dim }: { label: string; accent: string; dim?: boolean }) {
-  return (
-    <span
-      className="px-2 py-0.5 rounded text-xs"
-      style={{
-        background: dim ? "transparent" : hexToRgba(accent, 0.1),
-        border: `1px solid ${hexToRgba(accent, dim ? 0.18 : 0.3)}`,
-        color: dim ? "var(--color-dim)" : accent,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-function Kv({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <span style={{ color: "var(--color-dim)" }}>{label}: </span>
-      <span style={{ color: "var(--color-text)" }}>{value}</span>
-    </div>
-  );
-}
-
-function SectionLabel({ children, icon }: { children: React.ReactNode; icon?: string }) {
-  return (
-    <div className="section-label">
-      {icon && <span style={{ opacity: 0.5 }}>{icon}</span>}
-      {children}
-    </div>
-  );
-}
-
-function DmgStat({ label, value, accent }: { label: string; value: number; accent: string }) {
-  return (
-    <div className="text-center">
-      <p
-        className="text-xl font-bold"
-        style={{
-          fontFamily: "var(--font-display)",
-          color: value > 0 ? accent : "var(--color-dim2)",
-          textShadow: value > 0 ? `0 0 20px ${hexToRgba(accent, 0.4)}` : "none",
-        }}
-      >
-        {value > 0 ? value.toLocaleString() : "—"}
-      </p>
-      <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>{label}</p>
-    </div>
-  );
-}
-
-function PhaseGain({ prev, curr, accent }: { prev: Phase; curr: Phase; accent: string }) {
-  const totalGain = Object.entries(curr.stats)
-    .map(([s, v]) => v - (prev.stats[s] ?? 0))
-    .filter((d) => d > 0)
-    .reduce((a, b) => a + b, 0);
-  if (totalGain === 0) return null;
-  return (
-    <span className="text-xs font-semibold" style={{ color: accent, opacity: 0.6 }}>
-      +{totalGain}
-    </span>
   );
 }

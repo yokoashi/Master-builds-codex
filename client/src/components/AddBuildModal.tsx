@@ -1,19 +1,9 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import type { Game, Build } from "@shared/types";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { hexToRgba, slugify } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import type { Game, Build, KnowledgeFact } from "@shared/types";
+import { slugify } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-
-type Mode = "full" | "semi" | "manual";
-
-interface ManualPhaseForm {
-  stats: Record<string, string>;
-  weapons: { n: string; st: string }[];
-  armor: { n: string }[];
-  acc: { n: string; ef: string }[];
-  spells: { n: string; ef: string }[];
-}
 
 interface Props {
   game: Game;
@@ -21,1046 +11,248 @@ interface Props {
   onCreated: (build: Build) => void;
 }
 
+type Stage = "idle" | "step1" | "step2" | "step3" | "finalizing" | "done" | "error";
+
+const STAGE_LABELS: Record<Stage, string> = {
+  idle: "",
+  step1: "Generating metadata + early/mid phases…",
+  step2: "Generating end game + NG+ phases…",
+  step3: "Writing pros, cons & quick-ref…",
+  finalizing: "Saving build…",
+  done: "Complete",
+  error: "Error — check your Claude API key and codex",
+};
+
 export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const { toast } = useToast();
-  const [mode, setMode] = useState<Mode>("full");
+
   const [description, setDescription] = useState("");
-  const [referenceUrl, setReferenceUrl] = useState("");
-  const [generationStatus, setGenerationStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // Custom game state
-  const [customGameName, setCustomGameName] = useState("");
-
-  // Semi-AI state
-  const [buildName, setBuildName] = useState("");
-  const [playstyle, setPlaystyle] = useState("");
   const [preferredWeapon, setPreferredWeapon] = useState("");
-  const [semiNotes, setSemiNotes] = useState("");
-  const [semiAccent, setSemiAccent] = useState("");
-  const [semiStats, setSemiStats] = useState<Record<string, number>>(
-    Object.fromEntries(Object.keys(game.softCaps).map((k) => [k, 10]))
-  );
+  const [statBudget, setStatBudget] = useState(game.endgameBudget ?? 150);
+  const [stage, setStage] = useState<Stage>("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  // Manual mode state
-  const [manualLabel, setManualLabel] = useState("");
-  const [manualSub, setManualSub] = useState("");
-  const [manualIcon, setManualIcon] = useState("⚔️");
-  const [manualCls, setManualCls] = useState("");
-  const [manualPlaystyle, setManualPlaystyle] = useState("");
-  const [manualPhaseIdx, setManualPhaseIdx] = useState(0);
-  const [manualPhases, setManualPhases] = useState<ManualPhaseForm[]>([
-    { stats: {}, weapons: [{ n: "", st: "" }], armor: [{ n: "" }], acc: [{ n: "", ef: "" }], spells: [] },
-    { stats: {}, weapons: [{ n: "", st: "" }], armor: [{ n: "" }], acc: [{ n: "", ef: "" }], spells: [] },
-    { stats: {}, weapons: [{ n: "", st: "" }], armor: [{ n: "" }], acc: [{ n: "", ef: "" }], spells: [] },
-  ]);
-
-  const statKeys = Object.keys(game.softCaps);
-  const effectiveBudget = game.endgameBudget;
-  const totalSemiStats = Object.values(semiStats).reduce((a, b) => a + b, 0);
-  const budgetUsed = totalSemiStats;
-  const budgetPct = Math.min(100, (budgetUsed / effectiveBudget) * 100);
-  const overBudget = budgetUsed > effectiveBudget;
-
-  function adjustStat(stat: string, delta: number) {
-    setSemiStats((prev) => {
-      const newVal = Math.max(0, Math.min(game.statMax, (prev[stat] ?? 0) + delta));
-      if (delta > 0) {
-        const newTotal =
-          Object.values(prev).reduce((a, b) => a + b, 0) - (prev[stat] ?? 0) + newVal;
-        if (newTotal > effectiveBudget) return prev;
-      }
-      return { ...prev, [stat]: newVal };
-    });
-  }
-
-  function updateManualStat(phIdx: number, key: string, val: string) {
-    setManualPhases((prev) => {
-      const phases = [...prev];
-      phases[phIdx] = { ...phases[phIdx], stats: { ...phases[phIdx].stats, [key]: val } };
-      return phases;
-    });
-  }
-
-  function updateManualItem<K extends keyof ManualPhaseForm>(
-    phIdx: number,
-    category: K,
-    itemIdx: number,
-    field: string,
-    val: string
-  ) {
-    setManualPhases((prev) => {
-      const phases = [...prev];
-      const items = [...(phases[phIdx][category] as any[])];
-      items[itemIdx] = { ...items[itemIdx], [field]: val };
-      phases[phIdx] = { ...phases[phIdx], [category]: items };
-      return phases;
-    });
-  }
-
-  function addManualItem<K extends keyof ManualPhaseForm>(phIdx: number, category: K, blank: any) {
-    setManualPhases((prev) => {
-      const phases = [...prev];
-      const items = [...(phases[phIdx][category] as any[]), blank];
-      phases[phIdx] = { ...phases[phIdx], [category]: items };
-      return phases;
-    });
-  }
-
-  function removeManualItem<K extends keyof ManualPhaseForm>(phIdx: number, category: K, itemIdx: number) {
-    setManualPhases((prev) => {
-      const phases = [...prev];
-      const items = [...(phases[phIdx][category] as any[])];
-      items.splice(itemIdx, 1);
-      phases[phIdx] = { ...phases[phIdx], [category]: items };
-      return phases;
-    });
-  }
-
-  const knowledgeQuery = useQuery<{ count: number }>({
-    queryKey: [`/api/knowledge/${game.key}`],
+  // ── Knowledge cache ──────────────────────────────────────────────────────────
+  const { data: knowledgeData } = useQuery<{ facts: KnowledgeFact[]; patchNote: string | null }>({
+    queryKey: ["/api/knowledge", game.key],
+    queryFn: () => apiRequest<{ facts: KnowledgeFact[]; patchNote: string | null }>("GET", `/api/knowledge/${game.key}`),
   });
+  const facts = knowledgeData?.facts ?? [];
+  const knowledgeBlock = facts.length > 0
+    ? `GAME CODEX — ${game.name}\n\n${facts.slice(0, 80).map((f) => f.raw).join("\n")}`
+    : `No codex loaded for ${game.name}. Generate based on general game knowledge.`;
 
-  const settingsQuery = useQuery<{ aiMode: "dual" | "perplexity" | "claude" | "openrouter" }>({
-    queryKey: ["/api/settings"],
-  });
-  const aiMode = settingsQuery.data?.aiMode ?? "dual";
+  // ── Generate pipeline ────────────────────────────────────────────────────────
+  async function handleGenerate() {
+    if (!description.trim()) {
+      toast({ title: "Describe your build first", variant: "destructive" });
+      return;
+    }
 
-  const setAiMode = useMutation({
-    mutationFn: (mode: "dual" | "perplexity" | "claude" | "openrouter") =>
-      apiRequest<{ aiMode: string }>("PATCH", "/api/settings", { aiMode: mode }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/settings"] }),
-  });
+    setStage("step1");
+    setErrorMsg("");
 
-  const generateMutation = useMutation({
-    mutationFn: async () => {
-      setError(null);
-      const knowledgeBlock = ""; // backend builds this server-side
-      // AbortController with a 3-minute total timeout for the full 3-step pipeline
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3 * 60 * 1000);
+    try {
+      // Step 1 — metadata + Early Game + Mid Game
+      const step1 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step1", {
+        gameKey: game.key,
+        gameName: game.name,
+        buildDescription: description,
+        statBudget,
+        preferredWeapon: preferredWeapon || undefined,
+        knowledgeBlock,
+      });
 
-      const isCustom = customGameName.trim().length > 0;
-      const targetGameKey = isCustom ? `custom_${Date.now()}` : game.key;
-      const targetGameName = isCustom ? customGameName.trim() : game.name;
+      setStage("step2");
 
-      // Build mode-specific description / constraints
-      let buildDescription: string;
-      let manualSkeleton: object | undefined;
+      // Step 2 — End Game + NG+
+      const buildKey = (step1.key as string) || slugify(description);
+      const step2 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step2", {
+        gameKey: game.key,
+        gameName: game.name,
+        buildKey,
+        partialBuild: step1,
+        knowledgeBlock,
+      });
 
-      if (mode === "full") {
-        buildDescription = description;
-      } else if (mode === "semi") {
-        const statTargets = Object.entries(semiStats)
-          .filter(([, v]) => v > 0)
-          .map(([k, v]) => `${k}:${v}`)
-          .join(", ");
-        const lines = [`Endgame stat targets: ${statTargets}`];
-        if (buildName.trim()) lines.unshift(`Build name: ${buildName.trim()}`);
-        if (playstyle.trim()) lines.push(`Playstyle: ${playstyle.trim()}`);
-        if (preferredWeapon.trim()) lines.push(`Preferred main weapon: ${preferredWeapon.trim()}`);
-        if (semiNotes.trim()) lines.push(`Additional notes: ${semiNotes.trim()}`);
-        if (semiAccent.trim()) lines.push(`Use this accent color: ${semiAccent.trim()}`);
-        lines.push(`Total stat budget: ~${effectiveBudget}. DO NOT exceed this across all stats combined.`);
-        buildDescription = lines.join("\n");
-      } else {
-        // manual
-        buildDescription = `Manual build: ${manualLabel.trim()} — ${manualPlaystyle.trim() || "(AI fills in playstyle)"}`;
-        manualSkeleton = {
-          label: manualLabel.trim(),
-          sub: manualSub.trim() || "(generate fitting subtitle)",
-          icon: manualIcon.trim() || "⚔️",
-          cls: manualCls.trim() || "(pick best starting class)",
-          playstyle: manualPlaystyle.trim() || "(write 3-4 sentences describing the playstyle)",
-          user_phases: manualPhases.map((ph, i) => ({
-            stage: ["Early", "Mid", "Endgame"][i],
-            stats: Object.fromEntries(
-              Object.entries(ph.stats)
-                .filter(([, v]) => v !== "" && v != null)
-                .map(([k, v]) => [k, parseInt(v) || 0])
-            ),
-            weapons: ph.weapons.filter((w) => w.n.trim()).map((w) => ({ n: w.n.trim(), st: w.st.trim() })),
-            armor: ph.armor.filter((a) => a.n.trim()).map((a) => ({ n: a.n.trim() })),
-            acc: ph.acc.filter((a) => a.n.trim()).map((a) => ({ n: a.n.trim(), ef: a.ef.trim() })),
-            spells: ph.spells.filter((s) => s.n.trim()).map((s) => ({ n: s.n.trim(), ef: s.ef.trim() })),
-          })),
-        };
-      }
+      setStage("step3");
 
-      // Step 1
-      setGenerationStatus("🔍 Step 1/3 — Generating metadata + early phases...");
-      const step1Result = await apiRequest<{ ok: boolean; partial: Partial<Build>; error?: string }>(
-        "POST",
-        "/api/generate/step1",
-        {
-          gameKey: targetGameKey,
-          gameName: targetGameName,
-          buildDescription,
-          statBudget: effectiveBudget,
-          seedStats: mode === "semi" ? semiStats : undefined,
-          preferredWeapon: mode === "semi" ? preferredWeapon : undefined,
-          referenceUrl: referenceUrl || undefined,
-          knowledgeBlock,
-          mode,
-          manualSkeleton,
-          isCustomGame: isCustom,
-        }
-      );
-
-      if (!step1Result.ok || !step1Result.partial) {
-        throw new Error(step1Result.error ?? "Step 1 failed");
-      }
-
-      const partial = step1Result.partial;
-
-      // Step 2
-      setGenerationStatus("⚙️ Step 2/3 — Extended thinking: generating late-game + NG+ phases...");
-      const step2Result = await apiRequest<{ ok: boolean; phases47: Build["phases"]; error?: string }>(
-        "POST",
-        "/api/generate/step2",
-        {
-          gameKey: targetGameKey,
-          gameName: targetGameName,
-          buildKey: partial.key ?? slugify(buildDescription.substring(0, 40)),
-          partialBuild: partial,
-          knowledgeBlock,
-        }
-      );
-
-      if (!step2Result.ok) {
-        throw new Error(step2Result.error ?? "Step 2 failed");
-      }
-
-      // Merge phases
-      const phases3 = partial.phases ?? [];
-      const phases47 = step2Result.phases47 ?? [];
-      const allPhases = [...phases3, ...phases47].slice(0, 7);
-
-      const partialWithAllPhases: Partial<Build> = { ...partial, phases: allPhases };
-
-      // Step 3 (graceful)
-      setGenerationStatus("📋 Step 3/3 — Generating similar builds + quick ref...");
-      const step3Result = await apiRequest<{ ok: boolean; sim: Build["sim"]; oth: Build["oth"]; ref: Build["ref"] }>(
-        "POST",
-        "/api/generate/step3",
-        {
-          gameKey: targetGameKey,
-          gameName: targetGameName,
-          buildKey: partial.key ?? "generated",
-          partialBuild: partialWithAllPhases,
-          knowledgeBlock,
-        }
-      );
-
-      // Deduplicate key — append timestamp suffix so re-generating a similar build
-      // description doesn't collide with an existing build in the DB.
-      const existingBuildsData = queryClient.getQueryData<Build[]>(["/api/builds"]) ?? [];
-      const rawKey = partial.key ?? slugify(`${targetGameKey}-${Date.now()}`);
-      const keyExists = existingBuildsData.some((b) => b.key === rawKey);
-      const uniqueKey = keyExists ? `${rawKey}-${Date.now()}` : rawKey;
-
-      // Assemble final build
-      const finalBuild: Build = {
-        key: uniqueKey,
-        gameKey: targetGameKey,
-        label: partial.label ?? "Generated Build",
-        sub: partial.sub ?? "",
-        icon: partial.icon ?? "⚔️",
-        accent: (mode === "semi" && semiAccent.trim()) ? semiAccent.trim() : (partial.accent ?? "#d64545"),
-        playstyle: partial.playstyle ?? "",
-        cls: partial.cls ?? "Unknown",
-        caps: partial.caps ?? [],
-        weaponReq: partial.weaponReq ?? [],
-        loadouts: partial.loadouts ?? null,
-        phases: allPhases,
-        sim: step3Result.sim ?? [],
-        oth: step3Result.oth ?? [],
-        ref: step3Result.ref ?? [],
-        isAI: true,
-      };
-
-      // Finalize (save + extract facts)
-      setGenerationStatus("💾 Saving...");
+      // Step 3 — pros/cons + ref (graceful fallback)
+      let step3: { pros?: string[]; cons?: string[]; ref?: unknown[] } = { pros: [], cons: [], ref: [] };
       try {
-        await apiRequest("POST", "/api/generate/finalize", {
-          ...finalBuild,
-          _customGameName: isCustom ? targetGameName : undefined,
-          _customGameKey: isCustom ? targetGameKey : undefined,
+        step3 = await apiRequest<{ pros?: string[]; cons?: string[]; ref?: unknown[] }>("POST", "/api/generate/step3", {
+          gameKey: game.key,
+          gameName: game.name,
+          buildKey,
+          partialBuild: { ...step1, ...step2 },
+          knowledgeBlock,
         });
-      } finally {
-        clearTimeout(timeoutId);
+      } catch {
+        // step3 failure is non-fatal
       }
-      return finalBuild;
-    },
-    onSuccess: (build: Build) => {
-      setGenerationStatus(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/builds"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/games"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/knowledge/${game.key}`] });
-      onCreated(build);
-      toast({ title: `Build "${build.label}" created!` });
-    },
-    onError: (err: Error) => {
-      setGenerationStatus(null);
-      setError(err.message);
-    },
-  });
 
-  const accentColor = "#d64545";
-  const isManualBlocked = mode === "manual" && !manualLabel.trim();
-  const isSemiBlocked = mode === "semi" && budgetUsed === 0;
-  const isFullBlocked = mode === "full" && !description.trim();
-  const isBlocked = isFullBlocked || isSemiBlocked || isManualBlocked || overBudget;
+      setStage("finalizing");
+
+      // Finalize — assemble + save
+      const build = await apiRequest<Build>("POST", "/api/generate/finalize", {
+        gameKey: game.key,
+        gameName: game.name,
+        buildKey,
+        step1,
+        step2,
+        step3,
+      });
+
+      setStage("done");
+      onCreated(build);
+    } catch (err) {
+      setErrorMsg(String(err));
+      setStage("error");
+    }
+  }
+
+  const isRunning = stage !== "idle" && stage !== "done" && stage !== "error";
 
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: "rgba(0,0,0,0.75)" }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Add new build"
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.75)" }}>
       <div
-        className="rounded-lg w-full overflow-y-auto"
-        style={{
-          background: "var(--color-card)",
-          border: "1px solid #3a3028",
-          maxWidth: 640,
-          maxHeight: "90vh",
-        }}
-        data-testid="add-build-modal"
+        className="w-full max-w-md rounded-lg shadow-2xl flex flex-col"
+        style={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-card-hi)" }}
       >
         {/* Header */}
-        <div
-          className="flex items-center justify-between p-4 border-b"
-          style={{ borderColor: "#3a3028" }}
-        >
-          <h2
-            className="text-lg font-bold"
-            style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
-          >
-            Add Build
-          </h2>
+        <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: "var(--color-card-hi)" }}>
+          <div>
+            <h2 className="font-display text-base font-bold" style={{ color: "var(--color-bright)" }}>
+              Generate Build
+            </h2>
+            <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>{game.name}</p>
+          </div>
           <button
             onClick={onClose}
-            className="text-sm px-2 py-1 rounded hover:bg-white/5 transition-all"
-            style={{ color: generateMutation.isPending ? "var(--color-dim2)" : "var(--color-dim)" }}
-            data-testid="btn-close-modal"
-            title={generateMutation.isPending ? "Cancel generation" : "Close"}
+            disabled={isRunning}
+            className="text-sm px-2 py-1 rounded hover:opacity-80 transition-opacity"
+            style={{ color: "var(--color-dim)" }}
           >
             ✕
           </button>
         </div>
 
-        {/* Mode pills + dual-AI toggle */}
-        <div className="flex gap-2 p-4 pb-0 items-center justify-between">
-          <div className="flex gap-2">
-            {(["full", "semi", "manual"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                data-testid={`mode-pill-${m}`}
-                className="px-3 py-1 rounded text-sm font-medium transition-all capitalize"
-                style={
-                  mode === m
-                    ? {
-                        background: hexToRgba(accentColor, 0.15),
-                        border: `1px solid ${accentColor}`,
-                        color: accentColor,
-                      }
-                    : { border: "1px solid #3a3028", color: "var(--color-dim)" }
-                }
-              >
-                {m === "full" ? "✦ Full AI" : m === "semi" ? "◐ Semi-AI" : "✎ Manual"}
-              </button>
-            ))}
+        {/* Body */}
+        <div className="p-5 flex flex-col gap-4">
+          {/* Codex status */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded text-xs" style={{ backgroundColor: "var(--color-card-hi)" }}>
+            {facts.length > 0 ? (
+              <>
+                <span style={{ color: "var(--color-gold)" }}>✓</span>
+                <span style={{ color: "var(--color-text)" }}>{facts.length} codex facts loaded</span>
+              </>
+            ) : (
+              <>
+                <span style={{ color: "var(--color-crimson)" }}>⚠</span>
+                <span style={{ color: "var(--color-dim)" }}>No codex — import one via the sidebar for accurate item data</span>
+              </>
+            )}
           </div>
 
-          {/* AI mode — 3-way pill */}
-          <div
-            className="flex rounded overflow-hidden"
-            style={{ border: "1px solid #3a3028" }}
-          >
-            {(
-              [
-                { mode: "dual",        label: "Claude+Pplx", icon: "⚡", color: "#a78bfa", title: "Perplexity researches, Claude structures" },
-                { mode: "perplexity",  label: "Pplx only",   icon: "🔭", color: "#5591c7", title: "Perplexity sonar-pro only" },
-                { mode: "claude",      label: "Claude only",  icon: "✦",  color: "#e8c05a", title: "Claude + Pplx web research, no OR" },
-                { mode: "openrouter",  label: "OpenRouter",   icon: "◈",  color: "#4ade80", title: "Perplexity researches, OpenRouter model structures" },
-              ] as const
-            ).map(({ mode, label, icon, color, title }, idx, arr) => {
-              const active = aiMode === mode;
-              const isLast = idx === arr.length - 1;
-              return (
-                <button
-                  key={mode}
-                  onClick={() => setAiMode.mutate(mode)}
-                  disabled={setAiMode.isPending}
-                  title={title}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium transition-all"
-                  style={{
-                    background: active ? hexToRgba(color, 0.14) : "transparent",
-                    color: active ? color : "var(--color-dim2)",
-                    borderRight: !isLast ? "1px solid #3a3028" : "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <span style={{ fontSize: "0.65rem" }}>{icon}</span>
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="p-4">
-          {/* Knowledge status */}
-          {knowledgeQuery.data && knowledgeQuery.data.count > 0 && (
-            <div
-              className="mb-4 px-3 py-2 rounded text-xs"
-              style={{
-                background: hexToRgba("#e8c05a", 0.07),
-                border: `1px solid ${hexToRgba("#e8c05a", 0.2)}`,
-                color: "var(--color-gold)",
-              }}
-            >
-              🧠 {knowledgeQuery.data.count} cached facts will be used — less searching required
-            </div>
-          )}
-
-          {/* ── Target Game (shared) ──────────────────────────────────────── */}
-          <div className="mb-4">
-            <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-              Game — {game.name} selected
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium mb-1.5 uppercase tracking-wider" style={{ color: "var(--color-dim)" }}>
+              Build Concept *
             </label>
-            <input
-              data-testid="input-custom-game"
-              value={customGameName}
-              onChange={(e) => setCustomGameName(e.target.value)}
-              placeholder="…or type a different game name (e.g. 'Elden Ring', 'Bloodborne') to add it"
-              className="w-full rounded px-3 py-2 text-sm"
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              disabled={isRunning}
+              rows={3}
+              placeholder="e.g. Fast DEX katana bleed build focusing on the Uchigatana, light armor, and pyromancy for burst damage"
+              className="w-full rounded px-3 py-2 text-sm resize-none outline-none"
               style={{
-                background: "var(--color-card-hi)",
-                border: `1px solid ${customGameName.trim() ? accentColor : "#3a3028"}`,
+                backgroundColor: "var(--color-card-2)",
                 color: "var(--color-text)",
+                border: "1px solid var(--color-card-hi)",
               }}
             />
           </div>
 
-          {/* ── Full AI mode ─────────────────────────────────────────────── */}
-          {mode === "full" && (
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                  Build Description
-                </label>
-                <textarea
-                  data-testid="input-build-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe the build you want — weapon type, stat focus, playstyle..."
-                  rows={4}
-                  className="w-full rounded px-3 py-2 text-sm resize-none"
-                  style={{
-                    background: "var(--color-card-hi)",
-                    border: "1px solid #3a3028",
-                    color: "var(--color-text)",
-                  }}
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                  Reference URL (optional)
-                </label>
-                <input
-                  data-testid="input-reference-url"
-                  type="url"
-                  value={referenceUrl}
-                  onChange={(e) => setReferenceUrl(e.target.value)}
-                  placeholder="https://fextralife.com/... or wiki link"
-                  className="w-full rounded px-3 py-2 text-sm"
-                  style={{
-                    background: "var(--color-card-hi)",
-                    border: "1px solid #3a3028",
-                    color: "var(--color-text)",
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ── Semi-AI mode ─────────────────────────────────────────────── */}
-          {mode === "semi" && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Build Name
-                  </label>
-                  <input
-                    data-testid="input-build-name"
-                    value={buildName}
-                    onChange={(e) => setBuildName(e.target.value)}
-                    placeholder="e.g. Shadow Dancer"
-                    className="w-full rounded px-3 py-2 text-sm"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Preferred Weapon
-                  </label>
-                  <input
-                    data-testid="input-preferred-weapon"
-                    value={preferredWeapon}
-                    onChange={(e) => setPreferredWeapon(e.target.value)}
-                    placeholder="e.g. Katana, Greatsword..."
-                    className="w-full rounded px-3 py-2 text-sm"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                  Playstyle Notes
-                </label>
-                <input
-                  data-testid="input-playstyle"
-                  value={playstyle}
-                  onChange={(e) => setPlaystyle(e.target.value)}
-                  placeholder="e.g. Fast-rolling bleed assassin with critical hit focus"
-                  className="w-full rounded px-3 py-2 text-sm"
-                  style={{
-                    background: "var(--color-card-hi)",
-                    border: "1px solid #3a3028",
-                    color: "var(--color-text)",
-                  }}
-                />
-              </div>
-
-              {/* Stat steppers */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>
-                    Endgame Stat Targets
-                  </label>
-                  <span
-                    className="text-xs"
-                    style={{ color: overBudget ? "var(--color-crimson)" : "var(--color-green)" }}
-                  >
-                    {budgetUsed} / {effectiveBudget} pts
-                    {overBudget ? " (over budget!)" : ""}
-                  </span>
-                </div>
-
-                {/* Budget bar */}
-                <div className="mb-3 h-1.5 rounded-full" style={{ background: "#2a2318" }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${budgetPct}%`,
-                      background: overBudget
-                        ? "var(--color-crimson)"
-                        : budgetPct > 80
-                        ? "var(--color-gold)"
-                        : "var(--color-green)",
-                    }}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(semiStats).map(([stat, val]) => {
-                    const cap = game.softCaps[stat];
-                    const atCap = cap !== null && val >= cap;
-                    return (
-                      <div key={stat} className="flex items-center gap-2">
-                        <span
-                          className="w-8 text-xs font-medium flex-shrink-0"
-                          style={{ color: atCap ? accentColor : "var(--color-dim)" }}
-                        >
-                          {stat}
-                          {atCap && " ✓"}
-                        </span>
-                        <button
-                          data-testid={`stat-minus-${stat}`}
-                          onClick={() => adjustStat(stat, -5)}
-                          disabled={val <= 0}
-                          className="w-6 h-6 rounded text-xs disabled:opacity-30 hover:bg-white/10 transition-all flex-shrink-0"
-                          style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-                        >
-                          −
-                        </button>
-                        <span
-                          className="w-6 text-center text-sm font-medium flex-shrink-0"
-                          style={{ color: "var(--color-bright)" }}
-                          data-testid={`stat-value-${stat}`}
-                        >
-                          {val}
-                        </span>
-                        <button
-                          data-testid={`stat-plus-${stat}`}
-                          onClick={() => adjustStat(stat, 5)}
-                          disabled={val >= game.statMax || overBudget}
-                          className="w-6 h-6 rounded text-xs disabled:opacity-30 hover:bg-white/10 transition-all flex-shrink-0"
-                          style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
-                        >
-                          +
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Additional notes + accent */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Additional Notes
-                  </label>
-                  <textarea
-                    data-testid="input-semi-notes"
-                    value={semiNotes}
-                    onChange={(e) => setSemiNotes(e.target.value)}
-                    placeholder="e.g. no spells, must use shield, PvE only..."
-                    rows={2}
-                    className="w-full rounded px-3 py-2 text-sm resize-none"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Accent Color (optional)
-                  </label>
-                  <input
-                    data-testid="input-semi-accent"
-                    value={semiAccent}
-                    onChange={(e) => setSemiAccent(e.target.value)}
-                    placeholder="#hex or color name"
-                    className="w-full rounded px-3 py-2 text-sm"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                  {semiAccent.trim() && (
-                    <div
-                      className="mt-1 h-1.5 rounded-full"
-                      style={{ background: semiAccent.trim() }}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* Reference URL for semi mode */}
-              <div>
-                <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                  Reference URL (optional)
-                </label>
-                <input
-                  data-testid="input-reference-url-semi"
-                  type="url"
-                  value={referenceUrl}
-                  onChange={(e) => setReferenceUrl(e.target.value)}
-                  placeholder="https://fextralife.com/... or wiki link"
-                  className="w-full rounded px-3 py-2 text-sm"
-                  style={{
-                    background: "var(--color-card-hi)",
-                    border: "1px solid #3a3028",
-                    color: "var(--color-text)",
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ── Manual mode ──────────────────────────────────────────────── */}
-          {mode === "manual" && (
-            <div className="space-y-3">
-              <div
-                className="px-3 py-2 rounded text-xs"
-                style={{
-                  background: hexToRgba(accentColor, 0.07),
-                  border: `1px solid ${hexToRgba(accentColor, 0.2)}`,
-                  color: "var(--color-text)",
-                }}
-              >
-                You define the skeleton — name, items, stats per stage. AI fills in damage estimates, locations, upgrade paths, descriptions, NG+ phase, and variants.
-              </div>
-
-              {/* Metadata */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-2">
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Build Name *
-                  </label>
-                  <input
-                    data-testid="input-manual-label"
-                    value={manualLabel}
-                    onChange={(e) => setManualLabel(e.target.value)}
-                    placeholder="e.g. Iron Vanguard"
-                    className="w-full rounded px-3 py-2 text-sm"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: `1px solid ${manualLabel.trim() ? accentColor : "#3a3028"}`,
-                      color: "var(--color-text)",
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Icon
-                  </label>
-                  <input
-                    data-testid="input-manual-icon"
-                    value={manualIcon}
-                    onChange={(e) => setManualIcon(e.target.value)}
-                    maxLength={3}
-                    className="w-full rounded px-3 py-2 text-center"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                      fontSize: "1.2rem",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Subtitle
-                  </label>
-                  <input
-                    data-testid="input-manual-sub"
-                    value={manualSub}
-                    onChange={(e) => setManualSub(e.target.value)}
-                    placeholder="e.g. STR/RAD Bleed Build"
-                    className="w-full rounded px-3 py-2 text-sm"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                    Starting Class
-                  </label>
-                  <input
-                    data-testid="input-manual-cls"
-                    value={manualCls}
-                    onChange={(e) => setManualCls(e.target.value)}
-                    placeholder="Or leave for AI"
-                    className="w-full rounded px-3 py-2 text-sm"
-                    style={{
-                      background: "var(--color-card-hi)",
-                      border: "1px solid #3a3028",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs uppercase tracking-widest block mb-1" style={{ color: "var(--color-dim)" }}>
-                  Playstyle Description
-                </label>
-                <textarea
-                  data-testid="input-manual-playstyle"
-                  value={manualPlaystyle}
-                  onChange={(e) => setManualPlaystyle(e.target.value)}
-                  placeholder="Describe your vision, or leave blank for AI to generate..."
-                  rows={2}
-                  className="w-full rounded px-3 py-2 text-sm resize-none"
-                  style={{
-                    background: "var(--color-card-hi)",
-                    border: "1px solid #3a3028",
-                    color: "var(--color-text)",
-                  }}
-                />
-              </div>
-
-              {/* Phase tabs */}
-              <div>
-                <label className="text-xs uppercase tracking-widest block mb-2" style={{ color: "var(--color-dim)" }}>
-                  Stages
-                </label>
-                <div className="flex gap-2 mb-3">
-                  {["Early Game", "Mid Game", "Endgame"].map((name, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setManualPhaseIdx(i)}
-                      className="flex-1 py-1.5 rounded text-xs font-medium transition-all"
-                      style={
-                        manualPhaseIdx === i
-                          ? {
-                              background: hexToRgba(accentColor, 0.15),
-                              border: `1px solid ${accentColor}`,
-                              color: accentColor,
-                            }
-                          : { border: "1px solid #3a3028", color: "var(--color-dim)" }
-                      }
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Active phase form */}
-                {(() => {
-                  const ph = manualPhases[manualPhaseIdx];
-                  return (
-                    <div
-                      className="rounded p-3 space-y-3"
-                      style={{ background: "var(--color-card-hi)", border: "1px solid #2a2318" }}
-                    >
-                      {/* Stats */}
-                      <div>
-                        <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>
-                          Stats <span style={{ fontWeight: 400, textTransform: "none" }}>(blank = AI infers)</span>
-                        </p>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {statKeys.map((k) => (
-                            <div key={k} className="flex flex-col items-center">
-                              <span className="text-xs mb-1" style={{ color: "var(--color-dim)" }}>{k}</span>
-                              <input
-                                type="number"
-                                min="0"
-                                max={game.statMax}
-                                value={ph.stats[k] ?? ""}
-                                onChange={(e) => updateManualStat(manualPhaseIdx, k, e.target.value)}
-                                placeholder="–"
-                                className="w-full rounded text-center text-sm py-1"
-                                style={{
-                                  background: "var(--color-card)",
-                                  border: `1px solid ${ph.stats[k] ? hexToRgba(accentColor, 0.5) : "#2a2318"}`,
-                                  color: "var(--color-bright)",
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Weapons */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Weapons</span>
-                          <button
-                            onClick={() => addManualItem(manualPhaseIdx, "weapons", { n: "", st: "" })}
-                            className="text-xs px-2 py-0.5 rounded"
-                            style={{ border: `1px solid ${hexToRgba(accentColor, 0.4)}`, color: accentColor }}
-                          >+</button>
-                        </div>
-                        {ph.weapons.map((w, i) => (
-                          <div key={i} className="flex gap-1.5 mb-1.5">
-                            <input
-                              value={w.n}
-                              onChange={(e) => updateManualItem(manualPhaseIdx, "weapons", i, "n", e.target.value)}
-                              placeholder="Weapon name"
-                              className="flex-1 rounded px-2 py-1 text-sm"
-                              style={{ background: "var(--color-card)", border: "1px solid #2a2318", color: "var(--color-text)" }}
-                            />
-                            <input
-                              value={w.st}
-                              onChange={(e) => updateManualItem(manualPhaseIdx, "weapons", i, "st", e.target.value)}
-                              placeholder="Status"
-                              className="w-20 rounded px-2 py-1 text-sm"
-                              style={{ background: "var(--color-card)", border: "1px solid #2a2318", color: "var(--color-text)" }}
-                            />
-                            {ph.weapons.length > 1 && (
-                              <button
-                                onClick={() => removeManualItem(manualPhaseIdx, "weapons", i)}
-                                className="px-2 rounded text-sm"
-                                style={{ border: "1px solid #2a2318", color: "var(--color-dim)" }}
-                              >×</button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Armor */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Armor</span>
-                          <button
-                            onClick={() => addManualItem(manualPhaseIdx, "armor", { n: "" })}
-                            className="text-xs px-2 py-0.5 rounded"
-                            style={{ border: `1px solid ${hexToRgba(accentColor, 0.4)}`, color: accentColor }}
-                          >+</button>
-                        </div>
-                        {ph.armor.map((a, i) => (
-                          <div key={i} className="flex gap-1.5 mb-1.5">
-                            <input
-                              value={a.n}
-                              onChange={(e) => updateManualItem(manualPhaseIdx, "armor", i, "n", e.target.value)}
-                              placeholder="Armor set name"
-                              className="flex-1 rounded px-2 py-1 text-sm"
-                              style={{ background: "var(--color-card)", border: "1px solid #2a2318", color: "var(--color-text)" }}
-                            />
-                            {ph.armor.length > 1 && (
-                              <button
-                                onClick={() => removeManualItem(manualPhaseIdx, "armor", i)}
-                                className="px-2 rounded text-sm"
-                                style={{ border: "1px solid #2a2318", color: "var(--color-dim)" }}
-                              >×</button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Accessories */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Accessories / Rings</span>
-                          <button
-                            onClick={() => addManualItem(manualPhaseIdx, "acc", { n: "", ef: "" })}
-                            className="text-xs px-2 py-0.5 rounded"
-                            style={{ border: `1px solid ${hexToRgba(accentColor, 0.4)}`, color: accentColor }}
-                          >+</button>
-                        </div>
-                        {ph.acc.map((a, i) => (
-                          <div key={i} className="flex gap-1.5 mb-1.5">
-                            <input
-                              value={a.n}
-                              onChange={(e) => updateManualItem(manualPhaseIdx, "acc", i, "n", e.target.value)}
-                              placeholder="Ring / accessory name"
-                              className="flex-1 rounded px-2 py-1 text-sm"
-                              style={{ background: "var(--color-card)", border: "1px solid #2a2318", color: "var(--color-text)" }}
-                            />
-                            <input
-                              value={a.ef}
-                              onChange={(e) => updateManualItem(manualPhaseIdx, "acc", i, "ef", e.target.value)}
-                              placeholder="Effect"
-                              className="flex-1 rounded px-2 py-1 text-sm"
-                              style={{ background: "var(--color-card)", border: "1px solid #2a2318", color: "var(--color-text)" }}
-                            />
-                            {ph.acc.length > 1 && (
-                              <button
-                                onClick={() => removeManualItem(manualPhaseIdx, "acc", i)}
-                                className="px-2 rounded text-sm"
-                                style={{ border: "1px solid #2a2318", color: "var(--color-dim)" }}
-                              >×</button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Spells */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Spells / Buffs</span>
-                          <button
-                            onClick={() => addManualItem(manualPhaseIdx, "spells", { n: "", ef: "" })}
-                            className="text-xs px-2 py-0.5 rounded"
-                            style={{ border: `1px solid ${hexToRgba(accentColor, 0.4)}`, color: accentColor }}
-                          >+</button>
-                        </div>
-                        {ph.spells.length === 0 && (
-                          <p className="text-xs italic" style={{ color: "var(--color-dim)" }}>No spells — click + to add</p>
-                        )}
-                        {ph.spells.map((s, i) => (
-                          <div key={i} className="flex gap-1.5 mb-1.5">
-                            <input
-                              value={s.n}
-                              onChange={(e) => updateManualItem(manualPhaseIdx, "spells", i, "n", e.target.value)}
-                              placeholder="Spell name"
-                              className="flex-1 rounded px-2 py-1 text-sm"
-                              style={{ background: "var(--color-card)", border: "1px solid #2a2318", color: "var(--color-text)" }}
-                            />
-                            <input
-                              value={s.ef}
-                              onChange={(e) => updateManualItem(manualPhaseIdx, "spells", i, "ef", e.target.value)}
-                              placeholder="Effect"
-                              className="flex-1 rounded px-2 py-1 text-sm"
-                              style={{ background: "var(--color-card)", border: "1px solid #2a2318", color: "var(--color-text)" }}
-                            />
-                            <button
-                              onClick={() => removeManualItem(manualPhaseIdx, "spells", i)}
-                              className="px-2 rounded text-sm"
-                              style={{ border: "1px solid #2a2318", color: "var(--color-dim)" }}
-                            >×</button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {/* Error */}
-          {error && (
-            <div
-              className="mt-3 px-3 py-2 rounded text-xs"
+          {/* Preferred weapon */}
+          <div>
+            <label className="block text-xs font-medium mb-1.5 uppercase tracking-wider" style={{ color: "var(--color-dim)" }}>
+              Preferred Weapon <span style={{ color: "var(--color-dim2)" }}>(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={preferredWeapon}
+              onChange={(e) => setPreferredWeapon(e.target.value)}
+              disabled={isRunning}
+              placeholder="e.g. Uchigatana, Zweihander, Black Knight Halberd…"
+              className="w-full rounded px-3 py-2 text-sm outline-none"
               style={{
-                background: hexToRgba("#d64545", 0.1),
-                border: "1px solid #d64545",
-                color: "var(--color-crimson)",
+                backgroundColor: "var(--color-card-2)",
+                color: "var(--color-text)",
+                border: "1px solid var(--color-card-hi)",
               }}
-              data-testid="generation-error"
-            >
-              {error}
-            </div>
-          )}
+            />
+          </div>
 
-          {/* Generation status */}
-          {generationStatus && (
+          {/* Stat budget */}
+          <div>
+            <label className="block text-xs font-medium mb-1.5 uppercase tracking-wider" style={{ color: "var(--color-dim)" }}>
+              Target Soul Level: <strong style={{ color: "var(--color-bright)" }}>SL {statBudget}</strong>
+            </label>
+            <input
+              type="range"
+              min={40}
+              max={200}
+              step={5}
+              value={statBudget}
+              onChange={(e) => setStatBudget(Number(e.target.value))}
+              disabled={isRunning}
+              className="w-full"
+              style={{ accentColor: "var(--color-crimson)" }}
+            />
+            <div className="flex justify-between text-[10px] mt-0.5" style={{ color: "var(--color-dim)" }}>
+              <span>SL 40</span>
+              <span>SL 120 (PvP)</span>
+              <span>SL 200</span>
+            </div>
+          </div>
+
+          {/* Progress / error */}
+          {stage !== "idle" && (
             <div
-              className="mt-3 px-3 py-2 rounded text-xs"
+              className={`px-3 py-2 rounded text-xs ${isRunning ? "animate-pulse" : ""}`}
               style={{
-                background: hexToRgba("#e8c05a", 0.08),
-                border: `1px solid ${hexToRgba("#e8c05a", 0.2)}`,
-                color: "var(--color-gold)",
+                backgroundColor: stage === "error" ? "rgba(214,69,69,0.1)" : "var(--color-card-hi)",
+                color: stage === "error" ? "var(--color-crimson)" : "var(--color-gold)",
+                border: `1px solid ${stage === "error" ? "rgba(214,69,69,0.3)" : "transparent"}`,
               }}
-              data-testid="generation-status"
             >
-              {generationStatus}
+              {STAGE_LABELS[stage]}
+              {stage === "error" && errorMsg && (
+                <div className="mt-1 text-[10px] opacity-70 break-all">{errorMsg}</div>
+              )}
             </div>
           )}
+        </div>
 
-          {/* Generate button */}
+        {/* Footer */}
+        <div className="px-5 py-3 border-t flex gap-2 justify-end" style={{ borderColor: "var(--color-card-hi)" }}>
           <button
-            data-testid="btn-generate"
-            onClick={() => generateMutation.mutate()}
-            disabled={generateMutation.isPending || isBlocked}
-            className="mt-4 w-full py-2.5 rounded font-medium text-sm transition-all disabled:opacity-40"
-            style={{
-              background: hexToRgba(accentColor, 0.15),
-              border: `1px solid ${accentColor}`,
-              color: accentColor,
-            }}
+            onClick={onClose}
+            disabled={isRunning}
+            className="text-xs px-4 py-2 rounded transition-all hover:opacity-80"
+            style={{ backgroundColor: "var(--color-card-hi)", color: "var(--color-dim)" }}
           >
-            {generateMutation.isPending
-              ? "Generating..."
-              : mode === "manual"
-              ? "✎ Build It with AI"
-              : mode === "semi"
-              ? "◐ Generate from Targets"
-              : "✦ Generate Full Build"}
+            Cancel
           </button>
-          {generateMutation.isPending && (
-            <p className="mt-2 text-xs text-center italic" style={{ color: "var(--color-dim)" }}>
-              Running 3 AI calls — usually 30–90 seconds.
-            </p>
-          )}
+          <button
+            onClick={handleGenerate}
+            disabled={isRunning || !description.trim()}
+            className="text-xs px-5 py-2 rounded font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+            style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
+          >
+            {isRunning ? "Generating…" : "Generate Build"}
+          </button>
         </div>
       </div>
     </div>

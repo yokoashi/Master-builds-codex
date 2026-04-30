@@ -35,24 +35,24 @@ export interface Build {
   caps: string[];
   weaponReq: string[];
   loadouts: Loadout[] | null;
-  phases: Phase[]; // always 7
-  sim: Variant[];
-  oth: Variant[];
+  phases: Phase[]; // Early Game, Mid Game, End Game, NG+
+  pros: string[];
+  cons: string[];
   ref: RefRow[];
   isAI?: boolean;
 }
 
 export interface Phase {
-  name: string;
-  range: string;
+  name: string;   // "Early Game" | "Mid Game" | "End Game" | "NG+"
+  range: string;  // e.g. "SL 1–30"
   stats: Record<string, number>;
-  sn: string; // short note
+  sn: string;     // short note / strategy summary
   weapons: Item[];
   armor: Item[];
-  acc: Item[];
+  acc: Item[];    // accessories: rings, talismans, etc.
   spells: Item[];
   dmg: { ps: number; sp: number; bs: number; n: string };
-  ngCycles?: NgCycle[]; // only on phase 7
+  ngCycles?: NgCycle[]; // only on NG+ phase
 }
 
 export interface NgCycle {
@@ -62,16 +62,18 @@ export interface NgCycle {
 }
 
 export interface Item {
-  n: string; // name
-  ap?: number; // attack power
-  wt?: number; // weight
-  ef?: string; // effect
-  st?: string; // status
-  eq: string; // equip slot
-  d: string; // description
-  loc: string; // location
-  up: string; // upgrade path
-  tip: string; // tip
+  n: string;        // name
+  ap?: number;      // attack power / AR
+  wt?: number;      // weight
+  ef?: string;      // effect / passive
+  st?: string;      // status buildup
+  eq: string;       // equip slot
+  d: string;        // description / role in build
+  loc: string;      // how / where to get it
+  up: string;       // upgrade path
+  tip: string;      // build-specific tip
+  lore?: string;    // short lore blurb
+  durability?: number; // base durability value
 }
 
 export interface Loadout {
@@ -84,33 +86,15 @@ export interface Loadout {
   cons: string[];
 }
 
-export interface Variant {
-  label: string;
-  sub: string;
-  icon: string;
-  a: string; // accent color
-  cls: string;
-  why: string;
-  ph: [CondensedPhase, CondensedPhase, CondensedPhase];
-  key: string[];
-  steps: string[];
-}
-
-export interface CondensedPhase {
-  name: string;
-  stats: Record<string, number>;
-  weapons: string[];
-}
-
 export interface RefRow {
-  n: string; // name
-  i: string; // icon/type
-  w: number; // weight
+  n: string;  // name
+  i: string;  // type/icon label
+  w: number;  // weight
   ap: number; // attack power
   st: string; // status effect
   ar: string; // armor rating
-  s: string; // scaling
-  a: string; // affinity
+  s: string;  // scaling
+  a: string;  // affinity / infusion
 }
 
 // ── Knowledge cache ────────────────────────────────────────────────────────────
@@ -122,7 +106,7 @@ export interface KnowledgeFact {
   ap?: number;
   status?: string;
   effect?: string;
-  /** Damage at each upgrade level: e.g. "100/120/145/170/200/230/260/295/330/365/400" (+0 to +10) */
+  /** Damage at each upgrade level: e.g. "100/120/145/170/200/230/260/295/330/365/400" (+0 to +15) */
   damageTable?: string;
   /** Scaling grade at each upgrade level: e.g. "D/D/C/C/B/B/B/A/A/A/S" */
   scalingTable?: string;
@@ -157,9 +141,7 @@ export interface GenerateStep1Request {
   statBudget: number;
   seedStats?: Record<string, number>;
   preferredWeapon?: string;
-  referenceUrl?: string;
   knowledgeBlock: string;
-  mode: "full" | "semi" | "manual";
 }
 
 export interface GenerateStep2Request {
@@ -176,17 +158,4 @@ export interface GenerateStep3Request {
   buildKey: string;
   partialBuild: Partial<Build>;
   knowledgeBlock: string;
-}
-
-export interface UpdateRequest {
-  gameKey: string;
-  gameName: string;
-  knowledgeBlock: string;
-}
-
-export interface UpdateResponse {
-  patchVersion: string;
-  summary: string;
-  changes: string[];
-  newFacts: KnowledgeFact[];
 }
