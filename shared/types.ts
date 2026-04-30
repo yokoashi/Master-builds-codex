@@ -97,39 +97,13 @@ export interface RefRow {
   a: string;  // affinity / infusion
 }
 
-// ── Knowledge cache ────────────────────────────────────────────────────────────
+// ── AI provider ────────────────────────────────────────────────────────────────
+export type AiProvider = "claude" | "pplx" | "openrouter";
+
+// ── Knowledge cache (minimal — kept for schema compat) ─────────────────────────
 export interface KnowledgeFact {
-  type: "WEAPON" | "SHIELD" | "CATALYST" | "ARMOR" | "RING" | "SPELL" | "BUFF" | "BUILD" | "ITEM" | "MECHANIC" | "GEM" | "UPGRADE" | "MAP" | "LORE";
+  type: string;
   name: string;
-  location?: string;
-  upgrade?: string;
-  ap?: number;
-  status?: string;
-  effect?: string;
-  /** Damage at each upgrade level: e.g. "100/120/145/170/200/230/260/295/330/365/400" (+0 to +15) */
-  damageTable?: string;
-  /** Scaling grade at each upgrade level: e.g. "D/D/C/C/B/B/B/A/A/A/S" */
-  scalingTable?: string;
-  /** Status buildup at each upgrade level: e.g. "30/35/40/45/50/55/62/70/77/82/85" */
-  statusTable?: string;
-  /** Stat requirements: e.g. "STR 12 / DEX 18" */
-  requirements?: string;
-  /** Physical defense (armor pieces) */
-  physDef?: number;
-  /** Magic defense (armor pieces) */
-  magicDef?: number;
-  /** Fire defense (armor pieces) */
-  fireDef?: number;
-  /** Lightning defense (armor pieces) */
-  lightningDef?: number;
-  /** Holy/dark/non-phys defense (armor pieces) */
-  holyDef?: number;
-  /** Poise (armor) or stability (shields) */
-  poise?: number;
-  /** Item weight */
-  weight?: number;
-  /** Quantity or count (upgrade mats, consumables) */
-  quantity?: string;
   raw: string;
 }
 
@@ -138,10 +112,13 @@ export interface GenerateStep1Request {
   gameKey: string;
   gameName: string;
   buildDescription: string;
-  statBudget: number;
-  seedStats?: Record<string, number>;
+  provider: AiProvider;
+  model: string;
   preferredWeapon?: string;
-  knowledgeBlock: string;
+  /** Semi-AI: per-phase stat seeds. Key = "phase1" | "phase2" | "phase3" | "phase4" */
+  seedStats?: Record<string, Record<string, number>>;
+  /** Semi-AI: free-text item constraints */
+  constraints?: string;
 }
 
 export interface GenerateStep2Request {
@@ -149,7 +126,8 @@ export interface GenerateStep2Request {
   gameName: string;
   buildKey: string;
   partialBuild: Partial<Build>;
-  knowledgeBlock: string;
+  provider: AiProvider;
+  model: string;
 }
 
 export interface GenerateStep3Request {
@@ -157,5 +135,6 @@ export interface GenerateStep3Request {
   gameName: string;
   buildKey: string;
   partialBuild: Partial<Build>;
-  knowledgeBlock: string;
+  provider: AiProvider;
+  model: string;
 }

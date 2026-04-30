@@ -38,6 +38,14 @@ function runMigrations(): void {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
   `);
+  getDb().run(`
+    CREATE TABLE IF NOT EXISTS codex_raw (
+      game_key TEXT NOT NULL UNIQUE,
+      raw_text TEXT NOT NULL,
+      entry_count INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+  `);
 }
 
 const app = express();

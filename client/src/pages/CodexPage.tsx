@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Game, Build, KnowledgeFact } from "@shared/types";
+import type { Game, Build } from "@shared/types";
 import { cn, hexToRgba } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import BuildTab from "@/components/BuildTab";
@@ -36,12 +36,13 @@ export default function CodexPage() {
   const game = games.find((g) => g.key === selectedGameKey) ?? null;
   const build = builds.find((b) => b.key === selectedBuildKey) ?? builds[0] ?? null;
 
-  // ── Knowledge cache ──────────────────────────────────────────────────────────
-  const { data: knowledgeData } = useQuery<{ facts: KnowledgeFact[]; patchNote: string | null }>({
-    queryKey: ["/api/knowledge", selectedGameKey],
-    queryFn: () => apiRequest<{ facts: KnowledgeFact[]; patchNote: string | null }>("GET", `/api/knowledge/${selectedGameKey}`),
+  // ── Codex status ──────────────────────────────────────────────────────────────
+  const { data: codexData } = useQuery<{ loaded: boolean; entryCount: number }>({
+    queryKey: ["/api/codex", selectedGameKey],
+    queryFn: () => apiRequest<{ loaded: boolean; entryCount: number }>("GET", `/api/codex/${selectedGameKey}`),
   });
-  const factCount = knowledgeData?.facts?.length ?? 0;
+  const codexLoaded  = codexData?.loaded ?? false;
+  const entryCount   = codexData?.entryCount ?? 0;
 
   // ── Delete mutation ──────────────────────────────────────────────────────────
   const deleteMutation = useMutation({
@@ -101,14 +102,14 @@ export default function CodexPage() {
     reader.onload = async (ev) => {
       try {
         const codex = JSON.parse(ev.target!.result as string) as Record<string, unknown>;
-        const result = await apiRequest<{ ok: boolean; factCount: number }>("POST", "/api/codex/import", {
+        const result = await apiRequest<{ ok: boolean; entryCount: number }>("POST", "/api/codex/import", {
           gameKey: game.key,
           gameName: game.name,
           codex,
         });
-        setCodexImportStatus(`${result.factCount} facts loaded`);
-        queryClient.invalidateQueries({ queryKey: ["/api/knowledge", selectedGameKey] });
-        toast({ title: `Codex loaded`, description: `${result.factCount} facts indexed for ${game.name}` });
+        setCodexImportStatus(`${result.entryCount.toLocaleString()} entries`);
+        queryClient.invalidateQueries({ queryKey: ["/api/codex", selectedGameKey] });
+        toast({ title: `Codex loaded`, description: `${result.entryCount.toLocaleString()} entries indexed for ${game.name}` });
       } catch {
         setCodexImportStatus("Parse failed");
         toast({ title: "Codex import error", description: "Invalid JSON or server error", variant: "destructive" });
@@ -179,7 +180,7 @@ export default function CodexPage() {
           {builds.length === 0 && (
             <div className="px-2 py-4 text-center">
               <p className="text-xs mb-1" style={{ color: "var(--color-dim)" }}>No builds yet</p>
-              {factCount === 0 && (
+              {!codexLoaded && (
                 <p className="text-xs" style={{ color: "var(--color-dim)" }}>
                   Import a codex first to enable AI generation
                 </p>
@@ -215,7 +216,7 @@ export default function CodexPage() {
         <div className="px-3 py-3 border-t space-y-1.5" style={{ borderColor: "var(--color-card-hi)" }}>
           <div className="flex items-center justify-between px-1 mb-2">
             <span className="text-xs" style={{ color: "var(--color-dim)" }}>
-              {importingCodex ? "Importing…" : codexImportStatus ?? (factCount > 0 ? `${factCount} facts` : "No codex")}
+              {importingCodex ? "Importing…" : codexImportStatus ?? (codexLoaded ? `${entryCount.toLocaleString()} entries` : "No codex")}
             </span>
             <button
               onClick={() => codexFileRef.current?.click()}
@@ -315,9 +316,9 @@ export default function CodexPage() {
               {game?.icon ?? "🔥"} {game?.name ?? "Dark Souls: Remastered"}
             </p>
             <p className="text-sm" style={{ color: "var(--color-dim)" }}>
-              {factCount === 0
+              {!codexLoaded
                 ? "Import a codex JSON, then generate your first build"
-                : `${factCount} facts loaded — generate a build to get started`}
+                : `${entryCount.toLocaleString()} codex entries loaded — generate a build to get started`}
             </p>
             <button
               onClick={() => setShowAddModal(true)}

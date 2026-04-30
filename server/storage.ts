@@ -78,6 +78,13 @@ interface CacheRow {
   updated_at: number;
 }
 
+interface CodexRawRow {
+  game_key: string;
+  raw_text: string;
+  entry_count: number;
+  updated_at: number;
+}
+
 // ── Row → domain-type mappers ─────────────────────────────────────────────────
 
 function rowToBuild(r: BuildRow): DynamicBuild {
@@ -138,6 +145,10 @@ export interface IStorage {
   getKnowledgeCache(gameKey: string): KnowledgeCache | undefined;
   upsertKnowledgeCache(data: InsertKnowledgeCache): KnowledgeCache;
   clearKnowledgeCache(gameKey: string): void;
+
+  // Raw codex storage
+  getCodexRaw(gameKey: string): { rawText: string; entryCount: number; updatedAt: Date } | undefined;
+  upsertCodexRaw(gameKey: string, rawText: string, entryCount: number): void;
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────
@@ -287,6 +298,33 @@ export class SQLiteStorage implements IStorage {
 
   clearKnowledgeCache(gameKey: string): void {
     getDb().run("DELETE FROM knowledge_cache WHERE game_key = ?", [gameKey]);
+    saveToDisk();
+  }
+
+  // ── Raw codex ───────────────────────────────────────────────────────────────
+
+  getCodexRaw(gameKey: string): { rawText: string; entryCount: number; updatedAt: Date } | undefined {
+    const row = queryOne<CodexRawRow>(
+      "SELECT * FROM codex_raw WHERE game_key = ?",
+      [gameKey]
+    );
+    if (!row) return undefined;
+    return { rawText: row.raw_text, entryCount: row.entry_count, updatedAt: new Date(row.updated_at * 1000) };
+  }
+
+  upsertCodexRaw(gameKey: string, rawText: string, entryCount: number): void {
+    const existing = this.getCodexRaw(gameKey);
+    if (existing) {
+      getDb().run(
+        "UPDATE codex_raw SET raw_text = ?, entry_count = ?, updated_at = unixepoch() WHERE game_key = ?",
+        [rawText, entryCount, gameKey]
+      );
+    } else {
+      getDb().run(
+        "INSERT INTO codex_raw (game_key, raw_text, entry_count, updated_at) VALUES (?, ?, ?, unixepoch())",
+        [gameKey, rawText, entryCount]
+      );
+    }
     saveToDisk();
   }
 }
