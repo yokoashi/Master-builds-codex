@@ -95,59 +95,80 @@ function phaseByName(obj: Record<string, unknown>, patterns: RegExp): unknown {
 }
 
 function normaliseStep1(p: Record<string, unknown>): Record<string, unknown> {
-  // Already correct
+  const earlyKeys = /early.?game|phase.?1|earlyGame/i;
+  const midKeys   = /mid.?game|phase.?2|midGame/i;
+
+  // 1. Already correct
   if (p.phase1 || p.phase2) return p;
 
-  // Nested under "phases" object key
+  // 2. Nested under "phases" object key
   const nested = p.phases as Record<string, unknown> | undefined;
   if (nested && typeof nested === "object" && !Array.isArray(nested)) {
     if (nested.phase1 || nested.phase2) return { ...p, ...nested };
   }
 
-  // Phases array [earlyGame, midGame, ...]
+  // 3. Phases array [earlyGame, midGame, ...]
   if (Array.isArray(p.phases) && p.phases.length >= 2) {
     return { ...p, phase1: p.phases[0], phase2: p.phases[1] };
   }
 
-  // By name (earlyGame / midGame keys or camelCase variants)
-  const earlyKeys = /early.?game|phase.?1|earlyGame/i;
-  const midKeys   = /mid.?game|phase.?2|midGame/i;
-  const phase1 =
-    p.phase_1 ?? p.earlyGame ?? p.early_game ??
-    phaseByName(p, earlyKeys);
-  const phase2 =
-    p.phase_2 ?? p.midGame ?? p.mid_game ??
-    phaseByName(p, midKeys);
+  // 4. By name / camelCase key variants at top level
+  const phase1 = p.phase_1 ?? p.earlyGame ?? p.early_game ?? phaseByName(p, earlyKeys);
+  const phase2 = p.phase_2 ?? p.midGame ?? p.mid_game ?? phaseByName(p, midKeys);
   if (phase1 || phase2) return { ...p, phase1, phase2 };
+
+  // 5. AI wrapped everything under a single top-level key e.g. { "build": { "phase1": ... } }
+  for (const val of Object.values(p)) {
+    if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+    const inner = val as Record<string, unknown>;
+    if (inner.phase1 || inner.phase2) return { ...p, ...inner };
+    // Also check camelCase / by-name inside the wrapper
+    const ip1 = inner.phase_1 ?? inner.earlyGame ?? inner.early_game ?? phaseByName(inner, earlyKeys);
+    const ip2 = inner.phase_2 ?? inner.midGame ?? inner.mid_game ?? phaseByName(inner, midKeys);
+    if (ip1 || ip2) return { ...p, ...inner, phase1: ip1, phase2: ip2 };
+    if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length >= 2) {
+      return { ...p, ...inner, phase1: (inner.phases as unknown[])[0], phase2: (inner.phases as unknown[])[1] };
+    }
+  }
 
   return p;
 }
 
 function normaliseStep2(p: Record<string, unknown>): Record<string, unknown> {
-  // Already correct
+  const endKeys = /end.?game|late.?game|phase.?3|endGame/i;
+  const ngKeys  = /ng\+|new.?game\+?|phase.?4|ngPlus/i;
+
+  // 1. Already correct
   if (p.phase3 || p.phase4) return p;
 
-  // Nested under "phases" object key
+  // 2. Nested under "phases" object key
   const nested = p.phases as Record<string, unknown> | undefined;
   if (nested && typeof nested === "object" && !Array.isArray(nested)) {
     if (nested.phase3 || nested.phase4) return { ...p, ...nested };
   }
 
-  // Phases array [endGame, ngPlus]
+  // 3. Phases array [endGame, ngPlus]
   if (Array.isArray(p.phases) && p.phases.length >= 2) {
     return { ...p, phase3: p.phases[0], phase4: p.phases[1] };
   }
 
-  // By name / camelCase variants
-  const endKeys = /end.?game|late.?game|phase.?3|endGame/i;
-  const ngKeys  = /ng\+|new.?game\+?|phase.?4|ngPlus/i;
-  const phase3 =
-    p.phase_3 ?? p.endGame ?? p.end_game ?? p.endgame ??
-    phaseByName(p, endKeys);
-  const phase4 =
-    p.phase_4 ?? p.ngPlus ?? p.ng_plus ?? p.ng ??
-    phaseByName(p, ngKeys);
+  // 4. By name / camelCase key variants at top level
+  const phase3 = p.phase_3 ?? p.endGame ?? p.end_game ?? p.endgame ?? phaseByName(p, endKeys);
+  const phase4 = p.phase_4 ?? p.ngPlus ?? p.ng_plus ?? p.ng ?? phaseByName(p, ngKeys);
   if (phase3 || phase4) return { ...p, phase3, phase4 };
+
+  // 5. AI wrapped everything under a single top-level key
+  for (const val of Object.values(p)) {
+    if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+    const inner = val as Record<string, unknown>;
+    if (inner.phase3 || inner.phase4) return { ...p, ...inner };
+    const ip3 = inner.phase_3 ?? inner.endGame ?? inner.end_game ?? inner.endgame ?? phaseByName(inner, endKeys);
+    const ip4 = inner.phase_4 ?? inner.ngPlus ?? inner.ng_plus ?? inner.ng ?? phaseByName(inner, ngKeys);
+    if (ip3 || ip4) return { ...p, ...inner, phase3: ip3, phase4: ip4 };
+    if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length >= 2) {
+      return { ...p, ...inner, phase3: (inner.phases as unknown[])[0], phase4: (inner.phases as unknown[])[1] };
+    }
+  }
 
   return p;
 }
@@ -312,8 +333,11 @@ Rules:
       const raw = parseJson(text) as Record<string, unknown>;
       const p   = normaliseStep1(raw);
       if (!p.phase1 && !p.phase2) {
-        console.error("[step1] MISSING phases after normalise:", JSON.stringify(raw).slice(0, 600));
-        return res.status(500).json({ error: "AI did not return Early Game / Mid Game phases. Try again or check your codex." });
+        const keys = Object.keys(raw).join(", ");
+        console.error("[step1] MISSING phases after normalise. Keys:", keys, "| Raw:", JSON.stringify(raw).slice(0, 800));
+        return res.status(500).json({
+          error: `AI did not return Early Game / Mid Game phases (got keys: ${keys || "none"}). Try again — if it keeps failing, try a shorter or simpler build description.`,
+        });
       }
       res.json(p);
     } catch (err) {
