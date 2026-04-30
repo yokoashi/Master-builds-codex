@@ -27,8 +27,15 @@ const STAGE_LABELS: Record<Stage, string> = {
 const PROVIDER_DEFAULTS: Record<AiProvider, string> = {
   claude:      "claude-sonnet-4-6",
   pplx:        "sonar-pro",
-  openrouter:  "",
+  openrouter:  "openai/gpt-4o",
 };
+
+const OPENROUTER_MODELS = [
+  { id: "openai/gpt-4o",      label: "GPT-4o" },
+  { id: "openai/gpt-4o-mini", label: "GPT-4o mini" },
+  { id: "openai/o3",          label: "o3" },
+  { id: "openai/o4-mini",     label: "o4-mini" },
+];
 
 const PROVIDER_LABELS: Record<AiProvider, string> = {
   claude:     "Claude",
@@ -391,21 +398,27 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
                 </div>
               </div>
 
-              {/* Model (shown only for openrouter, or if user wants to override) */}
+              {/* Model selector — tabs for the top OpenAI models on OpenRouter */}
               {provider === "openrouter" && (
                 <div>
-                  <label className={labelCls} style={labelStyle}>
-                    OpenRouter Model <span style={{ color: "var(--color-dim2)" }}>(required)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    disabled={isRunning}
-                    placeholder="e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o"
-                    className={inputCls}
-                    style={inputStyle}
-                  />
+                  <p className={labelCls} style={labelStyle}>Model</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {OPENROUTER_MODELS.map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => setModel(id)}
+                        disabled={isRunning}
+                        className="py-1.5 text-xs rounded transition-all"
+                        style={{
+                          backgroundColor: model === id ? "var(--color-card-hi)" : "transparent",
+                          color: model === id ? "var(--color-bright)" : "var(--color-dim)",
+                          border: `1px solid ${model === id ? "var(--color-gold)" : "var(--color-card-hi)"}`,
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
