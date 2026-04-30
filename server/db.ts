@@ -21,12 +21,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
 
-// ESM does not provide require() — create one bound to this file's URL.
-const require = createRequire(import.meta.url);
-
-// ESM does not provide __dirname — recreate it from import.meta.url
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+// import.meta.url is a valid file:// URL in ESM (tsx dev mode).
+// In esbuild CJS output (packaged Electron), import.meta becomes {} so .url is
+// undefined — fall back to process.argv[1] which is the entry script path.
+const _metaUrl: string | undefined = (import.meta as { url?: string }).url;
+const __filename: string = _metaUrl ? fileURLToPath(_metaUrl) : (process.argv[1] ?? "");
+const __dirname: string  = path.dirname(__filename);
+const require: NodeRequire = createRequire(_metaUrl ?? __filename);
 
 // process.resourcesPath is injected by Electron (undefined in plain Node).
 declare const process: NodeJS.Process & { resourcesPath?: string };
