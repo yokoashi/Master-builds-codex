@@ -62,7 +62,7 @@ export default function CodexPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/builds"] });
       setSelectedBuildKey(null);
       setDeletePending(null);
-      toast({ title: "Build deleted" });
+      toast({ title: "Chapter deleted" });
     },
   });
 
@@ -94,7 +94,7 @@ export default function CodexPage() {
         const result = await apiRequest<{ importedBuilds: number; importedGames: number; importedFacts: number }>("POST", "/api/import", data);
         queryClient.invalidateQueries({ queryKey: ["/api/builds"] });
         queryClient.invalidateQueries({ queryKey: ["/api/games"] });
-        toast({ title: `Imported: ${result.importedBuilds} builds, ${result.importedGames} games` });
+        toast({ title: `Imported: ${result.importedBuilds} chapters, ${result.importedGames} books` });
       } catch {
         toast({ title: "Import failed", description: "Invalid file format", variant: "destructive" });
       }
@@ -152,9 +152,9 @@ export default function CodexPage() {
           </h1>
         </div>
 
-        {/* Game selector */}
+        {/* Book selector */}
         <div className="px-3 py-3 border-b" style={{ borderColor: "var(--color-card-hi)" }}>
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>Game</p>
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>Book</p>
           <div className="flex flex-col gap-1">
             {games.map((g) => (
               <button
@@ -177,12 +177,12 @@ export default function CodexPage() {
         {/* Builds list */}
         <div className="flex-1 overflow-y-auto px-2 py-2">
           <div className="flex items-center justify-between px-1 mb-2">
-            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Builds</p>
+            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Chapters</p>
             <button
               onClick={() => setShowAddModal(true)}
               className="text-xs px-2 py-0.5 rounded font-medium transition-all hover:opacity-90"
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
-              title="Generate a new build with AI"
+              title="Write a new chapter with AI"
             >
               + New
             </button>
@@ -190,7 +190,7 @@ export default function CodexPage() {
 
           {builds.length === 0 && (
             <div className="px-2 py-4 text-center">
-              <p className="text-xs mb-1" style={{ color: "var(--color-dim)" }}>No builds yet</p>
+              <p className="text-xs mb-1" style={{ color: "var(--color-dim)" }}>No chapters yet</p>
               {!codexLoaded && (
                 <p className="text-xs" style={{ color: "var(--color-dim)" }}>
                   Import a codex first to enable AI generation
@@ -329,15 +329,15 @@ export default function CodexPage() {
             </p>
             <p className="text-sm" style={{ color: "var(--color-dim)" }}>
               {!codexLoaded
-                ? "Import a codex JSON, then generate your first build"
-                : `${entryCount.toLocaleString()} codex entries loaded — generate a build to get started`}
+                ? "Import a codex JSON, then write your first chapter"
+                : `${entryCount.toLocaleString()} codex entries loaded — begin your first chapter`}
             </p>
             <button
               onClick={() => setShowAddModal(true)}
               className="px-5 py-2 rounded font-medium text-sm transition-all hover:opacity-90"
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
             >
-              + Generate Build
+              + Begin Chapter
             </button>
           </div>
         )}
@@ -352,7 +352,7 @@ export default function CodexPage() {
             queryClient.invalidateQueries({ queryKey: ["/api/builds"] });
             setSelectedBuildKey(b.key);
             setShowAddModal(false);
-            toast({ title: `${b.label} created` });
+            toast({ title: `${b.label} — chapter written` });
           }}
         />
       )}

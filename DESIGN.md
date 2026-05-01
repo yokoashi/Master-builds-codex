@@ -394,16 +394,39 @@ Express server (dist/index.cjs)
 
 ---
 
-## Storybook Theme Summary
+## Storybook Theme & Terminology
 
-The app is designed around a **dark fantasy storybook** identity. Every AI-generated build is treated as a story with chapters:
+The app is designed around a **dark fantasy storybook** identity. The language used throughout the UI reflects this:
+
+| Concept | UI label | Internal name (code/API) |
+|---|---|---|
+| A game (e.g. Dark Souls: Remastered) | **Book** | `gameKey`, `game`, `/api/games` |
+| A build | **Chapter** | `buildKey`, `build`, `/api/builds` |
+
+**Never use "game" or "build" in user-facing UI copy.** Internal variable names, API routes, and DB fields keep their original names — only the displayed text changes.
+
+### Storybook UI elements per build
 
 | Element | Where | Example |
 |---|---|---|
-| Build title | Sidebar + header | "Shadow of Anor Londo" |
-| Build subtitle | Header | "The Silver Knight's Ruin" |
+| Chapter title | Sidebar + header | "Shadow of Anor Londo" |
+| Chapter subtitle | Header | "The Silver Knight's Ruin" |
 | Phase tabs | BuildTab tab bar | "I — The Vow of the Sacred Flame" |
 | Phase chapter header | BuildTab content | "CHAPTER I / The Vow of the Sacred Flame / Early Game · SL 1–20" |
 | Tab labels | Top nav | "Disciplines of Frost", "Scholar's Tome", "Truths & Burdens" |
 
-All of these fall back gracefully for old builds that lack the new optional fields.
+### Key copy touchpoints
+| Action | UI text |
+|---|---|
+| Sidebar section | "Book" (was "Game"), "Chapters" (was "Builds") |
+| New build button tooltip | "Write a new chapter with AI" |
+| Empty state CTA | "+ Begin Chapter" |
+| Modal title | "New Chapter" |
+| Generate button | "Begin Chapter" / "Writing…" |
+| Manual save button | "Save Chapter" / "Writing…" |
+| Success toast | "{label} — chapter written" |
+| Delete modal title | "Close the Chapter" |
+| Delete modal body | "Permanently erase {label} from the codex?" |
+| Import toast | "Imported: N chapters, N books" |
+
+All storybook elements fall back gracefully for old builds that lack optional fields (`chapter`, `tabNames`).

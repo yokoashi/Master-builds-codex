@@ -178,7 +178,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
       return;
     }
     if (!parsed.key || !parsed.label) {
-      setManualError("Build must have key and label.");
+      setManualError("Chapter must have key and label.");
       return;
     }
     setStage("finalizing");
@@ -211,7 +211,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   // ── AI generation pipeline ────────────────────────────────────────────────
   async function handleGenerate() {
     if (!description.trim()) {
-      toast({ title: "Describe your build first", variant: "destructive" });
+      toast({ title: "Describe your chapter first", variant: "destructive" });
       return;
     }
 
@@ -343,7 +343,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         <div className="px-5 py-4 border-b flex items-center justify-between flex-shrink-0" style={{ borderColor: "var(--color-card-hi)" }}>
           <div>
             <h2 className="font-display text-base font-bold" style={{ color: "var(--color-bright)" }}>
-              New Build
+              New Chapter
             </h2>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>{game.name}</p>
           </div>
@@ -382,7 +382,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
           {mode === "manual" && (
             <>
               <div>
-                <label className={labelCls} style={labelStyle}>Build JSON</label>
+                <label className={labelCls} style={labelStyle}>Chapter JSON</label>
                 <textarea
                   value={manualJson}
                   onChange={(e) => setManualJson(e.target.value)}
@@ -438,7 +438,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
 
               {/* Build concept */}
               <div>
-                <label className={labelCls} style={labelStyle}>Build Concept *</label>
+                <label className={labelCls} style={labelStyle}>Chapter Concept *</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -583,7 +583,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
               className="text-xs px-5 py-2 rounded font-semibold transition-all hover:opacity-90 disabled:opacity-40"
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
             >
-              {isRunning ? "Saving…" : "Save Build"}
+              {isRunning ? "Writing…" : "Save Chapter"}
             </button>
           ) : (
             <button
@@ -592,7 +592,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
               className="text-xs px-5 py-2 rounded font-semibold transition-all hover:opacity-90 disabled:opacity-40"
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
             >
-              {isRunning ? "Generating…" : "Generate Build"}
+              {isRunning ? "Writing…" : "Begin Chapter"}
             </button>
           )}
         </div>

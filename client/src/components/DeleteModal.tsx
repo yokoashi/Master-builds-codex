@@ -15,7 +15,7 @@ export default function DeleteModal({ build, onConfirm, onCancel, isLoading }: P
       style={{ background: "rgba(0,0,0,0.7)" }}
       role="dialog"
       aria-modal="true"
-      aria-label="Delete build confirmation"
+      aria-label="Delete chapter confirmation"
     >
       <div
         className="rounded-lg p-6 max-w-sm w-full"
@@ -26,12 +26,12 @@ export default function DeleteModal({ build, onConfirm, onCancel, isLoading }: P
           className="text-lg font-bold mb-2"
           style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
         >
-          Delete Build
+          Close the Chapter
         </h2>
         <p className="text-sm mb-4" style={{ color: "var(--color-dim)" }}>
-          Are you sure you want to delete{" "}
-          <strong style={{ color: build.accent }}>{build.label}</strong>? This
-          cannot be undone.
+          Permanently erase{" "}
+          <strong style={{ color: build.accent }}>{build.label}</strong> from the
+          codex? This cannot be undone.
         </p>
         <div className="flex gap-3 justify-end">
           <button
