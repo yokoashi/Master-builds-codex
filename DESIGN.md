@@ -200,16 +200,17 @@ Each build has its own `accent` hex (e.g. `#8b4a8a`). Use `hexToRgba(accent, 0.0
 ```
 Step 1 → /api/generate/step1
   Generates: metadata (key, label, cls, caps, etc.) + phase1 (Early) + phase2 (Mid)
-  Web search: enabled if < 20 cached facts or referenceUrl provided
+  System prompt: full codex block (cacheable) + instruction block
   Output: partialBuild with phase1 + phase2
 
 Step 2 → /api/generate/step2
   Generates: phase3 (End Game) + phase4 (NG+) with ngCycles
-  Extended thinking: budget_tokens 5000
+  System prompt: full codex block (cache HIT from step1) + instruction block
   Output: { phase3, phase4 }
 
 Step 3 → /api/generate/step3
   Generates: pros, cons, ref (quick-ref rows)
+  System prompt: LIGHT — no codex (build data already in user message)
   Non-fatal: if this fails, empty arrays are used
   Output: { pros, cons, ref }
 
@@ -218,6 +219,21 @@ Finalize → /api/generate/finalize
   Extracts knowledge facts into cache
 ```
 
+### Cost Optimisation (important — don't regress this)
+The codex can be 100K+ chars (expensive tokens). Two techniques keep cost down:
+
+**1. Prompt cache split** — `callAI` splits the Claude system prompt at the `"\n\nYou are an expert"` boundary into:
+- Block 1: codex only, `cache_control: ephemeral` — **identical** across all steps for same game
+- Block 2: instruction text, no cache_control — varies per step
+After step1 caches the codex, step2 gets a cache-read hit (~10% cost). This saves ~60% of codex input cost.
+
+**2. Light prompt for step3** — pros/cons/ref don't need the codex. `buildSystemPrompt(light=true)` omits it entirely.
+
+**`CODEX_CHAR_LIMITS`** in `knowledge.ts`:
+- claude: 150,000 chars (~37K tokens)
+- pplx: 80,000 chars
+- openrouter: 40,000 chars
+
 ### JSON Robustness
 - AI often returns truncated JSON — `parse-json.ts` tries 4 strategies:
   1. Direct parse
@@ -225,6 +241,13 @@ Finalize → /api/generate/finalize
   3. **Repair** (closes unclosed braces — runs BEFORE depth-walk to preserve outer build object)
   4. Depth-walk (finds longest balanced sub-object — last resort)
 - `normaliseStep1` / `normaliseStep2` handle 6+ structural variants AIs use instead of the exact schema
+- Bare-phase detection: if the parsed top-level object looks like a phase (`sn`+`weapons`+`dmg` keys), it's promoted to `phase1` rather than erroring
+
+### Creative Naming Rules (enforced in step1 prompt)
+- `label`: evocative proper title rooted in game lore — NOT a stat description. e.g. "Voidwalker", "The Iron Heretic", "Daughter of Chaos"
+- `sub`: poetic subtitle — archetype, lore fragment, or thematic phrase. e.g. "Keeper of the First Flame"
+- `accent`: dark hex matching the build theme (deep crimson for fire, dark violet for sorcery, etc.)
+- Bad examples explicitly flagged in prompt: "Pure STR Build", "Magic Sorcerer Build"
 
 ---
 
@@ -295,6 +318,14 @@ Express server (dist/index.cjs)
 - **No literal `...` in AI prompts** — use `<phase2>` style markers
 - **sql.js WASM** must be in `asarUnpack` in electron-builder config to load from Electron
 - **ESM/CJS dual mode** — any server file using `import.meta.url` needs the `_metaUrl` guard
+- **Don't regress the prompt cache split** — the codex block must stay identical across step1/step2 for cache hits to work. Any change that appends game-specific data to the codex block will break it.
+
+### Env Var Names (must match between electron/main.ts and server/routes.ts)
+| Config key | Env var set by Electron | Env var read by routes.ts |
+|-----------|------------------------|--------------------------|
+| CLAUDE_API_KEY | `CLAUDE_API_KEY` | `process.env.CLAUDE_API_KEY` |
+| PERPLEXITY_API_KEY | `PERPLEXITY_API_KEY` | `process.env.PERPLEXITY_API_KEY` (fallback: PPLX_API_KEY) |
+| OPEN_ROUTER_API_KEY | `OPEN_ROUTER_API_KEY` | `process.env.OPEN_ROUTER_API_KEY` (fallback: OPENROUTER_API_KEY) |
 
 ---
 

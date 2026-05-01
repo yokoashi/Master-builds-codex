@@ -319,12 +319,12 @@ ${phaseHint("phase1")}${phaseHint("phase2")}
 Return this EXACT JSON structure:
 
 {
-  "key": "kebab-case-build-name",
+  "key": "shadow-of-anor-londo",
   "gameKey": "${gameKey}",
-  "label": "Build Name",
-  "sub": "Short Subtitle",
-  "icon": "single emoji",
-  "accent": "#hexcolor",
+  "label": "Shadow of Anor Londo",
+  "sub": "The Silver Knight's Ruin",
+  "icon": "single emoji that fits the build theme",
+  "accent": "#2a1a3a",
   "playstyle": "2-3 sentence playstyle overview",
   "cls": "Starting class name",
   "caps": ["STAT 40", "STAT 50"],
@@ -357,11 +357,14 @@ Return this EXACT JSON structure:
 }
 
 Rules:
+- label: give the build an evocative proper name or poetic title rooted in ${gameName} lore — NEVER a stat description. Good: "Voidwalker", "The Iron Heretic", "Daughter of Chaos". Bad: "Pure STR Build", "Magic Sorcerer Build"
+- sub: a poetic subtitle — a character archetype, lore fragment, or thematic phrase. Good: "Keeper of the First Flame", "Sellsword of the Painted World". Bad: "STR/FAI hybrid"
+- key: kebab-case of the label
 - Every item loc must be a real ${gameName} location or drop source
 - Include lore and durability for every item
 - Rings go in "acc" array; spells/pyromancies/miracles go in "spells"
 - Stats must fit the soul level range
-- accent must be a dark hex color
+- accent must be a dark hex color that fits the build's theme (e.g. deep crimson for fire, dark violet for sorcery)
 - steps: include a ["Step 1: ...", "Step 2: ..."] array ONLY for items requiring NPC questlines or multi-step acquisition (e.g. Logan's Catalyst, Moonlight Greatsword). Leave null for simple drops, loot, or merchant purchases.`;
 
     try {
