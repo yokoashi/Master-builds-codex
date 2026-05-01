@@ -11,7 +11,7 @@ A multi-game soulslike build guide with:
 - **AI-generated builds** (3-step pipeline via Claude / Perplexity / OpenRouter)
 - **Persistent SQLite storage** (sql.js WASM, zero native binaries)
 - **Knowledge cache** (per-game codex of item facts that seeds AI prompts)
-- **4-phase build structure** per build (Early / Mid / End / NG+)
+- **6-phase build structure** per build (Early / Early-Mid / Mid / Late / End / NG+)
 
 Runs as both a **web app** (Vite + Express dev server) and a packaged **Electron desktop app**.
 
@@ -115,7 +115,7 @@ Each build has its own `accent` hex (e.g. `#8b4a8a`). Use `hexToRgba(accent, 0.0
   caps: string[]         // ["INT 50", "END 40"] — soft cap targets
   weaponReq: string[]    // ["STR 10", "DEX 14"]
   loadouts: Loadout[] | null
-  phases: Phase[]        // always 4: Early Game, Mid Game, End Game, NG+
+  phases: Phase[]        // 6 phases: Early Game, Early-Mid Game, Mid Game, Late Game, End Game, NG+
   pros: string[]
   cons: string[]
   ref: RefRow[]          // quick-ref table rows
@@ -126,8 +126,8 @@ Each build has its own `accent` hex (e.g. `#8b4a8a`). Use `hexToRgba(accent, 0.0
 ### Phase
 ```typescript
 {
-  name: string           // "Early Game" | "Mid Game" | "End Game" | "NG+"
-  range: string          // "SL 1-30"
+  name: string           // "Early Game" | "Early-Mid Game" | "Mid Game" | "Late Game" | "End Game" | "NG+"
+  range: string          // "SL 1-20"
   stats: Record<string, number>  // { VIT: 14, ATT: 8, ... }
   sn: string             // strategy note (2-3 sentences)
   weapons: Item[]
@@ -175,7 +175,8 @@ Each build has its own `accent` hex (e.g. `#8b4a8a`). Use `hexToRgba(accent, 0.0
 | Quick Ref | `QuickRefTab` | Compact sortable table |
 
 ### BuildTab phase navigation
-- 4 phases always: Early Game (I) → Mid Game (II) → End Game (III) → NG+
+- 6 phases: Early Game (I) → Early-Mid Game (II) → Mid Game (III) → Late Game (IV) → End Game (V) → NG+
+- Phase label uses Roman numerals I–V for non-NG+ phases; NG+ detected by `/ng\+|new.?game/i`
 - Each phase has its own item cards (via `ItemCard`) with expand/collapse
 - Soft-cap markers shown in `StatBar`
 
@@ -199,14 +200,14 @@ Each build has its own `accent` hex (e.g. `#8b4a8a`). Use `hexToRgba(accent, 0.0
 
 ```
 Step 1 → /api/generate/step1
-  Generates: metadata (key, label, cls, caps, etc.) + phase1 (Early) + phase2 (Mid)
+  Generates: metadata (key, label, cls, caps, etc.) + phase1 (Early) + phase2 (Early-Mid) + phase3 (Mid)
   System prompt: full codex block (cacheable) + instruction block
-  Output: partialBuild with phase1 + phase2
+  Output: partialBuild with phase1 + phase2 + phase3
 
 Step 2 → /api/generate/step2
-  Generates: phase3 (End Game) + phase4 (NG+) with ngCycles
+  Generates: phase4 (Late Game) + phase5 (End Game) + phase6 (NG+) with ngCycles
   System prompt: full codex block (cache HIT from step1) + instruction block
-  Output: { phase3, phase4 }
+  Output: { phase4, phase5, phase6 }
 
 Step 3 → /api/generate/step3
   Generates: pros, cons, ref (quick-ref rows)
@@ -215,7 +216,7 @@ Step 3 → /api/generate/step3
   Output: { pros, cons, ref }
 
 Finalize → /api/generate/finalize
-  Assembles all steps into Build, saves to DB
+  Assembles all steps into Build (phases: [phase1..phase6].filter(Boolean)), saves to DB
   Extracts knowledge facts into cache
 ```
 

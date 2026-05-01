@@ -16,8 +16,8 @@ type Stage = "idle" | "step1" | "step2" | "step3" | "finalizing" | "done" | "err
 
 const STAGE_LABELS: Record<Stage, string> = {
   idle:       "",
-  step1:      "Generating metadata + Early / Mid Game phases…",
-  step2:      "Generating End Game + NG+ phases…",
+  step1:      "Generating metadata + Early / Early-Mid / Mid Game phases…",
+  step2:      "Generating Late Game + End Game + NG+ phases…",
   step3:      "Writing pros, cons & quick-ref…",
   finalizing: "Saving build…",
   done:       "Complete",
@@ -88,28 +88,40 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         loadouts: null,
         phases: [
           {
-            name: "Early Game", range: "SL 1-30",
-            stats: { VIT: 14, ATT: 8, END: 20, STR: 16, DEX: 14, RES: 11, INT: 9, FTH: 9 },
+            name: "Early Game", range: "SL 1-20",
+            stats: { VIT: 12, ATT: 8, END: 16, STR: 14, DEX: 13, RES: 11, INT: 9, FTH: 9 },
             sn: "Early game strategy.", weapons: [], armor: [], acc: [], spells: [],
-            dmg: { ps: 150, sp: 100, bs: 300, n: "Early damage" },
+            dmg: { ps: 120, sp: 90, bs: 240, n: "Early damage" },
           },
           {
-            name: "Mid Game", range: "SL 30-60",
-            stats: { VIT: 20, ATT: 8, END: 28, STR: 25, DEX: 20, RES: 11, INT: 9, FTH: 9 },
+            name: "Early-Mid Game", range: "SL 20-40",
+            stats: { VIT: 18, ATT: 8, END: 22, STR: 18, DEX: 16, RES: 11, INT: 9, FTH: 9 },
+            sn: "Transition strategy.", weapons: [], armor: [], acc: [], spells: [],
+            dmg: { ps: 190, sp: 160, bs: 380, n: "Early-mid damage" },
+          },
+          {
+            name: "Mid Game", range: "SL 40-60",
+            stats: { VIT: 25, ATT: 10, END: 28, STR: 24, DEX: 22, RES: 11, INT: 9, FTH: 9 },
             sn: "Mid game strategy.", weapons: [], armor: [], acc: [], spells: [],
-            dmg: { ps: 250, sp: 180, bs: 480, n: "Mid damage" },
+            dmg: { ps: 270, sp: 220, bs: 540, n: "Mid damage" },
+          },
+          {
+            name: "Late Game", range: "SL 60-80",
+            stats: { VIT: 32, ATT: 12, END: 34, STR: 32, DEX: 30, RES: 11, INT: 9, FTH: 9 },
+            sn: "Late game strategy.", weapons: [], armor: [], acc: [], spells: [],
+            dmg: { ps: 340, sp: 285, bs: 680, n: "Late damage" },
           },
           {
             name: "End Game", range: "SL 80-120",
-            stats: { VIT: 40, ATT: 8, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
+            stats: { VIT: 42, ATT: 14, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
             sn: "Endgame strategy.", weapons: [], armor: [], acc: [], spells: [],
-            dmg: { ps: 400, sp: 300, bs: 800, n: "Peak damage" },
+            dmg: { ps: 420, sp: 360, bs: 840, n: "Peak damage" },
           },
           {
             name: "NG+", range: "NG+1 and beyond",
-            stats: { VIT: 50, ATT: 8, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
+            stats: { VIT: 50, ATT: 14, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
             sn: "NG+ strategy.", weapons: [], armor: [], acc: [], spells: [],
-            dmg: { ps: 400, sp: 300, bs: 800, n: "Same damage; enemies scale" },
+            dmg: { ps: 420, sp: 360, bs: 840, n: "Same damage; enemies scale" },
             ngCycles: [
               { label: "NG+1", stats: { VIT: 50 }, notes: "~20% harder" },
               { label: "NG+7", stats: { VIT: 65 }, notes: "~150% harder" },
@@ -179,10 +191,12 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
           ...parsed,
           phase1: parsed.phases?.[0],
           phase2: parsed.phases?.[1],
+          phase3: parsed.phases?.[2],
         },
         step2: {
-          phase3: parsed.phases?.[2],
           phase4: parsed.phases?.[3],
+          phase5: parsed.phases?.[4],
+          phase6: parsed.phases?.[5],
         },
         step3: { pros: parsed.pros ?? [], cons: parsed.cons ?? [], ref: parsed.ref ?? [] },
       });

@@ -4,13 +4,11 @@ import { cn, hexToRgba } from "@/lib/utils";
 import ItemCard from "./ItemCard";
 import StatBar from "./StatBar";
 
-// Phase 4 names used in navigation
-const PHASE_ICONS: Record<string, string> = {
-  "Early Game": "I",
-  "Mid Game": "II",
-  "End Game": "III",
-  "NG+": "NG+",
-};
+const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
+function phaseShortLabel(name: string, index: number): string {
+  if (/ng\+|new.?game/i.test(name)) return "NG+";
+  return ROMAN[index] ?? String(index + 1);
+}
 
 interface Props {
   build: Build;
@@ -104,7 +102,7 @@ export default function BuildTab({ build, game }: Props) {
                 }}
                 data-testid={`phase-btn-${i}`}
               >
-                {PHASE_ICONS[p.name] ?? String(i + 1)} {p.name}
+                {phaseShortLabel(p.name, i)} {p.name}
               </button>
             ))}
           </div>
