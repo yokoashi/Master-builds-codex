@@ -35,10 +35,24 @@ async function callAI(
   userPrompt: string,
 ): Promise<string> {
   if (provider === "claude") {
+    // Split system prompt into a stable codex block and a variable instruction block.
+    // The codex block is identical across step1 → step2 → step3 for the same game,
+    // so Anthropic's ephemeral prompt cache (5-min window) reuses it on steps 2 & 3
+    // instead of charging full input-token price each time.
+    const SPLIT = "\n\nYou are an expert";
+    const idx = systemPrompt.indexOf(SPLIT);
+    const systemBlocks: Array<{ type: "text"; text: string; cache_control?: { type: "ephemeral" } }> =
+      idx > 0
+        ? [
+            { type: "text", text: systemPrompt.slice(0, idx), cache_control: { type: "ephemeral" } },
+            { type: "text", text: systemPrompt.slice(idx + 2) },
+          ]
+        : [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+
     const resp = await claude.messages.create({
       model: model || CLAUDE_MODEL,
       max_tokens: 8000,
-      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      system: systemBlocks,
       messages: [{ role: "user", content: userPrompt }],
     });
     return resp.content.find((b) => b.type === "text")?.text ?? "";
@@ -183,8 +197,19 @@ function normaliseStep2(p: Record<string, unknown>): Record<string, unknown> {
   return p;
 }
 
-// ── System prompt builder (injects full codex, provider-aware size limit) ─────
-function buildSystemPrompt(gameKey: string, gameName: string, provider: AiProvider, extra = ""): string {
+// ── System prompt builder ──────────────────────────────────────────────────────
+// light=true skips the codex entirely (step3 only needs the build data already
+// in the user message, so there's no reason to send 150K chars of codex again).
+function buildSystemPrompt(
+  gameKey: string,
+  gameName: string,
+  provider: AiProvider,
+  extra = "",
+  light = false,
+): string {
+  if (light) {
+    return `You are an expert ${gameName} build guide writer. Generate accurate build analysis in JSON format.${extra ? `\n${extra}` : ""}`;
+  }
   const maxChars = CODEX_CHAR_LIMITS[provider] ?? 80_000;
   const knowledge = buildKnowledgeBlock(gameKey, maxChars);
   return `${knowledge}
@@ -431,7 +456,7 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
     const body = req.body as GenerateStep3Request;
     const { gameKey, gameName, partialBuild, provider, model } = body;
 
-    const systemPrompt = buildSystemPrompt(gameKey, gameName, provider);
+    const systemPrompt = buildSystemPrompt(gameKey, gameName, provider, "", true); // light — no codex needed for pros/cons/ref
 
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
