@@ -49,14 +49,14 @@ async function callAI(
     ? "https://api.perplexity.ai"
     : "https://openrouter.ai/api/v1";
   const apiKey = provider === "pplx"
-    ? (process.env.PPLX_API_KEY ?? "")
-    : (process.env.OPENROUTER_API_KEY ?? "");
+    ? (process.env.PERPLEXITY_API_KEY ?? process.env.PPLX_API_KEY ?? "")
+    : (process.env.OPEN_ROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY ?? "");
 
   if (!apiKey) {
     throw new Error(
       provider === "pplx"
-        ? "PPLX_API_KEY environment variable is not set."
-        : "OPENROUTER_API_KEY environment variable is not set.",
+        ? "PERPLEXITY_API_KEY is not set. Add it in the app settings."
+        : "OPEN_ROUTER_API_KEY is not set. Add it in the app settings.",
     );
   }
 
