@@ -488,12 +488,12 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
     }
   });
 
-  // POST /api/generate/step3 — pros / cons / quick-ref
+  // POST /api/generate/step3 — pros / cons / quick-ref / tab names
   app.post("/api/generate/step3", async (req, res) => {
     const body = req.body as GenerateStep3Request;
     const { gameKey, gameName, partialBuild, provider, model } = body;
 
-    const systemPrompt = buildSystemPrompt(gameKey, gameName, provider, "", true); // light — no codex needed for pros/cons/ref
+    const systemPrompt = buildSystemPrompt(gameKey, gameName, provider, "", true); // light — no codex needed
 
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
@@ -506,14 +506,22 @@ Caps: ${JSON.stringify(partialBuild.caps)}
   "cons": [ "Con 1 — honest weakness", "Con 2", "Con 3", "Con 4" ],
   "ref": [
     { "n": "Item Name", "i": "Type", "w": 5.0, "ap": 270, "st": "Bleed 45 or —", "ar": "Poise 12 or —", "s": "A/D or —", "a": "Sharp or —" }
-  ]
+  ],
+  "tabNames": {
+    "build": "Disciplines of Frost",
+    "progression": "The Chosen Path",
+    "materials": "The Arcane Arsenal",
+    "prosCons": "Truths & Burdens",
+    "quickRef": "Scholar's Tome"
+  }
 }
 
-Include the 5-8 most important items in ref. Pros/cons must be specific to this ${gameName} build.`;
+Include the 5-8 most important items in ref. Pros/cons must be specific to this ${gameName} build.
+tabNames: 2-4 word lore-flavored labels for each UI tab, themed to this specific build. They replace the generic "Your Build / Progression / Materials / Pros & Cons / Quick Ref" labels. Keep them short enough to fit in a tab.`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
-      let parsed: { pros?: string[]; cons?: string[]; ref?: unknown[] } = {};
+      let parsed: { pros?: string[]; cons?: string[]; ref?: unknown[]; tabNames?: Record<string, string> } = {};
       try { parsed = parseJson<typeof parsed>(text); } catch { /* non-fatal */ }
       res.json(parsed);
     } catch {
@@ -529,7 +537,7 @@ Include the 5-8 most important items in ref. Pros/cons must be specific to this 
       buildKey: string;
       step1: Record<string, unknown>;
       step2: Record<string, unknown>;
-      step3: { pros: string[]; cons: string[]; ref: unknown[] };
+      step3: { pros: string[]; cons: string[]; ref: unknown[]; tabNames?: Record<string, string> };
     };
 
     const build: Build = {
@@ -555,6 +563,7 @@ Include the 5-8 most important items in ref. Pros/cons must be specific to this 
       pros: step3?.pros ?? [],
       cons: step3?.cons ?? [],
       ref:  (step3?.ref as Build["ref"]) ?? [],
+      tabNames: step3?.tabNames as Build["tabNames"] ?? undefined,
       isAI: true,
     };
 

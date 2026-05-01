@@ -23,6 +23,14 @@ export interface WeightTier {
   note: string;
 }
 
+export interface BuildTabNames {
+  build?: string;       // replaces "Your Build"
+  progression?: string; // replaces "Progression"
+  materials?: string;   // replaces "Materials"
+  prosCons?: string;    // replaces "Pros & Cons"
+  quickRef?: string;    // replaces "Quick Ref"
+}
+
 export interface Build {
   key: string;
   gameKey: string;
@@ -35,10 +43,11 @@ export interface Build {
   caps: string[];
   weaponReq: string[];
   loadouts: Loadout[] | null;
-  phases: Phase[]; // Early Game, Mid Game, End Game, NG+
+  phases: Phase[];
   pros: string[];
   cons: string[];
   ref: RefRow[];
+  tabNames?: BuildTabNames;
   isAI?: boolean;
 }
 

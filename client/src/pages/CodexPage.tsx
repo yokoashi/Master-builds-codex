@@ -12,15 +12,23 @@ import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 
-const TABS = ["Your Build", "Progression", "Materials", "Pros & Cons", "Quick Ref"] as const;
-type Tab = typeof TABS[number];
+const TAB_KEYS = ["build", "progression", "materials", "prosCons", "quickRef"] as const;
+type TabKey = typeof TAB_KEYS[number];
+
+const DEFAULT_TAB_LABELS: Record<TabKey, string> = {
+  build:       "Your Build",
+  progression: "Progression",
+  materials:   "Materials",
+  prosCons:    "Pros & Cons",
+  quickRef:    "Quick Ref",
+};
 
 export default function CodexPage() {
   const { toast } = useToast();
 
   const [selectedGameKey, setSelectedGameKey] = useState<string>("ds1r");
   const [selectedBuildKey, setSelectedBuildKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("Your Build");
+  const [activeTab, setActiveTab] = useState<TabKey>("build");
   const [showAddModal, setShowAddModal] = useState(false);
   const [deletePending, setDeletePending] = useState<Build | null>(null);
   const [importingCodex, setImportingCodex] = useState(false);
@@ -36,6 +44,8 @@ export default function CodexPage() {
   const builds = allBuilds.filter((b) => b.gameKey === selectedGameKey);
   const game = games.find((g) => g.key === selectedGameKey) ?? null;
   const build = builds.find((b) => b.key === selectedBuildKey) ?? builds[0] ?? null;
+
+  const tabLabel = (key: TabKey) => build?.tabNames?.[key] ?? DEFAULT_TAB_LABELS[key];
 
   // ── Codex status ──────────────────────────────────────────────────────────────
   const { data: codexData } = useQuery<{ loaded: boolean; entryCount: number }>({
@@ -149,7 +159,7 @@ export default function CodexPage() {
             {games.map((g) => (
               <button
                 key={g.key}
-                onClick={() => { setSelectedGameKey(g.key); setSelectedBuildKey(null); setActiveTab("Your Build"); }}
+                onClick={() => { setSelectedGameKey(g.key); setSelectedBuildKey(null); setActiveTab("build"); }}
                 className="text-left px-2 py-1.5 rounded text-xs font-medium transition-all"
                 style={
                   selectedGameKey === g.key
@@ -192,7 +202,7 @@ export default function CodexPage() {
           {builds.map((b) => (
             <button
               key={b.key}
-              onClick={() => { setSelectedBuildKey(b.key); setActiveTab("Your Build"); }}
+              onClick={() => { setSelectedBuildKey(b.key); setActiveTab("build"); }}
               className="w-full text-left px-2 py-2 rounded mb-0.5 transition-all"
               style={
                 build?.key === b.key
@@ -285,30 +295,30 @@ export default function CodexPage() {
               className="flex-shrink-0 flex border-b px-5 gap-1"
               style={{ borderColor: "var(--color-card-hi)", backgroundColor: "var(--color-card)" }}
             >
-              {TABS.map((tab) => (
+              {TAB_KEYS.map((key) => (
                 <button
-                  key={tab}
+                  key={key}
                   role="tab"
-                  aria-selected={activeTab === tab}
-                  onClick={() => setActiveTab(tab)}
+                  aria-selected={activeTab === key}
+                  onClick={() => setActiveTab(key)}
                   className={cn(
-                    "text-xs px-3 py-2.5 font-medium transition-all border-b-2",
-                    activeTab === tab ? "border-current" : "border-transparent opacity-50 hover:opacity-80"
+                    "text-xs px-3 py-2.5 font-medium transition-all border-b-2 whitespace-nowrap",
+                    activeTab === key ? "border-current" : "border-transparent opacity-50 hover:opacity-80"
                   )}
-                  style={{ color: activeTab === tab ? accentColor : "var(--color-text)" }}
+                  style={{ color: activeTab === key ? accentColor : "var(--color-text)" }}
                 >
-                  {tab}
+                  {tabLabel(key)}
                 </button>
               ))}
             </div>
 
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto">
-              {activeTab === "Your Build" && <BuildTab build={build} game={game} />}
-              {activeTab === "Progression" && <ProgressionTab build={build} />}
-              {activeTab === "Materials" && <MaterialsTab build={build} game={game} />}
-              {activeTab === "Pros & Cons" && <ProsConsTab build={build} />}
-              {activeTab === "Quick Ref" && <QuickRefTab build={build} />}
+              {activeTab === "build"       && <BuildTab build={build} game={game} />}
+              {activeTab === "progression" && <ProgressionTab build={build} />}
+              {activeTab === "materials"   && <MaterialsTab build={build} game={game} />}
+              {activeTab === "prosCons"    && <ProsConsTab build={build} />}
+              {activeTab === "quickRef"    && <QuickRefTab build={build} />}
             </div>
           </>
         ) : (
