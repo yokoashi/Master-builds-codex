@@ -102,7 +102,10 @@ export default function BuildTab({ build, game }: Props) {
                 }}
                 data-testid={`phase-btn-${i}`}
               >
-                {phaseShortLabel(p.name, i)} {p.name}
+                {phaseShortLabel(p.name, i)}
+                {p.chapter
+                  ? <span className="hidden sm:inline"> — {p.chapter}</span>
+                  : <span> {p.name}</span>}
               </button>
             ))}
           </div>
@@ -136,15 +139,33 @@ export default function BuildTab({ build, game }: Props) {
       {phase && (
         <>
           {/* Phase header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-display text-base font-semibold" style={{ color: "var(--color-bright)" }}>
-                {phase.name}
-              </h3>
-              <p className="text-xs mt-0.5" style={{ color: accent }}>{phase.range}</p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              {/* Chapter label */}
+              <p className="text-[9px] uppercase tracking-[0.22em] font-semibold mb-1"
+                style={{ color: "var(--color-dim)" }}>
+                {/ng\+|new.?game/i.test(phase.name) ? "New Game+" : `Chapter ${ROMAN[activePhase] ?? String(activePhase + 1)}`}
+              </p>
+              {phase.chapter ? (
+                <>
+                  <h3 className="font-display text-xl font-bold leading-tight" style={{ color: "var(--color-bright)" }}>
+                    {phase.chapter}
+                  </h3>
+                  <p className="text-xs mt-1 italic" style={{ color: "var(--color-dim)" }}>
+                    {phase.name} · {phase.range}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="font-display text-base font-semibold" style={{ color: "var(--color-bright)" }}>
+                    {phase.name}
+                  </h3>
+                  <p className="text-xs mt-0.5" style={{ color: accent }}>{phase.range}</p>
+                </>
+              )}
             </div>
             {phase.dmg && (
-              <div className="text-right text-xs" style={{ color: "var(--color-dim)" }} data-testid="damage-summary">
+              <div className="text-right text-xs flex-shrink-0" style={{ color: "var(--color-dim)" }} data-testid="damage-summary">
                 <div><span className="font-mono font-bold" style={{ color: accent }}>{phase.dmg.ps}</span> 1H</div>
                 <div><span className="font-mono font-bold" style={{ color: accent }}>{phase.dmg.bs}</span> BS</div>
               </div>

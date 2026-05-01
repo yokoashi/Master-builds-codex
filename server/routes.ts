@@ -340,6 +340,7 @@ Return this EXACT JSON structure:
   "loadouts": null,
   "phase1": {
     "name": "Early Game",
+    "chapter": "The Vow of the Sacred Flame",
     "range": "SL 1-20",
     "stats": { "VIT": 12, "ATT": 8, "END": 16, "STR": 14, "DEX": 13, "RES": 11, "INT": 9, "FTH": 9 },
     "sn": "Opening strategy (2-3 sentences). Focus on what's reachable before the first major boss gate.",
@@ -356,6 +357,7 @@ Return this EXACT JSON structure:
   },
   "phase2": {
     "name": "Early-Mid Game",
+    "chapter": "The Pale Covenant",
     "range": "SL 20-40",
     "stats": { "VIT": 18, "ATT": 8, "END": 22, "STR": 18, "DEX": 16, "RES": 11, "INT": 9, "FTH": 9 },
     "sn": "Transition strategy — first major upgrades and gear unlocks after the early boss gates.",
@@ -364,6 +366,7 @@ Return this EXACT JSON structure:
   },
   "phase3": {
     "name": "Mid Game",
+    "chapter": "When Iron Finds Its Purpose",
     "range": "SL 40-60",
     "stats": { "VIT": 25, "ATT": 10, "END": 28, "STR": 24, "DEX": 22, "RES": 11, "INT": 9, "FTH": 9 },
     "sn": "Build core taking shape — key weapons at +10 or better, core rings obtained.",
@@ -381,6 +384,7 @@ Rules:
 - Rings go in "acc" array; spells/pyromancies/miracles go in "spells"
 - Stats must fit the soul level range for each phase
 - accent must be a dark hex color that fits the build's theme (e.g. deep crimson for fire, dark violet for sorcery)
+- chapter: a 3-5 word lore title for each phase — reads like a chapter heading in a dark fantasy novel. Must be unique per phase and thematically tied to what happens in that phase of the build's journey. Good: "The Ashen Covenant", "When Flame Meets Iron", "Heir of the Abyss". Bad: "Early Game Phase", "Getting Started"
 - steps: include a ["Step 1: ...", "Step 2: ..."] array ONLY for items requiring NPC questlines or multi-step acquisition (e.g. Logan's Catalyst, Moonlight Greatsword). Leave null for simple drops, loot, or merchant purchases.`;
 
     try {
@@ -429,6 +433,7 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
 {
   "phase4": {
     "name": "Late Game",
+    "chapter": "The Weight of Kingdoms",
     "range": "SL 60-80",
     "stats": { "VIT": 32, "ATT": 14, "END": 36, "STR": 32, "DEX": 32, "RES": 11, "INT": 9, "FTH": 9 },
     "sn": "Late-game push — approaching soft caps, upgraded gear, boss souls spent.",
@@ -438,6 +443,7 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
   },
   "phase5": {
     "name": "End Game",
+    "chapter": "The Final Reckoning",
     "range": "SL 80-120",
     "stats": { "VIT": 42, "ATT": 16, "END": 40, "STR": 40, "DEX": 40, "RES": 11, "INT": 9, "FTH": 9 },
     "sn": "Fully optimised — soft caps hit, best-in-slot gear equipped.",
@@ -447,6 +453,7 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
   },
   "phase6": {
     "name": "NG+",
+    "chapter": "The Undying Herald Endures",
     "range": "NG+1 and beyond",
     "stats": { "VIT": 50, "ATT": 16, "END": 40, "STR": 40, "DEX": 40, "RES": 11, "INT": 9, "FTH": 9 },
     "sn": "Same build; enemies scale harder each cycle. Consider stamina management over pure offense.",
@@ -461,7 +468,8 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
   }
 }
 
-Rules: all item locations must be real in ${gameName}. Include lore and durability for every item.`;
+Rules: all item locations must be real in ${gameName}. Include lore and durability for every item.
+- chapter: a 3-5 word lore title per phase — dark fantasy chapter heading, unique per phase, thematically tied to that stage of the journey.`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);

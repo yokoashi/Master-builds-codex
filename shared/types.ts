@@ -43,8 +43,9 @@ export interface Build {
 }
 
 export interface Phase {
-  name: string;   // "Early Game" | "Mid Game" | "End Game" | "NG+"
-  range: string;  // e.g. "SL 1–30"
+  name: string;     // "Early Game" | "Early-Mid Game" | "Mid Game" | "Late Game" | "End Game" | "NG+"
+  chapter?: string; // lore chapter title, e.g. "The Vow of the Sacred Flame"
+  range: string;    // e.g. "SL 1–20"
   stats: Record<string, number>;
   sn: string;     // short note / strategy summary
   weapons: Item[];
