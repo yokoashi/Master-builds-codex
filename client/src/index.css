@@ -1125,3 +1125,136 @@ button { cursor: pointer; }
 
 [data-theme="bloodscript"] ::-webkit-scrollbar-thumb { background: #5a1818; }
 [data-theme="bloodscript"] ::-webkit-scrollbar-thumb:hover { background: #7a2020; }
+
+/* ── Myst ─────────────────────────────────────────────────────────────────────
+   1993 Cyan Worlds atmosphere. Stone room, linking book on pedestal.
+   Parchment pages (card-hi / card-2), near-black stone walls (bg / card).
+   Instant frame-cut transitions throughout. Subtle scanlines.
+   ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="myst"] {
+  --color-bg:      #07090e;
+  --color-card:    #0c0907;
+  --color-card-hi: #cdc1a0;
+  --color-card-2:  #c0b498;
+  --color-text:    #261e09;
+  --color-bright:  #0e0c07;
+  --color-dim:     #575030;
+  --color-dim2:    #786535;
+  --color-crimson: #336658;
+  --color-gold:    #8a6c24;
+  --color-purple:  #1c5048;
+  --font-display:  'Cinzel', 'Palatino Linotype', serif;
+}
+
+/* All transitions: instant frame cuts (no smooth easing) */
+[data-theme="myst"] * {
+  transition-timing-function: steps(1, end) !important;
+}
+
+/* Scanlines overlay */
+[data-theme="myst"] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,1) 2px,
+    rgba(0,0,0,1) 3px
+  );
+  opacity: 0.022;
+}
+
+/* Stone room body bg */
+[data-theme="myst"] body {
+  background: linear-gradient(180deg, #0b1420 0%, #0d1826 35%, #0e1a28 55%, #07090e 100%);
+}
+
+/* Sidebar — dark stone left wall; scope vars so text is readable */
+[data-theme="myst"] aside {
+  --color-text:   #a8986e;
+  --color-bright: #cdc1a0;
+  --color-dim:    #786535;
+  --color-dim2:   #575030;
+  background: linear-gradient(180deg, #0c1018 0%, #090d14 100%) !important;
+  border-right: 1px solid rgba(138,108,36,0.35) !important;
+  position: relative;
+}
+
+/* Brass edge on sidebar right */
+[data-theme="myst"] aside::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; right: 0;
+  width: 1px;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(138,108,36,0.50) 15%,
+    rgba(138,108,36,0.80) 50%,
+    rgba(138,108,36,0.50) 85%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* Phase tabs — italic serif journal style */
+[data-theme="myst"] [data-testid^="phase-btn-"] {
+  font-style: italic;
+  border: 0.5px solid rgba(95,75,35,0.38) !important;
+  background: rgba(175,155,95,0.08) !important;
+  transition: none !important;
+  box-shadow: none !important;
+}
+
+[data-theme="myst"] [data-testid^="phase-btn-"].phase-btn-active {
+  background: rgba(28,68,56,0.12) !important;
+  color: #1c5048 !important;
+  border-color: rgba(28,76,64,0.55) !important;
+  box-shadow: none !important;
+}
+
+/* Item expand: instant — no fadeIn animation */
+[data-theme="myst"] .item-expand {
+  animation: none !important;
+}
+
+/* Item card separators: journal entry style */
+[data-theme="myst"] [data-testid^="item-card-"] {
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: 0.5px solid rgba(85,65,28,0.18) !important;
+}
+
+/* Tab bar on parchment bg */
+[data-theme="myst"] [role="tablist"] {
+  background: rgba(192,180,152,0.95) !important;
+  border-bottom: 0.5px solid rgba(85,65,28,0.30) !important;
+}
+
+/* Scrollbar: parchment/stone */
+[data-theme="myst"] ::-webkit-scrollbar-track { background: #c0b498; }
+[data-theme="myst"] ::-webkit-scrollbar-thumb { background: rgba(87,80,48,0.55); border-radius: 0; }
+[data-theme="myst"] ::-webkit-scrollbar-thumb:hover { background: rgba(87,80,48,0.75); }
+
+/* Selection: teal */
+[data-theme="myst"] ::selection {
+  background: rgba(51,102,88,0.30);
+  color: #0e0c07;
+}
+
+/* Focus ring: brass */
+[data-theme="myst"] :focus-visible {
+  outline: 1px solid rgba(138,108,36,0.70);
+  outline-offset: 1px;
+  border-radius: 1px;
+}
+
+/* Animate-fade-in: instant in Myst */
+[data-theme="myst"] .animate-fade-in {
+  animation: none !important;
+}

@@ -11,6 +11,8 @@ import ProsConsTab from "@/components/ProsConsTab";
 import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
+import { useTheme, THEMES } from "@/lib/theme";
+import MystScene from "@/components/MystScene";
 
 const TAB_KEYS = ["build", "progression", "materials", "prosCons", "quickRef"] as const;
 type TabKey = typeof TAB_KEYS[number];
@@ -25,6 +27,7 @@ const DEFAULT_TAB_LABELS: Record<TabKey, string> = {
 
 export default function CodexPage() {
   const { toast } = useToast();
+  const { theme, setTheme } = useTheme();
 
   const [selectedGameKey, setSelectedGameKey] = useState<string>("ds1r");
   const [selectedBuildKey, setSelectedBuildKey] = useState<string | null>(null);
@@ -33,6 +36,24 @@ export default function CodexPage() {
   const [deletePending, setDeletePending] = useState<Build | null>(null);
   const [importingCodex, setImportingCodex] = useState(false);
   const [codexImportStatus, setCodexImportStatus] = useState<string | null>(null);
+  const [linking, setLinking] = useState<'off'|'in'|'out'>('off');
+
+  function handleGameSelect(key: string) {
+    if (theme === 'myst' && key !== selectedGameKey) {
+      setLinking('in');
+      setTimeout(() => {
+        setSelectedGameKey(key);
+        setSelectedBuildKey(null);
+        setActiveTab("build");
+        setLinking('out');
+        setTimeout(() => setLinking('off'), 350);
+      }, 220);
+    } else {
+      setSelectedGameKey(key);
+      setSelectedBuildKey(null);
+      setActiveTab("build");
+    }
+  }
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const codexFileRef = useRef<HTMLInputElement>(null);
@@ -136,6 +157,23 @@ export default function CodexPage() {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "var(--color-bg)", color: "var(--color-text)" }}>
+      {/* Myst 3D stone room background */}
+      {theme === 'myst' && <MystScene />}
+
+      {/* Linking animation overlay */}
+      {linking !== 'off' && (
+        <div
+          className="fixed inset-0 pointer-events-none"
+          style={{
+            zIndex: 9998,
+            backgroundColor: "#050a0f",
+            opacity: linking === 'in' ? 1 : 0,
+            transition: linking === 'in' ? 'opacity 0.22s linear' : 'opacity 0.35s linear',
+            transitionTimingFunction: 'linear',
+          }}
+        />
+      )}
+
       {/* Hidden file inputs */}
       <input ref={importFileRef} type="file" accept=".json" className="hidden" onChange={handleImportBuilds} />
       <input ref={codexFileRef} type="file" accept=".json" className="hidden" onChange={handleCodexImport} />
@@ -154,12 +192,14 @@ export default function CodexPage() {
 
         {/* Book selector */}
         <div className="px-3 py-3 border-b" style={{ borderColor: "var(--color-card-hi)" }}>
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>Book</p>
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>
+            {theme === 'myst' ? 'Ages Written' : 'Book'}
+          </p>
           <div className="flex flex-col gap-1">
             {games.map((g) => (
               <button
                 key={g.key}
-                onClick={() => { setSelectedGameKey(g.key); setSelectedBuildKey(null); setActiveTab("build"); }}
+                onClick={() => handleGameSelect(g.key)}
                 className="text-left px-2 py-1.5 rounded text-xs font-medium transition-all"
                 style={
                   selectedGameKey === g.key
@@ -177,7 +217,9 @@ export default function CodexPage() {
         {/* Builds list */}
         <div className="flex-1 overflow-y-auto px-2 py-2">
           <div className="flex items-center justify-between px-1 mb-2">
-            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>Chapters</p>
+            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>
+              {theme === 'myst' ? 'Chapters Inscribed' : 'Chapters'}
+            </p>
             <button
               onClick={() => setShowAddModal(true)}
               className="text-xs px-2 py-0.5 rounded font-medium transition-all hover:opacity-90"
@@ -190,7 +232,9 @@ export default function CodexPage() {
 
           {builds.length === 0 && (
             <div className="px-2 py-4 text-center">
-              <p className="text-xs mb-1" style={{ color: "var(--color-dim)" }}>No chapters yet</p>
+              <p className="text-xs mb-1" style={{ color: "var(--color-dim)" }}>
+                {theme === 'myst' ? 'No ages inscribed' : 'No chapters yet'}
+              </p>
               {!codexLoaded && (
                 <p className="text-xs" style={{ color: "var(--color-dim)" }}>
                   Import a codex first to enable AI generation
@@ -252,6 +296,24 @@ export default function CodexPage() {
           >
             ↓ Import Builds
           </button>
+          {/* Theme switcher */}
+          <div className="flex gap-1 pt-1">
+            {THEMES.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTheme(t.key)}
+                className="flex-1 text-[10px] px-1.5 py-1 rounded font-medium transition-none"
+                style={{
+                  backgroundColor: theme === t.key ? t.accent : "var(--color-card-2)",
+                  color: theme === t.key ? "#fff" : "var(--color-dim)",
+                  border: `1px solid ${theme === t.key ? t.accent : "var(--color-dim2)"}`,
+                  opacity: theme === t.key ? 1 : 0.7,
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </aside>
 
@@ -328,16 +390,16 @@ export default function CodexPage() {
               {game?.icon ?? "🔥"} {game?.name ?? "Dark Souls: Remastered"}
             </p>
             <p className="text-sm" style={{ color: "var(--color-dim)" }}>
-              {!codexLoaded
-                ? "Import a codex JSON, then write your first chapter"
-                : `${entryCount.toLocaleString()} codex entries loaded — begin your first chapter`}
+              {theme === 'myst'
+                ? (!codexLoaded ? "Import a codex JSON, then inscribe your first age" : `${entryCount.toLocaleString()} codex entries loaded — link to your first age`)
+                : (!codexLoaded ? "Import a codex JSON, then write your first chapter" : `${entryCount.toLocaleString()} codex entries loaded — begin your first chapter`)}
             </p>
             <button
               onClick={() => setShowAddModal(true)}
               className="px-5 py-2 rounded font-medium text-sm transition-all hover:opacity-90"
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
             >
-              + Begin Chapter
+              {theme === 'myst' ? '+ Inscribe New Age' : '+ Begin Chapter'}
             </button>
           </div>
         )}

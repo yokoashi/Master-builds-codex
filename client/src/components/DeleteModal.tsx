@@ -1,5 +1,6 @@
 import type { Build } from "@shared/types";
 import { hexToRgba } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 
 interface Props {
   build: Build;
@@ -9,6 +10,8 @@ interface Props {
 }
 
 export default function DeleteModal({ build, onConfirm, onCancel, isLoading }: Props) {
+  const { theme } = useTheme();
+  const isMyst = theme === 'myst';
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-50 p-4"
@@ -26,12 +29,12 @@ export default function DeleteModal({ build, onConfirm, onCancel, isLoading }: P
           className="text-lg font-bold mb-2"
           style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
         >
-          Close the Chapter
+          {isMyst ? 'Seal the Age' : 'Close the Chapter'}
         </h2>
         <p className="text-sm mb-4" style={{ color: "var(--color-dim)" }}>
-          Permanently erase{" "}
-          <strong style={{ color: build.accent }}>{build.label}</strong> from the
-          codex? This cannot be undone.
+          {isMyst ? 'Remove ' : 'Permanently erase '}
+          <strong style={{ color: build.accent }}>{build.label}</strong>
+          {isMyst ? ' from the codex forever?' : ' from the codex? This cannot be undone.'}
         </p>
         <div className="flex gap-3 justify-end">
           <button

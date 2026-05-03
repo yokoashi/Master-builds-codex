@@ -4,6 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Game, Build, AiProvider } from "@shared/types";
 import { slugify } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useTheme } from "@/lib/theme";
 
 interface Props {
   game: Game;
@@ -57,6 +58,8 @@ function blankStats(): Record<string, number> {
 
 export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const { toast } = useToast();
+  const { theme } = useTheme();
+  const isMyst = theme === 'myst';
 
   // ── Mode & Provider
   const [mode, setMode]         = useState<Mode>("full");
@@ -343,7 +346,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         <div className="px-5 py-4 border-b flex items-center justify-between flex-shrink-0" style={{ borderColor: "var(--color-card-hi)" }}>
           <div>
             <h2 className="font-display text-base font-bold" style={{ color: "var(--color-bright)" }}>
-              New Chapter
+              {isMyst ? 'New Age' : 'New Chapter'}
             </h2>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>{game.name}</p>
           </div>
@@ -438,7 +441,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
 
               {/* Build concept */}
               <div>
-                <label className={labelCls} style={labelStyle}>Chapter Concept *</label>
+                <label className={labelCls} style={labelStyle}>{isMyst ? 'Age Concept *' : 'Chapter Concept *'}</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -583,7 +586,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
               className="text-xs px-5 py-2 rounded font-semibold transition-all hover:opacity-90 disabled:opacity-40"
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
             >
-              {isRunning ? "Writing…" : "Save Chapter"}
+              {isRunning ? (isMyst ? "Writing the age…" : "Writing…") : (isMyst ? "Inscribe Age" : "Save Chapter")}
             </button>
           ) : (
             <button
@@ -592,7 +595,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
               className="text-xs px-5 py-2 rounded font-semibold transition-all hover:opacity-90 disabled:opacity-40"
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
             >
-              {isRunning ? "Writing…" : "Begin Chapter"}
+              {isRunning ? (isMyst ? "Writing the age…" : "Writing…") : (isMyst ? "Link to New Age" : "Begin Chapter")}
             </button>
           )}
         </div>
