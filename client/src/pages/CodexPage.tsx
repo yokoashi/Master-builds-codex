@@ -155,7 +155,18 @@ export default function CodexPage() {
   const accentColor = build?.accent ?? "#d64545";
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: theme === 'myst' ? 'transparent' : "var(--color-bg)", color: "var(--color-text)" }}>
+    <div
+      className={cn("flex overflow-hidden", theme !== 'myst' && "h-screen")}
+      style={{
+        backgroundColor: theme === 'myst' ? 'transparent' : "var(--color-bg)",
+        color: "var(--color-text)",
+        ...(theme === 'myst' ? {
+          height: '78vh',
+          marginTop: '8vh',
+          boxShadow: '0 0 120px rgba(0,0,0,0.98), 0 30px 80px rgba(0,0,0,0.85)',
+        } : {}),
+      }}
+    >
       {/* Linking animation overlay */}
       {linking !== 'off' && (
         <div
