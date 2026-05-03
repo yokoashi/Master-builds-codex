@@ -1126,124 +1126,6 @@ button { cursor: pointer; }
 [data-theme="bloodscript"] ::-webkit-scrollbar-thumb { background: #5a1818; }
 [data-theme="bloodscript"] ::-webkit-scrollbar-thumb:hover { background: #7a2020; }
 
-/* ── Myst 3D scene classes ───────────────────────────────────────────────────
-   myst-wrap: full-viewport container, dark stone base.
-   myst-s3d:  preserve-3d root with perspective (NOT on myst-wrap to avoid
-              breaking position:fixed modals — perspective on wrap creates a
-              new containing block that would confine fixed children).
-   myst-content: flat UI layer sitting above the 3D room at z-index 10.
-   ─────────────────────────────────────────────────────────────────────────── */
-.myst-wrap {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  background: #07090e;
-}
-
-.myst-s3d {
-  position: absolute;
-  inset: 0;
-  perspective: 1000px;
-  perspective-origin: 50% 22%;
-  transform-style: preserve-3d;
-}
-
-.myst-bwall {
-  position: absolute;
-  left: 0; right: 0; top: 0;
-  height: 62%;
-  background: linear-gradient(to bottom, #0f1a26, #0b1420);
-}
-.myst-bwall::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.014) 0, rgba(255,255,255,0.014) 1px, transparent 1px, transparent 110px),
-    repeating-linear-gradient(rgba(255,255,255,0.012) 0, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 38px);
-}
-
-.myst-win {
-  position: absolute;
-  top: 5%; left: 50%;
-  transform: translateX(-50%);
-  width: 72px; height: 105px;
-  background: linear-gradient(to bottom, rgba(38,76,130,0.28), rgba(25,55,100,0.10));
-  border: 1px solid rgba(55,90,148,0.18);
-  box-shadow: 0 0 40px rgba(38,76,130,0.18), inset 0 0 14px rgba(100,160,220,0.08);
-}
-.myst-win::before {
-  content: ''; position: absolute;
-  top: 50%; left: 0; right: 0; height: 1px;
-  background: rgba(55,90,148,0.18);
-}
-.myst-win::after {
-  content: ''; position: absolute;
-  left: 50%; top: 0; bottom: 0; width: 1px;
-  background: rgba(55,90,148,0.18);
-}
-
-.myst-wll {
-  position: absolute;
-  left: 0; top: 0; bottom: 0; width: 40%;
-  background: linear-gradient(to right, #090e16, #0b1420);
-  transform: rotateY(74deg);
-  transform-origin: left center;
-}
-
-.myst-wlr {
-  position: absolute;
-  right: 0; top: 0; bottom: 0; width: 40%;
-  background: linear-gradient(to left, #090e16, #0b1420);
-  transform: rotateY(-74deg);
-  transform-origin: right center;
-}
-
-.myst-flr {
-  position: absolute;
-  bottom: 0; left: -40%;
-  width: 180%; height: 520px;
-  background: linear-gradient(to top, #0e1620, #0b1220);
-  transform: rotateX(70deg);
-  transform-origin: bottom center;
-}
-.myst-flr::before {
-  content: ''; position: absolute; inset: 0;
-  background:
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.020) 0, rgba(255,255,255,0.020) 1px, transparent 1px, transparent 85px),
-    repeating-linear-gradient(rgba(255,255,255,0.014) 0, rgba(255,255,255,0.014) 1px, transparent 1px, transparent 85px);
-}
-.myst-flr::after {
-  content: ''; position: absolute;
-  top: 0; left: 0; right: 0; height: 42%;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.75), transparent);
-}
-
-.myst-ped {
-  position: absolute;
-  bottom: 0; left: 50%;
-  transform: translateX(-50%);
-  z-index: 4; width: 370px;
-}
-.myst-pt {
-  height: 24px;
-  background: linear-gradient(to bottom, #1c2838, #182230);
-  border: 1px solid #253545; border-bottom: none;
-  transform: scaleY(0.4) translateY(-6px);
-  transform-origin: bottom center;
-}
-.myst-pf {
-  height: 58px;
-  background: linear-gradient(to bottom, #1a2634, #131e2c);
-  border: 1px solid #1e2e40; border-top: none;
-}
-
-.myst-content {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-}
-
 /* ── Myst ─────────────────────────────────────────────────────────────────────
    1993 Cyan Worlds atmosphere. Stone room, linking book on pedestal.
    Parchment pages (card-hi / card-2), near-black stone walls (bg / card).
@@ -1264,12 +1146,7 @@ button { cursor: pointer; }
   --font-display:  'Cinzel', 'Palatino Linotype', serif;
 }
 
-/* All transitions: instant frame cuts (no smooth easing) */
-[data-theme="myst"] * {
-  transition-timing-function: steps(1, end) !important;
-}
-
-/* Scanlines overlay */
+/* Scanlines overlay (myst-scene.css also adds .myst-scanlines element scanlines) */
 [data-theme="myst"] body::after {
   content: '';
   position: fixed;
