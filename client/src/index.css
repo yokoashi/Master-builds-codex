@@ -1258,3 +1258,75 @@ button { cursor: pointer; }
 [data-theme="myst"] .animate-fade-in {
   animation: none !important;
 }
+
+/* ── Right pane: parchment book pages ───────────────────────────────────── */
+[data-theme="myst"] aside + div {
+  background: linear-gradient(180deg, #d9d0b0 0%, #cdc1a0 20%, #c8bc9b 100%);
+  --color-text:    #261e09;
+  --color-bright:  #1a1408;
+  --color-dim:     #6b5d35;
+  --color-dim2:    #8a7648;
+  --color-card:    rgba(185,172,136,0.92);
+  --color-card-hi: rgba(198,186,150,0.88);
+  --color-card-2:  rgba(172,159,122,0.85);
+  --color-purple:  #2d6859;
+  --color-gold:    #7a5c1e;
+  --color-crimson: #336658;
+  --color-green:   #2d5e20;
+}
+
+/* Build header bar on parchment */
+[data-theme="myst"] aside + div .flex-shrink-0.border-b:first-of-type {
+  background: linear-gradient(90deg, rgba(138,108,36,0.07) 0%, transparent 55%) !important;
+  border-bottom-color: rgba(85,65,28,0.22) !important;
+}
+
+/* Hero card: no tinted bg on parchment */
+[data-theme="myst"] [data-testid="build-hero-card"] {
+  background: rgba(85,65,28,0.05) !important;
+  border: 0.5px solid rgba(85,65,28,0.22) !important;
+  box-shadow: none !important;
+}
+
+/* Phase note on parchment */
+[data-theme="myst"] [data-testid="phase-note"] {
+  background: rgba(85,65,28,0.07) !important;
+  border-left-color: rgba(85,65,28,0.38) !important;
+}
+
+/* Item cards: flat journal rows — no card container */
+[data-theme="myst"] [data-testid^="item-card-"] {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 0.5px solid rgba(85,65,28,0.18) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+[data-theme="myst"] [data-testid^="item-card-"] > button {
+  background: transparent !important;
+}
+[data-theme="myst"] [data-testid^="item-card-"] > div.item-expand {
+  background: rgba(85,65,28,0.04) !important;
+  border-top-color: rgba(85,65,28,0.15) !important;
+}
+
+/* Stat bar track: warm ink on parchment */
+[data-theme="myst"] [data-testid^="stat-bar-"] > .flex-1 {
+  background: rgba(85,65,28,0.18) !important;
+}
+/* Stat bar fill: dark ink progression */
+[data-theme="myst"] .stat-bar-fill {
+  background: linear-gradient(90deg, rgba(85,65,28,0.42), rgba(85,65,28,0.72)) !important;
+  box-shadow: none !important;
+}
+
+/* Damage note */
+[data-theme="myst"] [data-testid="damage-note"] {
+  background: rgba(85,65,28,0.06) !important;
+  border-color: rgba(85,65,28,0.22) !important;
+}
+
+/* Section header labels (WEAPONS, ARMOR, etc) */
+[data-theme="myst"] aside + div .text-xs.uppercase.tracking-widest {
+  color: rgba(85,65,28,0.6) !important;
+}

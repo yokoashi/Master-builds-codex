@@ -226,7 +226,7 @@ export default function CodexPage() {
               style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
               title="Write a new chapter with AI"
             >
-              + New
+              {theme === 'myst' ? '→ Link' : '+ New'}
             </button>
           </div>
 
