@@ -12,7 +12,6 @@ import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 import { useTheme, THEMES } from "@/lib/theme";
-import MystScene from "@/components/MystScene";
 
 const TAB_KEYS = ["build", "progression", "materials", "prosCons", "quickRef"] as const;
 type TabKey = typeof TAB_KEYS[number];
@@ -156,10 +155,7 @@ export default function CodexPage() {
   const accentColor = build?.accent ?? "#d64545";
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "var(--color-bg)", color: "var(--color-text)" }}>
-      {/* Myst 3D stone room background */}
-      {theme === 'myst' && <MystScene />}
-
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: theme === 'myst' ? 'transparent' : "var(--color-bg)", color: "var(--color-text)" }}>
       {/* Linking animation overlay */}
       {linking !== 'off' && (
         <div

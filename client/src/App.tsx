@@ -6,19 +6,22 @@ import { useHashLocation } from "wouter/use-hash-location";
 import CodexPage from "./pages/CodexPage";
 import NotFound from "./pages/not-found";
 import { ThemeProvider } from "./lib/theme";
+import MystScene from "./components/MystScene";
 
 export default function App() {
   return (
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <Router hook={useHashLocation}>
-          <Switch>
-            <Route path="/" component={CodexPage} />
-            <Route component={NotFound} />
-          </Switch>
-        </Router>
-        <Toaster />
-      </QueryClientProvider>
+      <MystScene>
+        <QueryClientProvider client={queryClient}>
+          <Router hook={useHashLocation}>
+            <Switch>
+              <Route path="/" component={CodexPage} />
+              <Route component={NotFound} />
+            </Switch>
+          </Router>
+          <Toaster />
+        </QueryClientProvider>
+      </MystScene>
     </ThemeProvider>
   );
 }
