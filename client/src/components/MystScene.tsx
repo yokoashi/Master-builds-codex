@@ -1,5 +1,3 @@
-import { useTheme } from "@/lib/theme";
-
 /**
  * MystScene
  * Full-viewport 3D stone room rendered with CSS perspective.
@@ -7,10 +5,6 @@ import { useTheme } from "@/lib/theme";
  * on top of the 3D scene. Only renders the room in Myst theme.
  */
 export default function MystScene({ children }: { children: React.ReactNode }) {
-  const { theme } = useTheme();
-
-  if (theme !== "myst") return <>{children}</>;
-
   return (
     <div className="myst-wrap">
       {/* ── 3D SCENE ── rendered behind everything */}

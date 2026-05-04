@@ -168,7 +168,7 @@ export default function CodexPage() {
     <div
       className={cn("flex overflow-hidden", theme !== 'myst' && "h-screen")}
       style={{
-        backgroundColor: theme === 'myst' ? 'transparent' : "var(--color-bg)",
+        backgroundColor: 'transparent',
         color: "var(--color-text)",
         ...(theme === 'myst' ? {
           height: '78vh',
