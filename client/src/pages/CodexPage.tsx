@@ -12,6 +12,16 @@ import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 import { useTheme, THEMES } from "@/lib/theme";
+import BookmarkTabs, { type BookmarkTab } from "@/components/BookmarkTabs";
+
+const BOOKMARK_TO_TAB: Record<BookmarkTab, TabKey> = {
+  overview: "build", materials: "materials", proscons: "prosCons",
+  stats: "progression", tips: "quickRef",
+};
+const TAB_TO_BOOKMARK: Record<TabKey, BookmarkTab> = {
+  build: "overview", progression: "stats", materials: "materials",
+  prosCons: "proscons", quickRef: "tips",
+};
 
 const TAB_KEYS = ["build", "progression", "materials", "prosCons", "quickRef"] as const;
 type TabKey = typeof TAB_KEYS[number];
@@ -207,12 +217,15 @@ export default function CodexPage() {
               <button
                 key={g.key}
                 onClick={() => handleGameSelect(g.key)}
-                className="text-left px-2 py-1.5 rounded text-xs font-medium transition-all"
-                style={
+                className={theme === 'myst'
+                  ? cn("myst-age-entry w-full text-left", selectedGameKey === g.key && "active")
+                  : "text-left px-2 py-1.5 rounded text-xs font-medium transition-all"
+                }
+                style={theme !== 'myst' ? (
                   selectedGameKey === g.key
                     ? { backgroundColor: "var(--color-card-2)", color: "var(--color-bright)", borderLeft: "2px solid var(--color-crimson)" }
                     : { color: "var(--color-text)", opacity: 0.6 }
-                }
+                ) : undefined}
               >
                 <span className="mr-1.5">{g.icon}</span>
                 {g.name}
@@ -224,7 +237,7 @@ export default function CodexPage() {
         {/* Builds list */}
         <div className="flex-1 overflow-y-auto px-2 py-2">
           <div className="flex items-center justify-between px-1 mb-2">
-            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>
+            <p className={theme === 'myst' ? "myst-section-label flex-1" : "text-xs uppercase tracking-widest"} style={theme !== 'myst' ? { color: "var(--color-dim)" } : undefined}>
               {theme === 'myst' ? 'Chapters Inscribed' : 'Chapters'}
             </p>
             <button
@@ -254,22 +267,29 @@ export default function CodexPage() {
             <button
               key={b.key}
               onClick={() => { setSelectedBuildKey(b.key); setActiveTab("build"); }}
-              className="w-full text-left px-2 py-2 rounded mb-0.5 transition-all"
-              style={
+              className={theme === 'myst'
+                ? cn("myst-chapter-entry w-full text-left", build?.key === b.key && "active")
+                : "w-full text-left px-2 py-2 rounded mb-0.5 transition-all"
+              }
+              style={theme !== 'myst' ? (
                 build?.key === b.key
                   ? { backgroundColor: "var(--color-card-hi)", borderLeft: `2px solid ${b.accent}`, opacity: 1 }
                   : { opacity: 0.6 }
-              }
+              ) : undefined}
             >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-base leading-none">{b.icon}</span>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: build?.key === b.key ? "var(--color-bright)" : "var(--color-text)" }}>
-                    {b.label}
-                  </p>
-                  <p className="text-[10px] truncate" style={{ color: "var(--color-dim)" }}>{b.sub}</p>
+              {theme === 'myst' ? (
+                <span>{b.label}</span>
+              ) : (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-base leading-none">{b.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium truncate" style={{ color: build?.key === b.key ? "var(--color-bright)" : "var(--color-text)" }}>
+                      {b.label}
+                    </p>
+                    <p className="text-[10px] truncate" style={{ color: "var(--color-dim)" }}>{b.sub}</p>
+                  </div>
                 </div>
-              </div>
+              )}
             </button>
           ))}
         </div>
@@ -359,27 +379,39 @@ export default function CodexPage() {
               </div>
             </div>
 
-            {/* Tab bar */}
-            <div
-              className="flex-shrink-0 flex border-b px-5 gap-1"
-              style={{ borderColor: "var(--color-card-hi)", backgroundColor: "var(--color-card)" }}
-            >
-              {TAB_KEYS.map((key) => (
-                <button
-                  key={key}
-                  role="tab"
-                  aria-selected={activeTab === key}
-                  onClick={() => setActiveTab(key)}
-                  className={cn(
-                    "text-xs px-3 py-2.5 font-medium transition-all border-b-2 whitespace-nowrap",
-                    activeTab === key ? "border-current" : "border-transparent opacity-50 hover:opacity-80"
-                  )}
-                  style={{ color: activeTab === key ? accentColor : "var(--color-text)" }}
-                >
-                  {tabLabel(key)}
-                </button>
-              ))}
-            </div>
+            {/* Tab bar — hidden in Myst (replaced by ribbon bookmarks) */}
+            {theme !== 'myst' && (
+              <div
+                className="flex-shrink-0 flex border-b px-5 gap-1"
+                style={{ borderColor: "var(--color-card-hi)", backgroundColor: "var(--color-card)" }}
+              >
+                {TAB_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={activeTab === key}
+                    onClick={() => setActiveTab(key)}
+                    className={cn(
+                      "text-xs px-3 py-2.5 font-medium transition-all border-b-2 whitespace-nowrap",
+                      activeTab === key ? "border-current" : "border-transparent opacity-50 hover:opacity-80"
+                    )}
+                    style={{ color: activeTab === key ? accentColor : "var(--color-text)" }}
+                  >
+                    {tabLabel(key)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Myst ribbon bookmarks — fixed to right edge of the app */}
+            {theme === 'myst' && (
+              <div style={{ position: 'fixed', right: 0, top: '8vh', height: '78vh', zIndex: 50 }}>
+                <BookmarkTabs
+                  active={TAB_TO_BOOKMARK[activeTab]}
+                  onChange={(bk) => setActiveTab(BOOKMARK_TO_TAB[bk])}
+                />
+              </div>
+            )}
 
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto">
