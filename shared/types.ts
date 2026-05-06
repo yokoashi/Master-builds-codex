@@ -47,6 +47,8 @@ export interface Build {
   pros: string[];
   cons: string[];
   ref: RefRow[];
+  sim?: SimilarBuild[];
+  oth?: SimilarBuild[];
   tabNames?: BuildTabNames;
   isAI?: boolean;
 }
@@ -109,6 +111,13 @@ export interface RefRow {
   ar: string; // armor rating
   s: string;  // scaling
   a: string;  // affinity / infusion
+}
+
+export interface SimilarBuild {
+  n: string;
+  cls: string;
+  weapon: string;
+  why: string;
 }
 
 // ── AI provider ────────────────────────────────────────────────────────────────
