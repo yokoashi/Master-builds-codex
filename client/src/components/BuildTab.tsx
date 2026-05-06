@@ -16,14 +16,30 @@ interface Props {
   game: Game | null;
 }
 
+type SubTab = "overview" | "roadmap" | "checklist";
+
 export default function BuildTab({ build, game }: Props) {
   const [activePhase, setActivePhase] = useState(0);
   const [activeNg, setActiveNg] = useState(0);
+  const [subTabs, setSubTabs] = useState<Record<number, SubTab>>({});
+  const [checked, setChecked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setActivePhase(0);
     setActiveNg(0);
+    setSubTabs({});
+    setChecked(new Set());
   }, [build.key]);
+
+  const subTab: SubTab = subTabs[activePhase] ?? "overview";
+  function setSubTab(t: SubTab) { setSubTabs((prev) => ({ ...prev, [activePhase]: t })); }
+  function toggleCheck(key: string) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
   const accent = build.accent ?? "var(--color-accent)";
   const accentBg = hexToRgba(accent, 0.08);
@@ -280,55 +296,181 @@ export default function BuildTab({ build, game }: Props) {
             </div>
           )}
 
-          {/* Stats */}
-          {phase.stats && Object.keys(phase.stats).length > 0 && (
-            <div>
-              <div className="section-label mb-3">
-                Stats at {phase.range}
-                {game?.statMax && (
-                  <span
-                    className="ml-1 text-[9px] px-1.5 py-px rounded font-mono"
-                    style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-dim)", letterSpacing: "0" }}
-                  >
-                    {Object.values(activeCycle?.stats ?? phase.stats).reduce((a, b) => a + (b as number), 0)}
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
-                {Object.entries(activeCycle?.stats ?? phase.stats).map(([stat, val]) => (
-                  <StatBar
-                    key={stat}
-                    stat={stat}
-                    value={val as number}
-                    max={game?.statMax ?? 99}
-                    accent={accent}
-                    softCap={softCaps[stat] ?? null}
-                  />
-                ))}
-              </div>
+          {/* ── Sub-tab navigation ────────────────────────────────────────────── */}
+          {(phase.progression?.length || phase.checklist?.length || phase.keyBosses?.length) ? (
+            <div className="flex gap-1 pt-1">
+              {(["overview", "roadmap", "checklist"] as SubTab[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setSubTab(t)}
+                  className="px-3 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-all"
+                  style={{
+                    backgroundColor: subTab === t ? hexToRgba(accent, 0.15) : "var(--color-card-2)",
+                    color: subTab === t ? accent : "var(--color-dim)",
+                    border: `1px solid ${subTab === t ? hexToRgba(accent, 0.35) : "var(--color-border)"}`,
+                  }}
+                >
+                  {t === "overview" ? "Overview" : t === "roadmap" ? "Progression" : "Checklist"}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {/* ── SUB-TAB: Overview (default — stats + items) ──────────────────── */}
+          {subTab === "overview" && (
+            <>
+              {/* Stats */}
+              {phase.stats && Object.keys(phase.stats).length > 0 && (
+                <div>
+                  <div className="section-label mb-3">
+                    Stats at {phase.range}
+                    {game?.statMax && (
+                      <span
+                        className="ml-1 text-[9px] px-1.5 py-px rounded font-mono"
+                        style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-dim)", letterSpacing: "0" }}
+                      >
+                        {Object.values(activeCycle?.stats ?? phase.stats).reduce((a, b) => a + (b as number), 0)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
+                    {Object.entries(activeCycle?.stats ?? phase.stats).map(([stat, val]) => (
+                      <StatBar
+                        key={stat}
+                        stat={stat}
+                        value={val as number}
+                        max={game?.statMax ?? 99}
+                        accent={accent}
+                        softCap={softCaps[stat] ?? null}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Item sections */}
+              {sectionItems.map(({ label, items }) => (
+                <div key={label}>
+                  <div className="section-label mb-2.5">{label}</div>
+                  <div className="space-y-1.5">
+                    {items.map((item, i) => (
+                      <ItemCard key={i} item={item} accent={accent} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* Damage context note */}
+              {phase.dmg?.n && (
+                <div
+                  className="px-3 py-2.5 rounded text-xs leading-relaxed"
+                  style={{ backgroundColor: "var(--color-card-hi)", color: "var(--color-dim)", borderLeft: "2px solid var(--color-border)" }}
+                >
+                  <span className="font-medium">Damage note: </span>
+                  {phase.dmg.n}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── SUB-TAB: Roadmap (progression steps) ─────────────────────────── */}
+          {subTab === "roadmap" && (
+            <div className="space-y-2">
+              {phase.progression && phase.progression.length > 0 ? (
+                <div>
+                  <p className="text-[9px] uppercase tracking-[0.22em] font-semibold mb-3" style={{ color: "var(--color-dim)" }}>
+                    How to advance to the next phase
+                  </p>
+                  <ol className="space-y-0">
+                    {phase.progression.map((step, i) => (
+                      <li key={i} className="flex gap-3 relative">
+                        {i < phase.progression!.length - 1 && (
+                          <div className="absolute left-[13px] top-[26px] bottom-0 w-px" style={{ background: hexToRgba(accent, 0.25) }} />
+                        )}
+                        <div
+                          className="w-[26px] h-[26px] rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold z-10 mt-0.5"
+                          style={{ background: hexToRgba(accent, 0.15), color: accent, border: `1px solid ${hexToRgba(accent, 0.35)}` }}
+                        >
+                          {i + 1}
+                        </div>
+                        <p className="text-sm leading-relaxed pb-3 pt-0.5" style={{ color: "var(--color-text)" }}>{step}</p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : (
+                <p className="text-xs py-6 text-center" style={{ color: "var(--color-dim)" }}>
+                  No progression guide — regenerate this build to populate this tab.
+                </p>
+              )}
+
+              {phase.keyBosses && phase.keyBosses.length > 0 && (
+                <div className="pt-2">
+                  <p className="text-[9px] uppercase tracking-[0.22em] font-semibold mb-2.5" style={{ color: "var(--color-dim)" }}>
+                    Key encounters
+                  </p>
+                  <div className="space-y-1.5">
+                    {phase.keyBosses.map((b, i) => (
+                      <div key={i} className="flex gap-2.5 items-start px-3 py-2 rounded"
+                        style={{ backgroundColor: hexToRgba(accent, 0.04), border: `1px solid ${hexToRgba(accent, 0.12)}` }}>
+                        <span className="flex-shrink-0 text-base" style={{ color: accent }}>⚔</span>
+                        <p className="text-xs leading-relaxed" style={{ color: "var(--color-text)" }}>{b}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Item sections */}
-          {sectionItems.map(({ label, items }) => (
-            <div key={label}>
-              <div className="section-label mb-2.5">{label}</div>
-              <div className="space-y-1.5">
-                {items.map((item, i) => (
-                  <ItemCard key={i} item={item} accent={accent} />
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {/* Damage context note */}
-          {phase.dmg?.n && (
-            <div
-              className="px-3 py-2.5 rounded text-xs leading-relaxed"
-              style={{ backgroundColor: "var(--color-card-hi)", color: "var(--color-dim)", borderLeft: "2px solid var(--color-border)" }}
-            >
-              <span className="font-medium">Damage note: </span>
-              {phase.dmg.n}
+          {/* ── SUB-TAB: Checklist ────────────────────────────────────────────── */}
+          {subTab === "checklist" && (
+            <div className="space-y-3">
+              {phase.checklist && phase.checklist.length > 0 ? (
+                <div>
+                  <p className="text-[9px] uppercase tracking-[0.22em] font-semibold mb-2.5" style={{ color: "var(--color-dim)" }}>
+                    Items & objectives for this phase
+                  </p>
+                  <div className="space-y-1">
+                    {phase.checklist.map((item, i) => {
+                      const key = `${activePhase}-${i}`;
+                      const done = checked.has(key);
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => toggleCheck(key)}
+                          className="w-full flex items-start gap-2.5 px-3 py-2 rounded text-left transition-all hover:opacity-80"
+                          style={{
+                            backgroundColor: done ? hexToRgba(accent, 0.08) : "var(--color-card-hi)",
+                            border: `1px solid ${done ? hexToRgba(accent, 0.25) : "var(--color-border)"}`,
+                          }}
+                        >
+                          <div
+                            className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center text-[9px] font-bold mt-0.5"
+                            style={{
+                              background: done ? hexToRgba(accent, 0.2) : "var(--color-card-2)",
+                              border: `1px solid ${done ? accent : "var(--color-border)"}`,
+                              color: accent,
+                            }}
+                          >
+                            {done ? "✓" : ""}
+                          </div>
+                          <p className="text-xs leading-relaxed" style={{
+                            color: done ? "var(--color-dim)" : "var(--color-text)",
+                            textDecoration: done ? "line-through" : "none",
+                          }}>
+                            {item}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs py-6 text-center" style={{ color: "var(--color-dim)" }}>
+                  No checklist — regenerate this build to populate this tab.
+                </p>
+              )}
             </div>
           )}
         </div>

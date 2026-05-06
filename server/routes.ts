@@ -565,7 +565,10 @@ Generate phase1 (Early Game) and phase2 (Early-Mid Game) for this ${gameName} bu
     "armor": [ { "n": "Armor Name", "wt": 4.0, "eq": "Chest", "d": "...", "loc": "...", "up": "None", "tip": "...", "lore": "...", "durability": 300 } ],
     "acc":   [ { "n": "Ring Name", "wt": 0.0, "eq": "Ring", "d": "...", "loc": "...", "up": "None", "tip": "...", "lore": "..." } ],
     "spells": [],
-    "dmg": { "ps": 150, "sp": 120, "bs": 300, "n": "Damage context" }
+    "dmg": { "ps": 150, "sp": 120, "bs": 300, "n": "Damage context" },
+    "progression": ["Action 1: specific thing to do first", "Action 2: upgrade goal", "Action 3: NPC or location to visit", "Action 4: boss kill or item to unlock", "Action 5: gear swap or level target"],
+    "checklist": ["Item Name — why needed", "Upgrade level — e.g. +3 weapon before leaving", "Boss kill — what it unlocks", "NPC visit — what you get"],
+    "keyBosses": ["Boss Name — 1 sentence on build-specific approach or difficulty"]
   },
   "phase2": {
     "name": "Early-Mid Game",
@@ -575,14 +578,20 @@ Generate phase1 (Early Game) and phase2 (Early-Mid Game) for this ${gameName} bu
     "sn": "First major upgrade unlock — weapon at +3 or better, key early rings secured.",
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 200, "sp": 170, "bs": 400, "n": "Damage context" }
+    "dmg": { "ps": 200, "sp": 170, "bs": 400, "n": "Damage context" },
+    "progression": ["Action 1: specific thing to do first", "Action 2: upgrade goal", "Action 3: NPC or location to visit", "Action 4: boss kill or item to unlock"],
+    "checklist": ["Item Name — why needed", "Upgrade level before leaving", "Boss kill — unlocks next area", "Ring or tool to acquire"],
+    "keyBosses": ["Boss Name — 1 sentence on build-specific approach"]
   }
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability for every item. Use correct stat names for ${gameName}.
 - chapter: 3-5 word dark-fantasy lore title, unique per phase.
 - Rings in "acc"; spells/sorceries/pyromancies/miracles in "spells".
-- steps: questline array only for multi-step acquisitions; null for drops/merchants.${getGamePromptRules(gameKey)}`;
+- steps: questline array only for multi-step acquisitions; null for drops/merchants.
+- progression: 4-6 specific ordered actions to advance from THIS phase to the NEXT (boss kills, upgrade milestones, NPC visits, area clears). Be concrete.
+- checklist: 5-8 items/objectives to have/complete before leaving. Format: "Name — brief why"
+- keyBosses: boss encounters in this SL range, 1 sentence each on build-specific strategy${getGamePromptRules(gameKey)}`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
@@ -634,13 +643,19 @@ Generate phase3 (Mid Game) for this ${gameName} build. Build identity is crystal
     "sn": "Build identity locked in — primary weapon at mid-tier upgrade, first soft caps in sight. Key covenants and merchants unlocked.",
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 270, "sp": 230, "bs": 540, "n": "Mid-game damage context" }
+    "dmg": { "ps": 270, "sp": 230, "bs": 540, "n": "Mid-game damage context" },
+    "progression": ["Action 1: specific goal to push toward mid-late", "Action 2: upgrade milestone", "Action 3: covenant or NPC", "Action 4: boss that gates mid-late content"],
+    "checklist": ["Item — why needed before moving on", "Upgrade level — target before leaving", "Boss kill — what it unlocks", "Key ring or accessory"],
+    "keyBosses": ["Boss Name — 1 sentence build-specific approach", "Boss Name 2 — strategy note"]
   }
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability for every item. Use correct stat names.
 - chapter: 3-5 word dark-fantasy lore title.
-- Include 2-3 weapons, 2-3 armor pieces, 2-3 accessories.${getGamePromptRules(gameKey)}`;
+- Include 2-3 weapons, 2-3 armor pieces, 2-3 accessories.
+- progression: 4-6 specific ordered steps to advance from Mid Game to Mid-Late. Boss kills, upgrade targets, NPC visits.
+- checklist: 5-8 items/objectives. Format: "Name — brief why"
+- keyBosses: boss encounters in SL 35-55, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -698,13 +713,19 @@ Generate phase4 (Mid-Late Game) for this ${gameName} build. Critical transition 
     "sn": "First soft cap hit — weapon nearing max upgrade, boss weapons craftable. Build commits fully.",
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 320, "sp": 270, "bs": 640, "n": "Mid-late damage context" }
+    "dmg": { "ps": 320, "sp": 270, "bs": 640, "n": "Mid-late damage context" },
+    "progression": ["Action 1: which boss weapon to forge first", "Action 2: upgrade path to +10/+5", "Action 3: stat level to hit next soft cap", "Action 4: late-game area unlock"],
+    "checklist": ["Boss weapon — which boss soul to use", "Upgrade — weapon to +10 or +5 before late game", "Soft cap — which stat to push first", "Key armor — acquire before late content"],
+    "keyBosses": ["Boss Name — boss soul used for weapon / build significance", "Boss Name 2 — gates late-game area"]
   }
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability. Use correct stat names.
 - chapter: 3-5 word dark-fantasy lore title.
-- Mention specific boss weapon prerequisites in weapon loc fields.${getGamePromptRules(gameKey)}`;
+- Mention specific boss weapon prerequisites in weapon loc fields.
+- progression: 4-6 steps to advance to Late Game. Focus on weapon forge decisions and soft cap milestones.
+- checklist: 5-8 items/objectives. Format: "Name — brief why"
+- keyBosses: boss encounters in SL 55-75 with build-specific notes${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -762,7 +783,10 @@ Generate phase5 (Late Game) and phase6 (End Game) for this ${gameName} build.
     "sn": "Approaching peak — all core soft caps reachable, best-in-slot weapons upgrading.",
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 370, "sp": 320, "bs": 740, "n": "Late-game damage context" }
+    "dmg": { "ps": 370, "sp": 320, "bs": 740, "n": "Late-game damage context" },
+    "progression": ["Action 1: remaining soft caps to finish", "Action 2: best-in-slot item to farm or buy", "Action 3: optional covenant or DLC content", "Action 4: final stat level before End Game"],
+    "checklist": ["Weapon at max upgrade — +10 or +5", "All primary soft caps hit", "Best-in-slot armor acquired", "Key talisman/ring for build finisher"],
+    "keyBosses": ["Boss Name — guards key late item for this build", "Optional Boss — DLC or covenant reward worth pursuing"]
   },
   "phase6": {
     "name": "End Game",
@@ -772,12 +796,18 @@ Generate phase5 (Late Game) and phase6 (End Game) for this ${gameName} build.
     "sn": "Fully optimised — all soft caps hit, best-in-slot gear equipped. PvP meta range reached.",
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 430, "sp": 380, "bs": 860, "n": "Peak damage context" }
+    "dmg": { "ps": 430, "sp": 380, "bs": 860, "n": "Peak damage context" },
+    "progression": ["Action 1: hit SL 120 (PvP meta)", "Action 2: final optional stat point allocation", "Action 3: any last DLC or covenant content", "Action 4: prepare for NG+"],
+    "checklist": ["SL 120 reached — PvP meta locked", "All DLC optional content cleared", "Final covenant reward obtained if applicable", "Build fully optimised — nothing left to upgrade"],
+    "keyBosses": ["Final boss — build's peak performance showcase", "Optional End Game boss — extra challenge or reward"]
   }
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability. Use correct stat names.
-- chapter: 3-5 word dark-fantasy lore title, unique per phase.${getGamePromptRules(gameKey)}`;
+- chapter: 3-5 word dark-fantasy lore title, unique per phase.
+- progression: 4-6 steps. phase5 = path to End Game; phase6 = final polish + NG+ prep.
+- checklist: 5-8 items/objectives. Format: "Name — brief why"
+- keyBosses: boss encounters in each SL range, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -848,11 +878,17 @@ Generate phase7 (NG+) for this ${gameName} build. Enemies scale harder each cycl
       { "label": "NG+3", "stats": { "${ngStatKey}": 45 }, "notes": "~50% HP increase — adapt positioning and stamina management" },
       { "label": "NG+5", "stats": { "${ngStatKey}": 50 }, "notes": "~90% HP increase — patience and resource management critical" },
       { "label": "NG+7", "stats": { "${ngStatKey}": 55 }, "notes": "~150% HP increase — maximum difficulty, no margin for error" }
-    ]
+    ],
+    "progression": ["Tip 1: how to handle HP/damage scaling across cycles", "Tip 2: any stat point investments worth making in later cycles", "Tip 3: DLC or covenant content to revisit in NG+", "Tip 4: toughest encounter in NG+ for this build and how to handle it"],
+    "checklist": ["Collect any missed covenant rewards in NG+", "Grab DLC items that become more accessible in NG+", "Reassess Estus flask allocation if HP pool changes", "Note any questlines that are easier in NG+"],
+    "keyBosses": ["Hardest NG+ boss for this build — specific adaptive strategy", "Any boss that scales unfavourably for this build — what to watch for"]
   }
 }
 
-Rules: Use correct stat names for ${gameName}. ngCycles notes must be specific to this build's playstyle.${getGamePromptRules(gameKey)}`;
+Rules: Use correct stat names for ${gameName}. ngCycles notes must be specific to this build's playstyle.
+- progression: 4-6 tips specifically for running this build through NG+ cycles
+- checklist: items, covenants, or adjustments to make across NG+ runs
+- keyBosses: hardest encounters in NG+ for this specific build with adaptive advice${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);

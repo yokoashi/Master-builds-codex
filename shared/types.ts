@@ -65,6 +65,9 @@ export interface Phase {
   spells: Item[];
   dmg: { ps: number; sp: number; bs: number; n: string };
   ngCycles?: NgCycle[]; // only on NG+ phase
+  progression?: string[];  // ordered steps to advance to the next phase
+  checklist?: string[];    // items & objectives to acquire/complete in this phase
+  keyBosses?: string[];    // key boss encounters with build-specific notes
 }
 
 export interface NgCycle {

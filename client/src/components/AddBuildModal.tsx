@@ -179,6 +179,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const [errorMsg, setErrorMsg] = useState("");
   const [buildLabel, setBuildLabel] = useState("");
   const [buildAccent, setBuildAccent] = useState("#d64545");
+  const [minimized, setMinimized] = useState(false);
 
   // ── Codex status
   const { data: codexData } = useQuery<{ loaded: boolean; entryCount: number }>({
@@ -391,6 +392,47 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const labelCls = "block text-xs font-medium mb-1 uppercase tracking-wider";
   const labelStyle = { color: "var(--color-dim)" };
 
+  /* ── Minimized pill ───────────────────────────────────────────────────── */
+  if (minimized && stage !== "idle") {
+    const currentStep = PIPELINE_STEPS.find((s) => s.id === stage);
+    const progressIdx = stage === "done" ? PIPELINE_STEPS.length : STAGE_ORDER.indexOf(stage);
+    const pct = Math.round((progressIdx / PIPELINE_STEPS.length) * 100);
+    return (
+      <button
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl text-left transition-all hover:scale-105"
+        style={{
+          background: "var(--color-card)",
+          border: `1px solid ${hexToRgba(buildAccent, 0.45)}`,
+          boxShadow: `0 4px 24px ${hexToRgba(buildAccent, 0.18)}`,
+        }}
+        onClick={() => setMinimized(false)}
+      >
+        {/* Pulsing dot */}
+        <div className="relative flex-shrink-0">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: buildAccent }} />
+          {isRunning && (
+            <div className="absolute inset-0 rounded-full animate-ping opacity-60" style={{ background: buildAccent }} />
+          )}
+        </div>
+        {/* Text */}
+        <div className="min-w-0">
+          <p className="text-xs font-semibold truncate max-w-[160px]" style={{ color: buildAccent }}>
+            {buildLabel || "Generating…"}
+          </p>
+          <p className="text-[10px]" style={{ color: "var(--color-dim)" }}>
+            {isRunning ? (currentStep?.label ?? stage) + " · generating…" : stage === "done" ? "Complete ✓" : "Error"}
+          </p>
+        </div>
+        {/* Progress bar */}
+        <div className="w-14 h-1 rounded-full flex-shrink-0 overflow-hidden" style={{ background: "var(--color-card-2)" }}>
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: buildAccent }} />
+        </div>
+        {/* Expand icon */}
+        <span className="text-[10px] flex-shrink-0" style={{ color: "var(--color-dim2)" }}>⬡</span>
+      </button>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -408,7 +450,19 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
             </h2>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>{game.name}</p>
           </div>
-          <button onClick={onClose} disabled={isRunning} className="text-sm px-2 py-1 rounded hover:opacity-80" style={{ color: "var(--color-dim)" }}>✕</button>
+          <div className="flex items-center gap-1">
+            {(isRunning || stage === "done") && (
+              <button
+                onClick={() => setMinimized(true)}
+                className="text-sm px-2 py-1 rounded hover:opacity-80 transition-opacity"
+                style={{ color: "var(--color-dim)" }}
+                title="Minimize"
+              >
+                ⊟
+              </button>
+            )}
+            <button onClick={onClose} disabled={isRunning} className="text-sm px-2 py-1 rounded hover:opacity-80" style={{ color: "var(--color-dim)" }}>✕</button>
+          </div>
         </div>
 
         {/* ── Scrollable body ──────────────────────────────────────────────── */}
