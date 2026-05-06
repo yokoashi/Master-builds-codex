@@ -13,52 +13,52 @@
 @tailwind utilities;
 
 /* ── Palette ─────────────────────────────────────────────────────────────────
-   bg      #090b10   card    #0f1218   cardHi  #161c26
-   text    #c8d4e0   dim     #5a6878   bright  #e8f0f8
-   accent  #4e86f0   gold    #e8aa44   crimson #e05060
+   bg      #0c0a07   card    #141009   cardHi  #1c1710
+   text    #cec090   dim     #7a6840   bright  #f0e8c8
+   accent  #c03a30   gold    #d4a030   purple  #a870c8
    ─────────────────────────────────────────────────────────────────────────── */
 :root {
-  --background: 222 30% 5%;
-  --foreground: 210 25% 80%;
-  --card: 220 28% 8%;
-  --card-foreground: 210 25% 80%;
-  --card-hi: 218 24% 12%;
-  --popover: 220 28% 8%;
-  --popover-foreground: 210 25% 80%;
-  --primary: 219 80% 62%;
-  --primary-foreground: 222 30% 5%;
-  --secondary: 218 24% 12%;
-  --secondary-foreground: 210 25% 80%;
-  --muted: 216 20% 18%;
-  --muted-foreground: 215 15% 46%;
-  --accent: 219 80% 62%;
-  --accent-foreground: 222 30% 5%;
-  --destructive: 352 68% 58%;
-  --destructive-foreground: 210 25% 95%;
-  --border: 218 22% 14%;
-  --input: 218 22% 12%;
-  --ring: 219 80% 62%;
+  --background: 28 24% 5%;
+  --foreground: 44 28% 68%;
+  --card: 30 22% 7%;
+  --card-foreground: 44 28% 68%;
+  --card-hi: 30 20% 10%;
+  --popover: 30 22% 7%;
+  --popover-foreground: 44 28% 68%;
+  --primary: 4 60% 46%;
+  --primary-foreground: 44 28% 90%;
+  --secondary: 30 20% 10%;
+  --secondary-foreground: 44 28% 68%;
+  --muted: 28 16% 15%;
+  --muted-foreground: 36 10% 46%;
+  --accent: 4 60% 46%;
+  --accent-foreground: 44 28% 90%;
+  --destructive: 4 60% 46%;
+  --destructive-foreground: 44 28% 90%;
+  --border: 28 16% 14%;
+  --input: 28 16% 11%;
+  --ring: 4 60% 46%;
   --radius: 0.375rem;
 
-  --color-bg:      #090b10;
-  --color-card:    #0f1218;
-  --color-card-hi: #161c26;
-  --color-card-2:  #1c2333;
-  --color-text:    #c8d4e0;
-  --color-dim:     #5a6878;
-  --color-dim2:    #38485a;
-  --color-bright:  #e8f0f8;
-  --color-crimson: #e05060;
-  --color-gold:    #e8aa44;
-  --color-purple:  #9070d8;
-  --color-blue:    #4a90e0;
-  --color-green:   #50c870;
-  --color-fire:    #f06830;
+  --color-bg:      #0c0a07;
+  --color-card:    #141009;
+  --color-card-hi: #1c1710;
+  --color-card-2:  #241d12;
+  --color-text:    #cec090;
+  --color-dim:     #7a6840;
+  --color-dim2:    #5a4c2e;
+  --color-bright:  #f0e8c8;
+  --color-crimson: #c03a30;
+  --color-gold:    #d4a030;
+  --color-purple:  #a870c8;
+  --color-blue:    #5080c0;
+  --color-green:   #5a9040;
+  --color-fire:    #d86020;
 
   /* Action accent — primary buttons, active states, selection indicators */
-  --color-accent:  #4e86f0;
+  --color-accent:  #c03a30;
   /* Border — default separator/divider color */
-  --color-border:  #1a2230;
+  --color-border:  #221c10;
 
   --font-display: 'Cinzel', 'Palatino Linotype', serif;
   --font-body:    'DM Sans', 'Helvetica Neue', sans-serif;
@@ -98,11 +98,11 @@ button { cursor: pointer; }
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 ::selection {
-  background: rgba(78, 134, 240, 0.28);
+  background: rgba(192, 58, 48, 0.28);
   color: var(--color-bright);
 }
 
@@ -114,10 +114,10 @@ button { cursor: pointer; }
 }
 
 /* ── Scrollbars ───────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1e2d42; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #2a3e58; }
+::-webkit-scrollbar-thumb { background: #2e2418; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #3e3222; }
 
 /* ── Keyframes ────────────────────────────────────────────────────────────── */
 @keyframes barFill {
@@ -204,6 +204,42 @@ button { cursor: pointer; }
   margin: 4px 0;
 }
 
+/* ── Chapter breadcrumb separator ────────────────────────────────────────── */
+.breadcrumb-sep {
+  color: var(--color-dim2);
+  margin: 0 6px;
+  font-size: 0.7rem;
+}
+
+/* ── Sidebar build entry (active) ────────────────────────────────────────── */
+.sidebar-chapter-active {
+  background: linear-gradient(90deg, var(--accent-bg, rgba(192,58,48,0.08)) 0%, transparent 100%);
+}
+
+/* ── Questline step timeline dot ─────────────────────────────────────────── */
+.ql-step-line {
+  position: absolute;
+  left: 9px;
+  top: 20px;
+  bottom: -12px;
+  width: 1px;
+  background: var(--color-border);
+}
+.ql-step-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+  flex-shrink: 0;
+}
+
 /* ── Glow border on cards ─────────────────────────────────────────────────── */
 .card-glow {
   position: relative;
@@ -263,12 +299,12 @@ button { cursor: pointer; }
    Default (no attribute) = Ashen (dark amber/soot — existing look)
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Ashen — warm amber/soot (classic DS feel) ────────────────────────────── */
+/* ── Ashen — warmer variant with slightly lighter text ───────────────────── */
 [data-theme="ashen"] {
-  --color-bg:      #0d0b08;
+  --color-bg:      #0e0c08;
   --color-card:    #171310;
   --color-card-hi: #1f1a14;
-  --color-card-2:  #251f17;
+  --color-card-2:  #272019;
   --color-text:    #d8cfba;
   --color-dim:     #7a7060;
   --color-dim2:    #5a5040;

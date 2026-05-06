@@ -19,12 +19,11 @@ export default function StatBar({ stat, value, prevValue, max, softCap, accent }
     <div className="flex items-center gap-2.5" data-testid={`stat-bar-${stat}`}>
       {/* Stat name */}
       <span
-        className="text-xs font-medium flex-shrink-0 text-right"
+        className="text-[10px] font-bold flex-shrink-0 text-right uppercase tracking-widest"
         style={{
-          width: 28,
+          width: 30,
           color: atOrPastCap ? accent : "var(--color-dim)",
           fontFamily: "var(--font-display)",
-          letterSpacing: "0.05em",
         }}
       >
         {stat}
@@ -32,18 +31,18 @@ export default function StatBar({ stat, value, prevValue, max, softCap, accent }
 
       {/* Bar track */}
       <div
-        className="flex-1 relative rounded-full overflow-visible"
-        style={{ height: 6, background: "#1e1a14" }}
+        className="flex-1 relative rounded-sm overflow-visible"
+        style={{ height: 4, background: "var(--color-card-2)" }}
       >
         {/* Soft cap marker */}
         {softCapPct !== null && (
           <div
-            className="absolute top-1/2 -translate-y-1/2 z-10 rounded-full"
+            className="absolute top-1/2 -translate-y-1/2 z-10"
             style={{
               left: `${softCapPct}%`,
-              width: 2,
+              width: 1,
               height: 10,
-              background: hexToRgba(accent, atOrPastCap ? 0.9 : 0.4),
+              background: hexToRgba(accent, atOrPastCap ? 0.85 : 0.35),
             }}
             title={`Soft cap: ${softCap}`}
           />
@@ -54,19 +53,19 @@ export default function StatBar({ stat, value, prevValue, max, softCap, accent }
           style={{
             height: "100%",
             width: `${pct}%`,
-            borderRadius: "9999px",
+            borderRadius: "2px",
             background: atOrPastCap
-              ? `linear-gradient(90deg, ${hexToRgba(accent, 0.5)}, ${accent})`
-              : `linear-gradient(90deg, #2e2620, #4a3e30)`,
-            boxShadow: atOrPastCap ? `0 0 8px ${hexToRgba(accent, 0.5)}` : "none",
+              ? `linear-gradient(90deg, ${hexToRgba(accent, 0.55)}, ${accent})`
+              : `linear-gradient(90deg, var(--color-dim2), var(--color-dim))`,
+            boxShadow: atOrPastCap ? `0 0 6px ${hexToRgba(accent, 0.45)}` : "none",
           }}
         />
       </div>
 
       {/* Value */}
       <span
-        className="text-xs text-right flex-shrink-0 font-mono"
-        style={{ width: 26, color: atOrPastCap ? accent : "var(--color-text)" }}
+        className="text-xs text-right flex-shrink-0 font-mono font-bold"
+        style={{ width: 24, color: atOrPastCap ? accent : "var(--color-text)" }}
       >
         {value}
       </span>
@@ -74,12 +73,12 @@ export default function StatBar({ stat, value, prevValue, max, softCap, accent }
       {/* Gain badge */}
       {gain > 0 && (
         <span
-          className="text-xs flex-shrink-0 font-mono px-1 rounded"
+          className="text-[10px] flex-shrink-0 font-mono px-1 rounded"
           style={{
             color: "var(--color-green)",
-            background: hexToRgba("#6daa45", 0.12),
-            border: "1px solid rgba(109,170,69,0.2)",
-            width: 32,
+            background: hexToRgba("#5a9040", 0.14),
+            border: "1px solid rgba(90,144,64,0.22)",
+            width: 30,
             textAlign: "right",
           }}
         >
@@ -87,11 +86,11 @@ export default function StatBar({ stat, value, prevValue, max, softCap, accent }
         </span>
       )}
 
-      {/* Cap badge */}
+      {/* Cap check */}
       {atOrPastCap && (
         <span
-          className="text-xs flex-shrink-0 font-bold"
-          style={{ color: accent, textShadow: `0 0 8px ${hexToRgba(accent, 0.6)}` }}
+          className="text-[10px] flex-shrink-0 font-bold"
+          style={{ color: accent }}
         >
           ✓
         </span>

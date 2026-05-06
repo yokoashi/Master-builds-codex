@@ -12,6 +12,8 @@ import QuickRefTab from "@/components/QuickRefTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 
+const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+
 const TAB_KEYS = ["build", "progression", "materials", "prosCons", "quickRef"] as const;
 type TabKey = typeof TAB_KEYS[number];
 
@@ -32,7 +34,6 @@ export default function CodexPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [deletePending, setDeletePending] = useState<Build | null>(null);
   const [importingCodex, setImportingCodex] = useState(false);
-  const [codexImportStatus, setCodexImportStatus] = useState<string | null>(null);
 
   const importFileRef = useRef<HTMLInputElement>(null);
   const codexFileRef = useRef<HTMLInputElement>(null);
@@ -52,8 +53,12 @@ export default function CodexPage() {
     queryKey: ["/api/codex", selectedGameKey],
     queryFn: () => apiRequest<{ loaded: boolean; entryCount: number }>("GET", `/api/codex/${selectedGameKey}`),
   });
-  const codexLoaded  = codexData?.loaded ?? false;
-  const entryCount   = codexData?.entryCount ?? 0;
+  const codexLoaded = codexData?.loaded ?? false;
+  const entryCount  = codexData?.entryCount ?? 0;
+
+  // Build counts per game (for sidebar badge)
+  const buildCountByGame = (gameKey: string) =>
+    allBuilds.filter((b) => b.gameKey === gameKey).length;
 
   // ── Delete mutation ──────────────────────────────────────────────────────────
   const deleteMutation = useMutation({
@@ -108,7 +113,6 @@ export default function CodexPage() {
     const file = e.target.files?.[0];
     if (!file || !game) return;
     setImportingCodex(true);
-    setCodexImportStatus("Parsing codex…");
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
@@ -118,11 +122,9 @@ export default function CodexPage() {
           gameName: game.name,
           codex,
         });
-        setCodexImportStatus(`${result.entryCount.toLocaleString()} entries`);
         queryClient.invalidateQueries({ queryKey: ["/api/codex", selectedGameKey] });
         toast({ title: `Codex loaded`, description: `${result.entryCount.toLocaleString()} entries indexed for ${game.name}` });
       } catch {
-        setCodexImportStatus("Parse failed");
         toast({ title: "Codex import error", description: "Invalid JSON or server error", variant: "destructive" });
       } finally {
         setImportingCodex(false);
@@ -132,7 +134,14 @@ export default function CodexPage() {
     e.target.value = "";
   }
 
-  const accentColor = build?.accent ?? "#d64545";
+  const accentColor = build?.accent ?? "var(--color-accent)";
+
+  // ── Game select ──────────────────────────────────────────────────────────────
+  function selectGame(key: string) {
+    setSelectedGameKey(key);
+    setSelectedBuildKey(null);
+    setActiveTab("build");
+  }
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "var(--color-bg)", color: "var(--color-text)" }}>
@@ -141,184 +150,260 @@ export default function CodexPage() {
       <input ref={importFileRef} type="file" accept=".json" className="hidden" onChange={handleImportBuilds} />
       <input ref={codexFileRef} type="file" accept=".json" className="hidden" onChange={handleCodexImport} />
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          SIDEBAR
+          ══════════════════════════════════════════════════════════════════════ */}
       <aside
-        className="w-52 flex-shrink-0 flex flex-col border-r"
+        className="w-56 flex-shrink-0 flex flex-col border-r"
         style={{ backgroundColor: "var(--color-card)", borderColor: "var(--color-border)" }}
       >
-        {/* Brand */}
-        <div className="px-4 py-3 border-b" style={{ borderColor: "var(--color-border)" }}>
-          <h1 className="font-display text-sm font-bold tracking-widest uppercase" style={{ color: "var(--color-bright)" }}>
-            Build Codex
-          </h1>
-        </div>
-
-        {/* Game selector */}
-        <div className="px-3 py-3 border-b" style={{ borderColor: "var(--color-border)" }}>
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: "var(--color-dim)" }}>
-            Game
-          </p>
-          <div className="flex flex-col gap-1">
-            {games.map((g) => (
-              <button
-                key={g.key}
-                onClick={() => { setSelectedGameKey(g.key); setSelectedBuildKey(null); setActiveTab("build"); }}
-                className="text-left px-2 py-1.5 rounded text-xs font-medium transition-all"
-                style={
-                  selectedGameKey === g.key
-                    ? { backgroundColor: "var(--color-card-2)", color: "var(--color-bright)", borderLeft: "2px solid var(--color-accent)" }
-                    : { color: "var(--color-text)", opacity: 0.6 }
-                }
-              >
-                <span className="mr-1.5">{g.icon}</span>
-                {g.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Builds list */}
-        <div className="flex-1 overflow-y-auto px-2 py-2">
-          <div className="flex items-center justify-between px-1 mb-2">
-            <p className="text-xs uppercase tracking-widest" style={{ color: "var(--color-dim)" }}>
-              Chapters
-            </p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="text-xs px-2 py-0.5 rounded font-medium transition-all hover:opacity-90"
-              style={{ backgroundColor: "var(--color-accent)", color: "#fff" }}
-              title="Write a new chapter with AI"
+        {/* ── Brand ──────────────────────────────────────────────────────── */}
+        <div className="px-4 pt-4 pb-3 border-b" style={{ borderColor: "var(--color-border)" }}>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+              style={{ backgroundColor: "var(--color-accent)", color: "#fff", fontFamily: "var(--font-display)", letterSpacing: "0.05em" }}
             >
-              + New
-            </button>
-          </div>
-
-          {builds.length === 0 && (
-            <div className="px-2 py-4 text-center">
-              <p className="text-xs mb-1" style={{ color: "var(--color-dim)" }}>No chapters yet</p>
-              {!codexLoaded && (
-                <p className="text-xs" style={{ color: "var(--color-dim)" }}>
-                  Import a codex first to enable AI generation
-                </p>
-              )}
+              MC
             </div>
-          )}
-
-          {builds.map((b) => (
-            <button
-              key={b.key}
-              onClick={() => { setSelectedBuildKey(b.key); setActiveTab("build"); }}
-              className="w-full text-left px-2 py-2 rounded mb-0.5 transition-all"
-              style={
-                build?.key === b.key
-                  ? { backgroundColor: "var(--color-card-hi)", borderLeft: `2px solid ${b.accent}`, opacity: 1 }
-                  : { opacity: 0.6 }
-              }
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-base leading-none">{b.icon}</span>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: build?.key === b.key ? "var(--color-bright)" : "var(--color-text)" }}>
-                    {b.label}
-                  </p>
-                  <p className="text-[10px] truncate" style={{ color: "var(--color-dim)" }}>{b.sub}</p>
-                </div>
-              </div>
-            </button>
-          ))}
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: "var(--color-bright)", fontFamily: "var(--font-display)" }}>
+                Master Codex
+              </p>
+              <p className="text-[9px] italic" style={{ color: "var(--color-dim)" }}>
+                A library of trials
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* Bottom actions */}
-        <div className="px-3 py-3 border-t space-y-1.5" style={{ borderColor: "var(--color-border)" }}>
-          <div className="flex items-center justify-between px-1 mb-2">
-            <span className="text-xs" style={{ color: "var(--color-dim)" }}>
-              {importingCodex ? "Importing…" : codexImportStatus ?? (codexLoaded ? `${entryCount.toLocaleString()} entries` : "No codex")}
-            </span>
-            <button
-              onClick={() => codexFileRef.current?.click()}
-              className="text-[10px] px-1.5 py-0.5 rounded font-medium transition-all hover:opacity-90"
-              style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-gold)", border: "1px solid var(--color-border)" }}
-              title="Import a codex JSON to power AI generation"
-            >
-              Codex
-            </button>
+        {/* ── Books list ─────────────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          <p className="text-[8px] uppercase tracking-[0.30em] font-semibold mb-3 px-1" style={{ color: "var(--color-dim2)" }}>
+            Books
+          </p>
+
+          <div className="space-y-0.5">
+            {games.map((g, gi) => {
+              const isActiveGame = selectedGameKey === g.key;
+              const gameBuilds = allBuilds.filter((b) => b.gameKey === g.key);
+              return (
+                <div key={g.key}>
+                  {/* Game entry */}
+                  <button
+                    onClick={() => selectGame(g.key)}
+                    className="w-full text-left flex items-start gap-2.5 px-2 py-2 rounded transition-all hover:opacity-90"
+                    style={{
+                      backgroundColor: isActiveGame ? hexToRgba("#c03a30", 0.06) : "transparent",
+                    }}
+                  >
+                    <span
+                      className="flex-shrink-0 font-display text-[9px] font-bold mt-0.5"
+                      style={{ color: isActiveGame ? "var(--color-accent)" : "var(--color-dim2)", minWidth: 16 }}
+                    >
+                      {ROMAN[gi] ?? String(gi + 1)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold leading-tight truncate"
+                        style={{ color: isActiveGame ? "var(--color-bright)" : "var(--color-text)" }}>
+                        {g.name}
+                      </p>
+                      {buildCountByGame(g.key) > 0 && (
+                        <p className="text-[9px] mt-0.5" style={{ color: "var(--color-dim)" }}>
+                          {buildCountByGame(g.key)} chapter{buildCountByGame(g.key) !== 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* Chapters under active game */}
+                  {isActiveGame && gameBuilds.length > 0 && (
+                    <div className="ml-6 mt-0.5 mb-1 space-y-px">
+                      {gameBuilds.map((b) => {
+                        const isActiveBuild = build?.key === b.key;
+                        return (
+                          <button
+                            key={b.key}
+                            onClick={() => { setSelectedBuildKey(b.key); setActiveTab("build"); }}
+                            className="w-full text-left flex items-start gap-2 px-2 py-1.5 rounded transition-all"
+                            style={{
+                              borderLeft: `2px solid ${isActiveBuild ? b.accent ?? "var(--color-accent)" : "var(--color-border)"}`,
+                              backgroundColor: isActiveBuild ? hexToRgba(b.accent ?? "#c03a30", 0.07) : "transparent",
+                            }}
+                          >
+                            <span className="text-sm leading-none flex-shrink-0 mt-px">{b.icon}</span>
+                            <div className="min-w-0">
+                              <p
+                                className="text-xs font-medium leading-tight truncate"
+                                style={{ color: isActiveBuild ? "var(--color-bright)" : "var(--color-text)" }}
+                              >
+                                {b.label}
+                              </p>
+                              {b.sub && (
+                                <p className="text-[9px] italic truncate mt-0.5" style={{ color: "var(--color-dim)" }}>
+                                  {b.sub}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+        </div>
+
+        {/* ── Footer ─────────────────────────────────────────────────────── */}
+        <div className="px-4 pt-3 pb-4 border-t" style={{ borderColor: "var(--color-border)" }}>
+          {/* Decorative divider */}
+          <p className="text-center text-[11px] mb-2.5" style={{ color: "var(--color-dim2)" }}>✦</p>
+          <p className="text-[9px] italic text-center mb-3 leading-relaxed" style={{ color: "var(--color-dim)" }}>
+            Begin a new chapter —<br />let the codex be written
+          </p>
+
           <button
-            onClick={handleExport}
-            className="w-full text-left text-xs px-2 py-1.5 rounded transition-all hover:opacity-90"
-            style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-text)" }}
+            onClick={() => setShowAddModal(true)}
+            className="w-full text-xs py-2 rounded font-semibold transition-all hover:opacity-90 mb-3"
+            style={{ backgroundColor: "var(--color-accent)", color: "#fff" }}
           >
-            ↑ Export Builds
+            + New Chapter
           </button>
-          <button
-            onClick={() => importFileRef.current?.click()}
-            className="w-full text-left text-xs px-2 py-1.5 rounded transition-all hover:opacity-90"
-            style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-text)" }}
-          >
-            ↓ Import Builds
-          </button>
+
+          {/* Codex + Knowledge stats */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.15em]">
+              <button
+                onClick={() => codexFileRef.current?.click()}
+                className="hover:opacity-80 transition-opacity"
+                style={{ color: "var(--color-dim)" }}
+                title="Import codex JSON"
+              >
+                {importingCodex ? "Importing…" : "Codex"}
+              </button>
+              <span style={{ color: codexLoaded ? "var(--color-gold)" : "var(--color-dim2)" }}>
+                {codexLoaded ? `${entryCount.toLocaleString()} facts` : "—"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.15em]">
+              <button
+                onClick={handleExport}
+                className="hover:opacity-80 transition-opacity"
+                style={{ color: "var(--color-dim)" }}
+              >
+                Export
+              </button>
+              <button
+                onClick={() => importFileRef.current?.click()}
+                className="hover:opacity-80 transition-opacity"
+                style={{ color: "var(--color-dim)" }}
+              >
+                Import
+              </button>
+            </div>
+          </div>
         </div>
       </aside>
 
-      {/* ── Main content ─────────────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          MAIN CONTENT
+          ══════════════════════════════════════════════════════════════════════ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {build ? (
           <>
-            {/* Build header */}
+            {/* ── Breadcrumb header ─────────────────────────────────────── */}
             <div
-              className="flex-shrink-0 px-5 py-3 border-b flex items-center gap-4"
-              style={{
-                borderColor: "var(--color-border)",
-                background: `linear-gradient(90deg, ${hexToRgba(accentColor, 0.08)} 0%, transparent 60%)`,
-              }}
+              className="flex-shrink-0 px-6 py-3 border-b flex items-center justify-between gap-4"
+              style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-card)" }}
             >
-              <span className="text-2xl">{build.icon}</span>
-              <div className="flex-1 min-w-0">
-                <h2 className="font-display text-lg font-bold leading-tight" style={{ color: "var(--color-bright)" }}>
-                  {build.label}
-                </h2>
-                <p className="text-xs" style={{ color: "var(--color-dim)" }}>{build.sub}</p>
+              {/* Breadcrumb */}
+              <div className="flex items-center text-[9px] uppercase tracking-[0.20em] min-w-0">
+                <span style={{ color: "var(--color-dim)" }}>Codex</span>
+                <span className="breadcrumb-sep">/</span>
+                <span className="truncate" style={{ color: "var(--color-dim)" }}>{game?.name}</span>
+                <span className="breadcrumb-sep">/</span>
+                <span className="truncate font-semibold" style={{ color: "var(--color-bright)" }}>{build.label}</span>
               </div>
-              <div className="flex items-center gap-2">
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2 flex-shrink-0">
                 {build.isAI && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-gold)" }}>
+                  <span className="text-[9px] px-2 py-0.5 rounded uppercase tracking-widest font-bold"
+                    style={{ backgroundColor: hexToRgba("#d4a030", 0.12), color: "var(--color-gold)", border: "1px solid rgba(212,160,48,0.25)" }}>
                     AI
                   </span>
                 )}
                 <button
+                  onClick={() => codexFileRef.current?.click()}
+                  className="text-[9px] px-2.5 py-1.5 rounded uppercase tracking-widest font-medium transition-all hover:opacity-90"
+                  style={{ color: "var(--color-dim)", backgroundColor: "var(--color-card-hi)", border: "1px solid var(--color-border)" }}
+                  title={codexLoaded ? `${entryCount.toLocaleString()} codex entries` : "Import codex"}
+                >
+                  Knowledge
+                </button>
+                <button
+                  onClick={handleExport}
+                  className="text-[9px] px-2.5 py-1.5 rounded uppercase tracking-widest font-medium transition-all hover:opacity-90"
+                  style={{ color: "var(--color-dim)", backgroundColor: "var(--color-card-hi)", border: "1px solid var(--color-border)" }}
+                >
+                  Export
+                </button>
+                <button
                   onClick={() => setDeletePending(build)}
-                  className="text-xs px-2 py-1 rounded transition-all hover:opacity-90"
-                  style={{ color: "var(--color-dim)", backgroundColor: "var(--color-card-hi)" }}
+                  className="text-[9px] px-2.5 py-1.5 rounded uppercase tracking-widest font-medium transition-all hover:opacity-90"
+                  style={{ color: "var(--color-dim)", backgroundColor: "var(--color-card-hi)", border: "1px solid var(--color-border)" }}
                 >
                   Delete
+                </button>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="text-[9px] px-3 py-1.5 rounded uppercase tracking-widest font-bold transition-all hover:opacity-90"
+                  style={{ backgroundColor: "var(--color-accent)", color: "#fff" }}
+                >
+                  Begin Chapter
                 </button>
               </div>
             </div>
 
-            {/* Tab bar */}
+            {/* ── Tab bar ───────────────────────────────────────────────── */}
             <div
-              className="flex-shrink-0 flex border-b px-5 gap-1"
+              className="flex-shrink-0 flex border-b px-6 gap-0"
               style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-card)" }}
             >
-              {TAB_KEYS.map((key) => (
-                <button
-                  key={key}
-                  role="tab"
-                  aria-selected={activeTab === key}
-                  onClick={() => setActiveTab(key)}
-                  className={cn(
-                    "text-xs px-3 py-2.5 font-medium transition-all border-b-2 whitespace-nowrap",
-                    activeTab === key ? "border-current" : "border-transparent opacity-50 hover:opacity-80"
-                  )}
-                  style={{ color: activeTab === key ? accentColor : "var(--color-text)" }}
-                >
-                  {tabLabel(key)}
-                </button>
-              ))}
+              {TAB_KEYS.map((key) => {
+                const active = activeTab === key;
+                return (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setActiveTab(key)}
+                    className="relative text-[10px] px-4 py-3 font-semibold transition-all whitespace-nowrap uppercase tracking-widest"
+                    style={{ color: active ? "var(--color-bright)" : "var(--color-dim)", fontFamily: "var(--font-display)" }}
+                  >
+                    {tabLabel(key)}
+                    {/* Active underline */}
+                    {active && (
+                      <>
+                        <span
+                          className="absolute bottom-0 left-0 right-0 h-px"
+                          style={{ backgroundColor: accentColor }}
+                        />
+                        <span
+                          className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                          style={{ backgroundColor: accentColor, bottom: -2 }}
+                        />
+                      </>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Tab content */}
-            <div className="flex-1 overflow-y-auto">
+            {/* ── Tab content ──────────────────────────────────────────── */}
+            <div className="flex-1 overflow-y-auto" style={{ backgroundColor: "var(--color-bg)" }}>
               {activeTab === "build"       && <BuildTab build={build} game={game} />}
               {activeTab === "progression" && <ProgressionTab build={build} />}
               {activeTab === "materials"   && <MaterialsTab build={build} game={game} />}
@@ -327,20 +412,30 @@ export default function CodexPage() {
             </div>
           </>
         ) : (
-          /* Empty state */
-          <div className="flex-1 flex items-center justify-center flex-col gap-4">
-            <p className="font-display text-2xl" style={{ color: "var(--color-dim)" }}>
-              {game?.icon ?? "🔥"} {game?.name ?? "Dark Souls: Remastered"}
-            </p>
-            <p className="text-sm" style={{ color: "var(--color-dim)" }}>
-              {!codexLoaded
-                ? "Import a codex JSON, then write your first chapter"
-                : `${entryCount.toLocaleString()} codex entries loaded — begin your first chapter`}
-            </p>
+          /* ── Empty state ──────────────────────────────────────────────── */
+          <div className="flex-1 flex items-center justify-center flex-col gap-5">
+            <div className="text-center">
+              <p className="font-display text-3xl font-bold mb-2" style={{ color: "var(--color-dim2)" }}>
+                {game?.icon ?? "🔥"}
+              </p>
+              <p className="font-display text-lg font-semibold mb-1" style={{ color: "var(--color-dim)" }}>
+                {game?.name ?? "Dark Souls: Remastered"}
+              </p>
+              <p className="text-xs italic" style={{ color: "var(--color-dim2)" }}>
+                {!codexLoaded
+                  ? "Import a codex JSON to enable accurate AI generation"
+                  : `${entryCount.toLocaleString()} codex entries loaded`}
+              </p>
+            </div>
+            <div className="text-center" style={{ color: "var(--color-dim2)" }}>
+              <p className="text-[9px] uppercase tracking-[0.25em] mb-3">
+                ✦ ── ── ── ── ── ✦
+              </p>
+            </div>
             <button
               onClick={() => setShowAddModal(true)}
-              className="px-5 py-2 rounded font-medium text-sm transition-all hover:opacity-90"
-              style={{ backgroundColor: "var(--color-accent)", color: "#fff" }}
+              className="px-6 py-2.5 rounded font-semibold text-xs uppercase tracking-widest transition-all hover:opacity-90"
+              style={{ backgroundColor: "var(--color-accent)", color: "#fff", fontFamily: "var(--font-display)" }}
             >
               + Begin Chapter
             </button>
