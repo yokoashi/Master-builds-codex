@@ -13,47 +13,52 @@
 @tailwind utilities;
 
 /* ── Palette ─────────────────────────────────────────────────────────────────
-   bg      #0d0b08   card    #171310   cardHi  #1f1a14
-   text    #d8cfba   dim     #7a7060   bright  #f5ede0
-   crimson #d64545   gold    #e8c05a   purple  #b370d8
+   bg      #090b10   card    #0f1218   cardHi  #161c26
+   text    #c8d4e0   dim     #5a6878   bright  #e8f0f8
+   accent  #4e86f0   gold    #e8aa44   crimson #e05060
    ─────────────────────────────────────────────────────────────────────────── */
 :root {
-  --background: 30 20% 4%;
-  --foreground: 38 18% 78%;
-  --card: 28 24% 7%;
-  --card-foreground: 38 18% 78%;
-  --card-hi: 28 20% 10%;
-  --popover: 28 24% 7%;
-  --popover-foreground: 38 18% 78%;
-  --primary: 0 62% 56%;
-  --primary-foreground: 38 18% 90%;
-  --secondary: 28 20% 10%;
-  --secondary-foreground: 38 18% 78%;
-  --muted: 28 15% 15%;
-  --muted-foreground: 32 8% 50%;
-  --accent: 42 72% 63%;
-  --accent-foreground: 28 24% 7%;
-  --destructive: 0 62% 56%;
-  --destructive-foreground: 38 18% 90%;
-  --border: 28 15% 15%;
-  --input: 28 15% 12%;
-  --ring: 0 62% 56%;
+  --background: 222 30% 5%;
+  --foreground: 210 25% 80%;
+  --card: 220 28% 8%;
+  --card-foreground: 210 25% 80%;
+  --card-hi: 218 24% 12%;
+  --popover: 220 28% 8%;
+  --popover-foreground: 210 25% 80%;
+  --primary: 219 80% 62%;
+  --primary-foreground: 222 30% 5%;
+  --secondary: 218 24% 12%;
+  --secondary-foreground: 210 25% 80%;
+  --muted: 216 20% 18%;
+  --muted-foreground: 215 15% 46%;
+  --accent: 219 80% 62%;
+  --accent-foreground: 222 30% 5%;
+  --destructive: 352 68% 58%;
+  --destructive-foreground: 210 25% 95%;
+  --border: 218 22% 14%;
+  --input: 218 22% 12%;
+  --ring: 219 80% 62%;
   --radius: 0.375rem;
 
-  --color-bg:      #0d0b08;
-  --color-card:    #171310;
-  --color-card-hi: #1f1a14;
-  --color-card-2:  #251f17;
-  --color-text:    #d8cfba;
-  --color-dim:     #7a7060;
-  --color-dim2:    #5a5040;
-  --color-bright:  #f5ede0;
-  --color-crimson: #d64545;
-  --color-gold:    #e8c05a;
-  --color-purple:  #b370d8;
-  --color-blue:    #5591c7;
-  --color-green:   #6daa45;
-  --color-fire:    #e85a1a;
+  --color-bg:      #090b10;
+  --color-card:    #0f1218;
+  --color-card-hi: #161c26;
+  --color-card-2:  #1c2333;
+  --color-text:    #c8d4e0;
+  --color-dim:     #5a6878;
+  --color-dim2:    #38485a;
+  --color-bright:  #e8f0f8;
+  --color-crimson: #e05060;
+  --color-gold:    #e8aa44;
+  --color-purple:  #9070d8;
+  --color-blue:    #4a90e0;
+  --color-green:   #50c870;
+  --color-fire:    #f06830;
+
+  /* Action accent — primary buttons, active states, selection indicators */
+  --color-accent:  #4e86f0;
+  /* Border — default separator/divider color */
+  --color-border:  #1a2230;
 
   --font-display: 'Cinzel', 'Palatino Linotype', serif;
   --font-body:    'DM Sans', 'Helvetica Neue', sans-serif;
@@ -91,13 +96,13 @@ img, video, canvas { display: block; max-width: 100%; height: auto; }
 button { cursor: pointer; }
 
 :focus-visible {
-  outline: 2px solid var(--color-crimson);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: 3px;
 }
 
 ::selection {
-  background: rgba(214, 69, 69, 0.25);
+  background: rgba(78, 134, 240, 0.28);
   color: var(--color-bright);
 }
 
@@ -111,8 +116,8 @@ button { cursor: pointer; }
 /* ── Scrollbars ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #352d24; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #4a3e32; }
+::-webkit-scrollbar-thumb { background: #1e2d42; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #2a3e58; }
 
 /* ── Keyframes ────────────────────────────────────────────────────────────── */
 @keyframes barFill {
@@ -186,7 +191,7 @@ button { cursor: pointer; }
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, #2e2620, transparent);
+  background: linear-gradient(90deg, transparent, var(--color-border), transparent);
 }
 .section-label::before { flex: 0 0 8px; }
 
@@ -258,7 +263,7 @@ button { cursor: pointer; }
    Default (no attribute) = Ashen (dark amber/soot — existing look)
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Ashen (default — already set in :root, alias here for clarity) ───────── */
+/* ── Ashen — warm amber/soot (classic DS feel) ────────────────────────────── */
 [data-theme="ashen"] {
   --color-bg:      #0d0b08;
   --color-card:    #171310;
@@ -271,6 +276,8 @@ button { cursor: pointer; }
   --color-crimson: #d64545;
   --color-gold:    #e8c05a;
   --color-purple:  #b370d8;
+  --color-accent:  #d64545;
+  --color-border:  #2a2118;
 }
 
 /* ── Obsidian — pure black, ice-blue accents ──────────────────────────────── */
@@ -1126,202 +1133,3 @@ button { cursor: pointer; }
 [data-theme="bloodscript"] ::-webkit-scrollbar-thumb { background: #5a1818; }
 [data-theme="bloodscript"] ::-webkit-scrollbar-thumb:hover { background: #7a2020; }
 
-/* ── Myst ─────────────────────────────────────────────────────────────────────
-   1993 Cyan Worlds atmosphere. Stone room, linking book on pedestal.
-   Parchment pages (card-hi / card-2), near-black stone walls (bg / card).
-   Instant frame-cut transitions throughout. Subtle scanlines.
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="myst"] {
-  --color-bg:      #07090e;
-  --color-card:    #0c0907;
-  --color-card-hi: #cdc1a0;
-  --color-card-2:  #c0b498;
-  --color-text:    #261e09;
-  --color-bright:  #0e0c07;
-  --color-dim:     #575030;
-  --color-dim2:    #786535;
-  --color-crimson: #336658;
-  --color-gold:    #8a6c24;
-  --color-purple:  #1c5048;
-  --font-display:  'Cinzel', 'Palatino Linotype', serif;
-}
-
-/* Scanlines overlay (myst-scene.css also adds .myst-scanlines element scanlines) */
-[data-theme="myst"] body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,1) 2px,
-    rgba(0,0,0,1) 3px
-  );
-  opacity: 0.022;
-}
-
-/* Stone room body bg */
-[data-theme="myst"] body {
-  background: linear-gradient(180deg, #0b1420 0%, #0d1826 35%, #0e1a28 55%, #07090e 100%);
-}
-
-/* Sidebar — dark stone left wall; scope vars so text is readable */
-[data-theme="myst"] aside {
-  --color-text:   #a8986e;
-  --color-bright: #cdc1a0;
-  --color-dim:    #786535;
-  --color-dim2:   #575030;
-  background: linear-gradient(180deg, #0c1018 0%, #090d14 100%) !important;
-  border-right: 1px solid rgba(138,108,36,0.35) !important;
-  position: relative;
-}
-
-/* Brass edge on sidebar right */
-[data-theme="myst"] aside::after {
-  content: '';
-  position: absolute;
-  top: 0; bottom: 0; right: 0;
-  width: 1px;
-  background: linear-gradient(180deg,
-    transparent 0%,
-    rgba(138,108,36,0.50) 15%,
-    rgba(138,108,36,0.80) 50%,
-    rgba(138,108,36,0.50) 85%,
-    transparent 100%
-  );
-  pointer-events: none;
-}
-
-/* Phase tabs — italic serif journal style */
-[data-theme="myst"] [data-testid^="phase-btn-"] {
-  font-style: italic;
-  border: 0.5px solid rgba(95,75,35,0.38) !important;
-  background: rgba(175,155,95,0.08) !important;
-  transition: none !important;
-  box-shadow: none !important;
-}
-
-[data-theme="myst"] [data-testid^="phase-btn-"].phase-btn-active {
-  background: rgba(28,68,56,0.12) !important;
-  color: #1c5048 !important;
-  border-color: rgba(28,76,64,0.55) !important;
-  box-shadow: none !important;
-}
-
-/* Item expand: instant — no fadeIn animation */
-[data-theme="myst"] .item-expand {
-  animation: none !important;
-}
-
-/* Item card separators: journal entry style */
-[data-theme="myst"] [data-testid^="item-card-"] {
-  border-radius: 0 !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-top: none !important;
-  border-bottom: 0.5px solid rgba(85,65,28,0.18) !important;
-}
-
-/* Tab bar on parchment bg */
-[data-theme="myst"] [role="tablist"] {
-  background: rgba(192,180,152,0.95) !important;
-  border-bottom: 0.5px solid rgba(85,65,28,0.30) !important;
-}
-
-/* Scrollbar: parchment/stone */
-[data-theme="myst"] ::-webkit-scrollbar-track { background: #c0b498; }
-[data-theme="myst"] ::-webkit-scrollbar-thumb { background: rgba(87,80,48,0.55); border-radius: 0; }
-[data-theme="myst"] ::-webkit-scrollbar-thumb:hover { background: rgba(87,80,48,0.75); }
-
-/* Selection: teal */
-[data-theme="myst"] ::selection {
-  background: rgba(51,102,88,0.30);
-  color: #0e0c07;
-}
-
-/* Focus ring: brass */
-[data-theme="myst"] :focus-visible {
-  outline: 1px solid rgba(138,108,36,0.70);
-  outline-offset: 1px;
-  border-radius: 1px;
-}
-
-/* Animate-fade-in: instant in Myst */
-[data-theme="myst"] .animate-fade-in {
-  animation: none !important;
-}
-
-/* ── Right pane: parchment book pages ───────────────────────────────────── */
-[data-theme="myst"] aside + div {
-  background: linear-gradient(180deg, #d9d0b0 0%, #cdc1a0 20%, #c8bc9b 100%);
-  --color-text:    #261e09;
-  --color-bright:  #1a1408;
-  --color-dim:     #6b5d35;
-  --color-dim2:    #8a7648;
-  --color-card:    rgba(185,172,136,0.92);
-  --color-card-hi: rgba(198,186,150,0.88);
-  --color-card-2:  rgba(172,159,122,0.85);
-  --color-purple:  #2d6859;
-  --color-gold:    #7a5c1e;
-  --color-crimson: #336658;
-  --color-green:   #2d5e20;
-}
-
-/* Build header bar on parchment */
-[data-theme="myst"] aside + div .flex-shrink-0.border-b:first-of-type {
-  background: linear-gradient(90deg, rgba(138,108,36,0.07) 0%, transparent 55%) !important;
-  border-bottom-color: rgba(85,65,28,0.22) !important;
-}
-
-/* Hero card: no tinted bg on parchment */
-[data-theme="myst"] [data-testid="build-hero-card"] {
-  background: rgba(85,65,28,0.05) !important;
-  border: 0.5px solid rgba(85,65,28,0.22) !important;
-  box-shadow: none !important;
-}
-
-/* Phase note on parchment */
-[data-theme="myst"] [data-testid="phase-note"] {
-  background: rgba(85,65,28,0.07) !important;
-  border-left-color: rgba(85,65,28,0.38) !important;
-}
-
-/* Item cards: flat journal rows — no card container */
-[data-theme="myst"] [data-testid^="item-card-"] {
-  background: transparent !important;
-  border: none !important;
-  border-bottom: 0.5px solid rgba(85,65,28,0.18) !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-[data-theme="myst"] [data-testid^="item-card-"] > button {
-  background: transparent !important;
-}
-[data-theme="myst"] [data-testid^="item-card-"] > div.item-expand {
-  background: rgba(85,65,28,0.04) !important;
-  border-top-color: rgba(85,65,28,0.15) !important;
-}
-
-/* Stat bar track: warm ink on parchment */
-[data-theme="myst"] [data-testid^="stat-bar-"] > .flex-1 {
-  background: rgba(85,65,28,0.18) !important;
-}
-/* Stat bar fill: dark ink progression */
-[data-theme="myst"] .stat-bar-fill {
-  background: linear-gradient(90deg, rgba(85,65,28,0.42), rgba(85,65,28,0.72)) !important;
-  box-shadow: none !important;
-}
-
-/* Damage note */
-[data-theme="myst"] [data-testid="damage-note"] {
-  background: rgba(85,65,28,0.06) !important;
-  border-color: rgba(85,65,28,0.22) !important;
-}
-
-/* Section header labels (WEAPONS, ARMOR, etc) */
-[data-theme="myst"] aside + div .text-xs.uppercase.tracking-widest {
-  color: rgba(85,65,28,0.6) !important;
-}

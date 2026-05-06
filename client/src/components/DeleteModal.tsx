@@ -1,6 +1,5 @@
 import type { Build } from "@shared/types";
 import { hexToRgba } from "@/lib/utils";
-import { useTheme } from "@/lib/theme";
 
 interface Props {
   build: Build;
@@ -10,8 +9,6 @@ interface Props {
 }
 
 export default function DeleteModal({ build, onConfirm, onCancel, isLoading }: Props) {
-  const { theme } = useTheme();
-  const isMyst = theme === 'myst';
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-50 p-4"
@@ -22,19 +19,17 @@ export default function DeleteModal({ build, onConfirm, onCancel, isLoading }: P
     >
       <div
         className="rounded-lg p-6 max-w-sm w-full"
-        style={{ background: "var(--color-card)", border: "1px solid #3a3028" }}
+        style={{ background: "var(--color-card)", border: "1px solid var(--color-border)" }}
         data-testid="delete-modal"
       >
         <h2
           className="text-lg font-bold mb-2"
           style={{ fontFamily: "var(--font-display)", color: "var(--color-bright)" }}
         >
-          {isMyst ? 'Seal the Age' : 'Close the Chapter'}
+          Close the Chapter
         </h2>
         <p className="text-sm mb-4" style={{ color: "var(--color-dim)" }}>
-          {isMyst ? 'Remove ' : 'Permanently erase '}
-          <strong style={{ color: build.accent }}>{build.label}</strong>
-          {isMyst ? ' from the codex forever?' : ' from the codex? This cannot be undone.'}
+          Permanently erase <strong style={{ color: build.accent }}>{build.label}</strong> from the codex? This cannot be undone.
         </p>
         <div className="flex gap-3 justify-end">
           <button
@@ -42,7 +37,7 @@ export default function DeleteModal({ build, onConfirm, onCancel, isLoading }: P
             disabled={isLoading}
             data-testid="btn-delete-cancel"
             className="px-4 py-2 rounded text-sm font-medium transition-all hover:bg-white/5"
-            style={{ border: "1px solid #3a3028", color: "var(--color-dim)" }}
+            style={{ border: "1px solid var(--color-border)", color: "var(--color-dim)" }}
           >
             Cancel
           </button>

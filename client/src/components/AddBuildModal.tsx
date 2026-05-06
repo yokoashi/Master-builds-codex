@@ -4,7 +4,6 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Game, Build, AiProvider } from "@shared/types";
 import { slugify } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { useTheme } from "@/lib/theme";
 
 interface Props {
   game: Game;
@@ -51,15 +50,12 @@ const DS1R_CLASSES = [
 
 const DS1R_STATS = ["VIT","ATT","END","STR","DEX","RES","INT","FTH"];
 
-// ── Blank phase-stat seed template ────────────────────────────────────────────
 function blankStats(): Record<string, number> {
   return Object.fromEntries(DS1R_STATS.map((s) => [s, 0]));
 }
 
 export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const { toast } = useToast();
-  const { theme } = useTheme();
-  const isMyst = theme === 'myst';
 
   // ── Mode & Provider
   const [mode, setMode]         = useState<Mode>("full");
@@ -145,7 +141,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const [stage, setStage]     = useState<Stage>("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // ── Codex status (from new /api/codex endpoint)
+  // ── Codex status
   const { data: codexData } = useQuery<{ loaded: boolean; entryCount: number }>({
     queryKey: ["/api/codex", game.key],
     queryFn: () => apiRequest<{ loaded: boolean; entryCount: number }>("GET", `/api/codex/${game.key}`),
@@ -153,24 +149,17 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const codexLoaded  = codexData?.loaded ?? false;
   const entryCount   = codexData?.entryCount ?? 0;
 
-  // ── Provider change handler ───────────────────────────────────────────────
   function handleProviderChange(p: AiProvider) {
     setProvider(p);
     setModel(PROVIDER_DEFAULTS[p]);
   }
 
-  // ── Semi-AI stat setter ───────────────────────────────────────────────────
-  function updateStat(
-    phase: "phase1" | "phase2",
-    stat: string,
-    val: string,
-  ) {
+  function updateStat(phase: "phase1" | "phase2", stat: string, val: string) {
     const n = parseInt(val, 10) || 0;
     if (phase === "phase1") setPhase1Stats((prev) => ({ ...prev, [stat]: n }));
     else setPhase2Stats((prev) => ({ ...prev, [stat]: n }));
   }
 
-  // ── Manual save ───────────────────────────────────────────────────────────
   async function handleManualSave() {
     setManualError("");
     let parsed: Build;
@@ -211,7 +200,6 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
     }
   }
 
-  // ── AI generation pipeline ────────────────────────────────────────────────
   async function handleGenerate() {
     if (!description.trim()) {
       toast({ title: "Describe your chapter first", variant: "destructive" });
@@ -225,12 +213,8 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
       const seedStats =
         mode === "semi"
           ? {
-              phase1: Object.fromEntries(
-                Object.entries(phase1Stats).filter(([, v]) => v > 0),
-              ),
-              phase2: Object.fromEntries(
-                Object.entries(phase2Stats).filter(([, v]) => v > 0),
-              ),
+              phase1: Object.fromEntries(Object.entries(phase1Stats).filter(([, v]) => v > 0)),
+              phase2: Object.fromEntries(Object.entries(phase2Stats).filter(([, v]) => v > 0)),
             }
           : undefined;
 
@@ -292,7 +276,6 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
 
   const isRunning = stage !== "idle" && stage !== "done" && stage !== "error";
 
-  // ── UI helpers ─────────────────────────────────────────────────────────────
   const tabBtn = (m: Mode, label: string) => (
     <button
       key={m}
@@ -300,7 +283,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
       disabled={isRunning}
       className="flex-1 py-2 text-xs font-semibold rounded transition-all"
       style={{
-        backgroundColor: mode === m ? "var(--color-crimson)" : "var(--color-card-2)",
+        backgroundColor: mode === m ? "var(--color-accent)" : "var(--color-card-2)",
         color: mode === m ? "#fff" : "var(--color-dim)",
       }}
     >
@@ -317,7 +300,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
       style={{
         backgroundColor: provider === p ? "var(--color-card-hi)" : "transparent",
         color: provider === p ? "var(--color-bright)" : "var(--color-dim)",
-        border: `1px solid ${provider === p ? "var(--color-gold)" : "var(--color-card-hi)"}`,
+        border: `1px solid ${provider === p ? "var(--color-gold)" : "var(--color-border)"}`,
       }}
     >
       {PROVIDER_LABELS[p]}
@@ -328,7 +311,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const inputStyle = {
     backgroundColor: "var(--color-card-2)",
     color: "var(--color-text)",
-    border: "1px solid var(--color-card-hi)",
+    border: "1px solid var(--color-border)",
   };
   const labelCls = "block text-xs font-medium mb-1 uppercase tracking-wider";
   const labelStyle = { color: "var(--color-dim)" };
@@ -340,13 +323,13 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
     >
       <div
         className="w-full max-w-lg rounded-lg shadow-2xl flex flex-col max-h-[90vh]"
-        style={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-card-hi)" }}
+        style={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)" }}
       >
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="px-5 py-4 border-b flex items-center justify-between flex-shrink-0" style={{ borderColor: "var(--color-card-hi)" }}>
+        <div className="px-5 py-4 border-b flex items-center justify-between flex-shrink-0" style={{ borderColor: "var(--color-border)" }}>
           <div>
             <h2 className="font-display text-base font-bold" style={{ color: "var(--color-bright)" }}>
-              {isMyst ? 'New Age' : 'New Chapter'}
+              New Chapter
             </h2>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>{game.name}</p>
           </div>
@@ -365,7 +348,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
               </>
             ) : (
               <>
-                <span style={{ color: "var(--color-crimson)" }}>⚠</span>
+                <span style={{ color: "var(--color-accent)" }}>⚠</span>
                 <span style={{ color: "var(--color-dim)" }}>No codex — import one via the sidebar for accurate item data</span>
               </>
             )}
@@ -396,7 +379,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
                   style={inputStyle}
                 />
                 {manualError && (
-                  <p className="text-[10px] mt-1" style={{ color: "var(--color-crimson)" }}>{manualError}</p>
+                  <p className="text-[10px] mt-1" style={{ color: "var(--color-accent)" }}>{manualError}</p>
                 )}
               </div>
             </>
@@ -415,7 +398,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
                 </div>
               </div>
 
-              {/* Model selector — tabs for the top OpenAI models on OpenRouter */}
+              {/* Model selector */}
               {provider === "openrouter" && (
                 <div>
                   <p className={labelCls} style={labelStyle}>Model</p>
@@ -429,7 +412,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
                         style={{
                           backgroundColor: model === id ? "var(--color-card-hi)" : "transparent",
                           color: model === id ? "var(--color-bright)" : "var(--color-dim)",
-                          border: `1px solid ${model === id ? "var(--color-gold)" : "var(--color-card-hi)"}`,
+                          border: `1px solid ${model === id ? "var(--color-gold)" : "var(--color-border)"}`,
                         }}
                       >
                         {label}
@@ -441,7 +424,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
 
               {/* Build concept */}
               <div>
-                <label className={labelCls} style={labelStyle}>{isMyst ? 'Age Concept *' : 'Chapter Concept *'}</label>
+                <label className={labelCls} style={labelStyle}>Chapter Concept *</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -557,7 +540,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
               className={`px-3 py-2 rounded text-xs ${isRunning ? "animate-pulse" : ""}`}
               style={{
                 backgroundColor: stage === "error" ? "rgba(214,69,69,0.1)" : "var(--color-card-hi)",
-                color: stage === "error" ? "var(--color-crimson)" : "var(--color-gold)",
+                color: stage === "error" ? "var(--color-accent)" : "var(--color-gold)",
                 border: `1px solid ${stage === "error" ? "rgba(214,69,69,0.3)" : "transparent"}`,
               }}
             >
@@ -570,7 +553,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         </div>
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
-        <div className="px-5 py-3 border-t flex gap-2 justify-end flex-shrink-0" style={{ borderColor: "var(--color-card-hi)" }}>
+        <div className="px-5 py-3 border-t flex gap-2 justify-end flex-shrink-0" style={{ borderColor: "var(--color-border)" }}>
           <button
             onClick={onClose}
             disabled={isRunning}
@@ -584,18 +567,18 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
               onClick={handleManualSave}
               disabled={isRunning}
               className="text-xs px-5 py-2 rounded font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-              style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
+              style={{ backgroundColor: "var(--color-accent)", color: "#fff" }}
             >
-              {isRunning ? (isMyst ? "Writing the age…" : "Writing…") : (isMyst ? "Inscribe Age" : "Save Chapter")}
+              {isRunning ? "Writing…" : "Save Chapter"}
             </button>
           ) : (
             <button
               onClick={handleGenerate}
               disabled={isRunning || !description.trim() || (provider === "openrouter" && !model.trim())}
               className="text-xs px-5 py-2 rounded font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-              style={{ backgroundColor: "var(--color-crimson)", color: "#fff" }}
+              style={{ backgroundColor: "var(--color-accent)", color: "#fff" }}
             >
-              {isRunning ? (isMyst ? "Writing the age…" : "Writing…") : (isMyst ? "Link to New Age" : "Begin Chapter")}
+              {isRunning ? "Writing…" : "Begin Chapter"}
             </button>
           )}
         </div>

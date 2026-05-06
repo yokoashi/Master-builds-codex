@@ -3,7 +3,6 @@ import type { Build, Game, Phase } from "@shared/types";
 import { cn, hexToRgba } from "@/lib/utils";
 import ItemCard from "./ItemCard";
 import StatBar from "./StatBar";
-import { useTheme } from "@/lib/theme";
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
 function phaseShortLabel(name: string, index: number): string {
@@ -17,7 +16,6 @@ interface Props {
 }
 
 export default function BuildTab({ build, game }: Props) {
-  const { theme } = useTheme();
   const [activePhase, setActivePhase] = useState(0);
   const [activeNg, setActiveNg] = useState(0);
 
@@ -61,11 +59,7 @@ export default function BuildTab({ build, game }: Props) {
               {build.label}
             </h2>
             <p className="text-sm mt-0.5" style={{ color: "var(--color-dim)" }}>{build.sub}</p>
-            {theme === 'myst' ? (
-              <p className="myst-atrus-note mt-2">{build.playstyle}</p>
-            ) : (
-              <p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--color-text)" }}>{build.playstyle}</p>
-            )}
+            <p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--color-text)" }}>{build.playstyle}</p>
             <div className="flex flex-wrap gap-2 mt-3">
               {build.cls && (
                 <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-dim)" }}>
