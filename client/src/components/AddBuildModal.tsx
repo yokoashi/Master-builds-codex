@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Game, Build, AiProvider } from "@shared/types";
-import { slugify } from "@/lib/utils";
+import { slugify, hexToRgba } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 interface Props {
@@ -12,19 +12,26 @@ interface Props {
 }
 
 type Mode = "full" | "semi" | "manual";
-type Stage = "idle" | "step1" | "step2" | "step3" | "step4" | "step5" | "finalizing" | "done" | "error";
+type Stage =
+  | "idle" | "step1" | "step2" | "step3" | "step4" | "step5"
+  | "step6" | "step7" | "step8" | "step9" | "finalizing" | "done" | "error";
 
-const STAGE_LABELS: Record<Stage, string> = {
-  idle:       "",
-  step1:      "Generating build identity & concept…",
-  step2:      "Generating Early Game phases (1–2)…",
-  step3:      "Generating Mid Game phases (3–4)…",
-  step4:      "Generating Late Game + NG+ phases (5–7)…",
-  step5:      "Writing pros, cons & quick-ref…",
-  finalizing: "Saving build…",
-  done:       "Complete",
-  error:      "Error — see details below",
-};
+const STAGE_ORDER: Stage[] = [
+  "step1","step2","step3","step4","step5","step6","step7","step8","step9","finalizing","done",
+];
+
+const PIPELINE_STEPS = [
+  { id: "step1" as Stage,      label: "Build Identity",       desc: "Name · Class · Concept · Stat targets · Weapon requirements" },
+  { id: "step2" as Stage,      label: "Loadouts & Variants",  desc: "Equipment configurations · Weight tiers · Armour setups" },
+  { id: "step3" as Stage,      label: "Early Game",           desc: "Phases 1–2 · SL 1–35 · Starting gear · First upgrades · Opening NPC path" },
+  { id: "step4" as Stage,      label: "Mid Game",             desc: "Phase 3 · SL 35–55 · Build crystallises · Key covenant unlock" },
+  { id: "step5" as Stage,      label: "Mid-Late Transition",  desc: "Phase 4 · SL 55–75 · First soft caps · Boss weapons unlocked" },
+  { id: "step6" as Stage,      label: "Late & End Game",      desc: "Phases 5–6 · SL 75–120 · Peak optimisation · PvP meta" },
+  { id: "step7" as Stage,      label: "NG+ & Cycles",         desc: "Phase 7 · Scaling cycles · Covenant rewards · DLC notes" },
+  { id: "step8" as Stage,      label: "Build Comparisons",    desc: "2 similar builds · 2 contrasting alternatives · Player context" },
+  { id: "step9" as Stage,      label: "Pros, Cons & Ref",     desc: "Honest strengths · Weaknesses · Quick-reference item table" },
+  { id: "finalizing" as Stage, label: "Saving",               desc: "Assembling & storing the complete build guide" },
+] as const;
 
 const PROVIDER_DEFAULTS: Record<AiProvider, string> = {
   claude:      "claude-sonnet-4-6",
@@ -168,8 +175,10 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
   const [manualError, setManualError] = useState("");
 
   // ── Pipeline state
-  const [stage, setStage]     = useState<Stage>("idle");
+  const [stage, setStage]       = useState<Stage>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [buildLabel, setBuildLabel] = useState("");
+  const [buildAccent, setBuildAccent] = useState("#d64545");
 
   // ── Codex status
   const { data: codexData } = useQuery<{ loaded: boolean; entryCount: number }>({
@@ -210,10 +219,14 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         gameName: game.name,
         buildKey: parsed.key,
         step1: parsed,
-        step2: { phase1: parsed.phases?.[0], phase2: parsed.phases?.[1] },
-        step3: { phase3: parsed.phases?.[2], phase4: parsed.phases?.[3] },
-        step4: { phase5: parsed.phases?.[4], phase6: parsed.phases?.[5], phase7: parsed.phases?.[6] },
-        step5: { pros: parsed.pros ?? [], cons: parsed.cons ?? [], ref: parsed.ref ?? [] },
+        step2: { loadouts: parsed.loadouts ?? [] },
+        step3: { phase1: parsed.phases?.[0], phase2: parsed.phases?.[1] },
+        step4: { phase3: parsed.phases?.[2] },
+        step5: { phase4: parsed.phases?.[3] },
+        step6: { phase5: parsed.phases?.[4], phase6: parsed.phases?.[5] },
+        step7: { phase7: parsed.phases?.[6] },
+        step8: { sim: parsed.sim ?? [], oth: parsed.oth ?? [] },
+        step9: { pros: parsed.pros ?? [], cons: parsed.cons ?? [], ref: parsed.ref ?? [] },
       });
       setStage("done");
       onCreated(build);
@@ -231,6 +244,8 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
 
     setStage("step1");
     setErrorMsg("");
+    setBuildLabel("");
+    setBuildAccent("#d64545");
 
     try {
       const seedStats =
@@ -241,76 +256,89 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
             }
           : undefined;
 
+      // Step 1: identity
       const step1 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step1", {
-        gameKey: game.key,
-        gameName: game.name,
-        buildDescription: description,
-        provider,
-        model,
+        gameKey: game.key, gameName: game.name, buildDescription: description,
+        provider, model,
         preferredWeapon: preferredWeapon || undefined,
         constraints: constraints || undefined,
         seedStats,
       });
+      setBuildLabel(String(step1.label ?? ""));
+      setBuildAccent(String(step1.accent ?? "#d64545"));
 
-      setStage("step2");
       const buildKey = (step1.key as string) || slugify(description);
 
-      const step2 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step2", {
-        gameKey: game.key,
-        gameName: game.name,
-        buildKey,
-        partialBuild: step1,
-        provider,
-        model,
-      });
-
-      setStage("step3");
-
-      const step3 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step3", {
-        gameKey: game.key,
-        gameName: game.name,
-        buildKey,
-        partialBuild: { ...step1, ...step2 },
-        provider,
-        model,
-      });
-
-      setStage("step4");
-
-      const step4 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step4", {
-        gameKey: game.key,
-        gameName: game.name,
-        buildKey,
-        partialBuild: { ...step1, ...step2, ...step3 },
-        provider,
-        model,
-      });
-
-      setStage("step5");
-
-      let step5: { pros?: string[]; cons?: string[]; ref?: unknown[]; tabNames?: Record<string, string> } = {};
+      // Step 2: loadouts (non-fatal)
+      setStage("step2");
+      let step2: { loadouts?: unknown[] } = {};
       try {
-        step5 = await apiRequest<typeof step5>("POST", "/api/generate/step5", {
-          gameKey: game.key,
-          gameName: game.name,
-          buildKey,
-          partialBuild: { ...step1, ...step2, ...step3, ...step4 },
-          provider,
-          model,
+        step2 = await apiRequest<typeof step2>("POST", "/api/generate/step2", {
+          gameKey: game.key, gameName: game.name, buildKey,
+          partialBuild: step1, provider, model,
         });
       } catch { /* non-fatal */ }
 
-      setStage("finalizing");
+      // Step 3: early game phases 1-2
+      setStage("step3");
+      const step3 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step3", {
+        gameKey: game.key, gameName: game.name, buildKey,
+        partialBuild: step1, provider, model,
+      });
 
+      // Step 4: mid game phase 3
+      setStage("step4");
+      const step4 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step4", {
+        gameKey: game.key, gameName: game.name, buildKey,
+        partialBuild: { ...step1, ...step3 }, provider, model,
+      });
+
+      // Step 5: mid-late phase 4
+      setStage("step5");
+      const step5 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step5", {
+        gameKey: game.key, gameName: game.name, buildKey,
+        partialBuild: { ...step1, ...step3, ...step4 }, provider, model,
+      });
+
+      // Step 6: late + end game phases 5-6
+      setStage("step6");
+      const step6 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step6", {
+        gameKey: game.key, gameName: game.name, buildKey,
+        partialBuild: { ...step1, ...step4, ...step5 }, provider, model,
+      });
+
+      // Step 7: NG+ phase 7
+      setStage("step7");
+      const step7 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step7", {
+        gameKey: game.key, gameName: game.name, buildKey,
+        partialBuild: { ...step1, ...step5, ...step6 }, provider, model,
+      });
+
+      // Step 8: similar/contrasting builds (non-fatal)
+      setStage("step8");
+      let step8: { sim?: unknown[]; oth?: unknown[] } = {};
+      try {
+        step8 = await apiRequest<typeof step8>("POST", "/api/generate/step8", {
+          gameKey: game.key, gameName: game.name, buildKey,
+          partialBuild: step1, provider, model,
+        });
+      } catch { /* non-fatal */ }
+
+      // Step 9: pros/cons/ref (non-fatal)
+      setStage("step9");
+      let step9: { pros?: string[]; cons?: string[]; ref?: unknown[]; tabNames?: Record<string, string> } = {};
+      try {
+        step9 = await apiRequest<typeof step9>("POST", "/api/generate/step9", {
+          gameKey: game.key, gameName: game.name, buildKey,
+          partialBuild: step1, provider, model,
+        });
+      } catch { /* non-fatal */ }
+
+      // Finalize
+      setStage("finalizing");
       const build = await apiRequest<Build>("POST", "/api/generate/finalize", {
-        gameKey: game.key,
-        gameName: game.name,
-        buildKey,
-        step1,
-        step2,
-        step3,
-        step4,
-        step5,
+        gameKey: game.key, gameName: game.name, buildKey,
+        step1, step2, step3, step4, step5, step6, step7, step8, step9,
       });
 
       setStage("done");
@@ -401,199 +429,284 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
             )}
           </div>
 
-          {/* Mode tabs */}
-          <div>
-            <p className={labelCls} style={labelStyle}>Mode</p>
-            <div className="flex gap-1">
-              {tabBtn("full",   "Full AI")}
-              {tabBtn("semi",   "Semi-AI")}
-              {tabBtn("manual", "Manual")}
-            </div>
-          </div>
-
-          {/* ── MANUAL mode ─────────────────────────────────────────────── */}
-          {mode === "manual" && (
+          {/* Form content — hidden during generation */}
+          {stage === "idle" && (
             <>
+              {/* Mode tabs */}
               <div>
-                <label className={labelCls} style={labelStyle}>Chapter JSON</label>
-                <textarea
-                  value={manualJson}
-                  onChange={(e) => setManualJson(e.target.value)}
-                  disabled={isRunning}
-                  rows={14}
-                  spellCheck={false}
-                  className={`${inputCls} font-mono text-[11px] resize-y`}
-                  style={inputStyle}
-                />
-                {manualError && (
-                  <p className="text-[10px] mt-1" style={{ color: "var(--color-accent)" }}>{manualError}</p>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* ── FULL AI + SEMI-AI shared fields ──────────────────────────── */}
-          {mode !== "manual" && (
-            <>
-              {/* AI Provider */}
-              <div>
-                <p className={labelCls} style={labelStyle}>AI Provider</p>
+                <p className={labelCls} style={labelStyle}>Mode</p>
                 <div className="flex gap-1">
-                  {providerBtn("claude")}
-                  {providerBtn("pplx")}
-                  {providerBtn("openrouter")}
+                  {tabBtn("full",   "Full AI")}
+                  {tabBtn("semi",   "Semi-AI")}
+                  {tabBtn("manual", "Manual")}
                 </div>
               </div>
 
-              {/* Model selector */}
-              {provider === "openrouter" && (
-                <div>
-                  <p className={labelCls} style={labelStyle}>Model</p>
-                  <div className="grid grid-cols-2 gap-1">
-                    {OPENROUTER_MODELS.map(({ id, label }) => (
-                      <button
-                        key={id}
-                        onClick={() => setModel(id)}
-                        disabled={isRunning}
-                        className="py-1.5 text-xs rounded transition-all"
-                        style={{
-                          backgroundColor: model === id ? "var(--color-card-hi)" : "transparent",
-                          color: model === id ? "var(--color-bright)" : "var(--color-dim)",
-                          border: `1px solid ${model === id ? "var(--color-gold)" : "var(--color-border)"}`,
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Build concept */}
-              <div>
-                <label className={labelCls} style={labelStyle}>Chapter Concept *</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  disabled={isRunning}
-                  rows={3}
-                  placeholder="e.g. Fast DEX katana bleed build focusing on Uchigatana, light armor, and pyromancy for burst damage"
-                  className={`${inputCls} resize-none`}
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Preferred weapon */}
-              <div>
-                <label className={labelCls} style={labelStyle}>
-                  Preferred Weapon <span style={{ color: "var(--color-dim2)" }}>(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={preferredWeapon}
-                  onChange={(e) => setPreferredWeapon(e.target.value)}
-                  disabled={isRunning}
-                  placeholder="e.g. Uchigatana, Zweihander, Black Knight Halberd"
-                  className={inputCls}
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Semi-AI extra fields */}
-              {mode === "semi" && (
+              {/* ── MANUAL mode ─────────────────────────────────────────────── */}
+              {mode === "manual" && (
                 <>
                   <div>
-                    <label className={labelCls} style={labelStyle}>
-                      Item Constraints <span style={{ color: "var(--color-dim2)" }}>(optional)</span>
-                    </label>
+                    <label className={labelCls} style={labelStyle}>Chapter JSON</label>
                     <textarea
-                      value={constraints}
-                      onChange={(e) => setConstraints(e.target.value)}
+                      value={manualJson}
+                      onChange={(e) => setManualJson(e.target.value)}
                       disabled={isRunning}
-                      rows={2}
-                      placeholder="e.g. Must use Havel's Ring, avoid magic items, use Dragon Crest Shield"
+                      rows={14}
+                      spellCheck={false}
+                      className={`${inputCls} font-mono text-[11px] resize-y`}
+                      style={inputStyle}
+                    />
+                    {manualError && (
+                      <p className="text-[10px] mt-1" style={{ color: "var(--color-accent)" }}>{manualError}</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* ── FULL AI + SEMI-AI shared fields ──────────────────────────── */}
+              {mode !== "manual" && (
+                <>
+                  {/* AI Provider */}
+                  <div>
+                    <p className={labelCls} style={labelStyle}>AI Provider</p>
+                    <div className="flex gap-1">
+                      {providerBtn("claude")}
+                      {providerBtn("pplx")}
+                      {providerBtn("openrouter")}
+                    </div>
+                  </div>
+
+                  {/* Model selector */}
+                  {provider === "openrouter" && (
+                    <div>
+                      <p className={labelCls} style={labelStyle}>Model</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        {OPENROUTER_MODELS.map(({ id, label }) => (
+                          <button
+                            key={id}
+                            onClick={() => setModel(id)}
+                            disabled={isRunning}
+                            className="py-1.5 text-xs rounded transition-all"
+                            style={{
+                              backgroundColor: model === id ? "var(--color-card-hi)" : "transparent",
+                              color: model === id ? "var(--color-bright)" : "var(--color-dim)",
+                              border: `1px solid ${model === id ? "var(--color-gold)" : "var(--color-border)"}`,
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Build concept */}
+                  <div>
+                    <label className={labelCls} style={labelStyle}>Chapter Concept *</label>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      disabled={isRunning}
+                      rows={3}
+                      placeholder="e.g. Fast DEX katana bleed build focusing on Uchigatana, light armor, and pyromancy for burst damage"
                       className={`${inputCls} resize-none`}
                       style={inputStyle}
                     />
                   </div>
 
-                  <div>
-                    <p className={labelCls} style={labelStyle}>Early Game Stats (Phase 1) — leave 0 to let AI decide</p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {gameStats.map((stat) => (
-                        <div key={stat}>
-                          <label className="block text-[10px] mb-0.5 text-center" style={{ color: "var(--color-dim)" }}>{stat}</label>
-                          <input
-                            type="number"
-                            min={0} max={99}
-                            value={phase1Stats[stat] || ""}
-                            onChange={(e) => updateStat("phase1", stat, e.target.value)}
-                            disabled={isRunning}
-                            placeholder="0"
-                            className="w-full rounded px-2 py-1.5 text-sm text-center outline-none"
-                            style={inputStyle}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className={labelCls} style={labelStyle}>Mid Game Stats (Phase 2) — leave 0 to let AI decide</p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {gameStats.map((stat) => (
-                        <div key={stat}>
-                          <label className="block text-[10px] mb-0.5 text-center" style={{ color: "var(--color-dim)" }}>{stat}</label>
-                          <input
-                            type="number"
-                            min={0} max={99}
-                            value={phase2Stats[stat] || ""}
-                            onChange={(e) => updateStat("phase2", stat, e.target.value)}
-                            disabled={isRunning}
-                            placeholder="0"
-                            className="w-full rounded px-2 py-1.5 text-sm text-center outline-none"
-                            style={inputStyle}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
+                  {/* Preferred weapon */}
                   <div>
                     <label className={labelCls} style={labelStyle}>
-                      Starting Class <span style={{ color: "var(--color-dim2)" }}>(optional)</span>
+                      Preferred Weapon <span style={{ color: "var(--color-dim2)" }}>(optional)</span>
                     </label>
-                    <select
-                      value={startingClass}
-                      onChange={(e) => setStartingClass(e.target.value)}
+                    <input
+                      type="text"
+                      value={preferredWeapon}
+                      onChange={(e) => setPreferredWeapon(e.target.value)}
                       disabled={isRunning}
+                      placeholder="e.g. Uchigatana, Zweihander, Black Knight Halberd"
                       className={inputCls}
-                      style={{ ...inputStyle, appearance: "none" }}
-                    >
-                      <option value="">Let AI decide</option>
-                      {gameClasses.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                      style={inputStyle}
+                    />
                   </div>
+
+                  {/* Semi-AI extra fields */}
+                  {mode === "semi" && (
+                    <>
+                      <div>
+                        <label className={labelCls} style={labelStyle}>
+                          Item Constraints <span style={{ color: "var(--color-dim2)" }}>(optional)</span>
+                        </label>
+                        <textarea
+                          value={constraints}
+                          onChange={(e) => setConstraints(e.target.value)}
+                          disabled={isRunning}
+                          rows={2}
+                          placeholder="e.g. Must use Havel's Ring, avoid magic items, use Dragon Crest Shield"
+                          className={`${inputCls} resize-none`}
+                          style={inputStyle}
+                        />
+                      </div>
+
+                      <div>
+                        <p className={labelCls} style={labelStyle}>Early Game Stats (Phase 1) — leave 0 to let AI decide</p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {gameStats.map((stat) => (
+                            <div key={stat}>
+                              <label className="block text-[10px] mb-0.5 text-center" style={{ color: "var(--color-dim)" }}>{stat}</label>
+                              <input
+                                type="number"
+                                min={0} max={99}
+                                value={phase1Stats[stat] || ""}
+                                onChange={(e) => updateStat("phase1", stat, e.target.value)}
+                                disabled={isRunning}
+                                placeholder="0"
+                                className="w-full rounded px-2 py-1.5 text-sm text-center outline-none"
+                                style={inputStyle}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className={labelCls} style={labelStyle}>Mid Game Stats (Phase 2) — leave 0 to let AI decide</p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {gameStats.map((stat) => (
+                            <div key={stat}>
+                              <label className="block text-[10px] mb-0.5 text-center" style={{ color: "var(--color-dim)" }}>{stat}</label>
+                              <input
+                                type="number"
+                                min={0} max={99}
+                                value={phase2Stats[stat] || ""}
+                                onChange={(e) => updateStat("phase2", stat, e.target.value)}
+                                disabled={isRunning}
+                                placeholder="0"
+                                className="w-full rounded px-2 py-1.5 text-sm text-center outline-none"
+                                style={inputStyle}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={labelCls} style={labelStyle}>
+                          Starting Class <span style={{ color: "var(--color-dim2)" }}>(optional)</span>
+                        </label>
+                        <select
+                          value={startingClass}
+                          onChange={(e) => setStartingClass(e.target.value)}
+                          disabled={isRunning}
+                          className={inputCls}
+                          style={{ ...inputStyle, appearance: "none" }}
+                        >
+                          <option value="">Let AI decide</option>
+                          {gameClasses.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
           )}
 
-          {/* Progress / error */}
+          {/* Visual pipeline tracker */}
           {stage !== "idle" && (
-            <div
-              className={`px-3 py-2 rounded text-xs ${isRunning ? "animate-pulse" : ""}`}
-              style={{
-                backgroundColor: stage === "error" ? "rgba(214,69,69,0.1)" : "var(--color-card-hi)",
-                color: stage === "error" ? "var(--color-accent)" : "var(--color-gold)",
-                border: `1px solid ${stage === "error" ? "rgba(214,69,69,0.3)" : "transparent"}`,
-              }}
-            >
-              {STAGE_LABELS[stage]}
+            <div className="flex flex-col">
+              {/* Build name header */}
+              {buildLabel && (
+                <div className="mb-3 pb-3 border-b" style={{ borderColor: "var(--color-border)" }}>
+                  <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "var(--color-dim2)" }}>
+                    Generating chapter
+                  </p>
+                  <p className="font-display text-sm font-bold" style={{ color: buildAccent }}>
+                    {buildLabel}
+                  </p>
+                </div>
+              )}
+
+              {/* Error banner */}
               {stage === "error" && errorMsg && (
-                <div className="mt-1 text-[10px] opacity-70 break-all">{errorMsg}</div>
+                <div className="px-3 py-2 rounded text-xs mb-3"
+                  style={{ backgroundColor: "rgba(214,69,69,0.1)", color: "var(--color-accent)", border: "1px solid rgba(214,69,69,0.3)" }}>
+                  {errorMsg}
+                </div>
+              )}
+
+              {/* Step list */}
+              {PIPELINE_STEPS.map((step, i) => {
+                const currentIdx = stage === "done" ? STAGE_ORDER.length : STAGE_ORDER.indexOf(stage);
+                const stepIdx    = STAGE_ORDER.indexOf(step.id);
+                const isDone     = stepIdx < currentIdx;
+                const isActive   = stepIdx === currentIdx && isRunning;
+                const isLast     = i === PIPELINE_STEPS.length - 1;
+
+                return (
+                  <div key={step.id} className="flex gap-2.5 relative">
+                    {/* Connector line */}
+                    {!isLast && (
+                      <div
+                        className="absolute left-[13px] top-[28px] w-px"
+                        style={{
+                          height: "calc(100% - 4px)",
+                          background: isDone ? hexToRgba(buildAccent, 0.35) : "var(--color-border)",
+                          transition: "background 0.4s",
+                        }}
+                      />
+                    )}
+
+                    {/* Status dot */}
+                    <div
+                      className="w-[26px] h-[26px] rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold z-10 mt-0.5"
+                      style={
+                        isDone
+                          ? { background: hexToRgba(buildAccent, 0.18), color: buildAccent, border: `1px solid ${hexToRgba(buildAccent, 0.4)}` }
+                          : isActive
+                          ? { background: hexToRgba(buildAccent, 0.1), color: buildAccent, border: `2px solid ${buildAccent}` }
+                          : { background: "var(--color-card-2)", color: "var(--color-dim2)", border: "1px solid var(--color-border)" }
+                      }
+                    >
+                      {isDone ? "✓" : i + 1}
+                    </div>
+
+                    {/* Label + desc */}
+                    <div className="flex-1 min-w-0 pb-3 pt-0.5">
+                      <div className="flex items-baseline gap-2">
+                        <span
+                          className="text-xs font-semibold"
+                          style={{
+                            color: isActive ? "var(--color-bright)" : isDone ? "var(--color-text)" : "var(--color-dim2)",
+                          }}
+                        >
+                          {step.label}
+                        </span>
+                        {isActive && (
+                          <span className="text-[9px] animate-pulse" style={{ color: buildAccent }}>
+                            generating…
+                          </span>
+                        )}
+                      </div>
+                      <p
+                        className="text-[10px] leading-relaxed mt-0.5"
+                        style={{ color: isDone ? "var(--color-dim)" : "var(--color-dim2)" }}
+                      >
+                        {step.desc}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Done banner */}
+              {stage === "done" && (
+                <div className="mt-1 py-3 rounded text-center" style={{ background: hexToRgba(buildAccent, 0.08), border: `1px solid ${hexToRgba(buildAccent, 0.2)}` }}>
+                  <p className="text-sm font-semibold" style={{ color: buildAccent }}>Chapter complete</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--color-dim)" }}>Your build has been saved</p>
+                </div>
               )}
             </div>
           )}
