@@ -205,6 +205,55 @@ function normaliseStep2(p: Record<string, unknown>): Record<string, unknown> {
   return p;
 }
 
+// ── DS3 / per-game mechanic helpers ───────────────────────────────────────────
+
+/** Returns the stat-block JSON string for a given phase number, keyed by game. */
+function getPhaseStats(gameKey: string, phase: 1 | 2 | 3 | 4 | 5 | 6): string {
+  const ds3: Record<number, Record<string, number>> = {
+    1: { VIG: 15, ATT: 10, END: 12, VIT: 10, STR: 14, DEX: 13, INT: 9, FTH: 9, LCK: 7 },
+    2: { VIG: 20, ATT: 12, END: 16, VIT: 12, STR: 18, DEX: 16, INT: 9, FTH: 9, LCK: 7 },
+    3: { VIG: 27, ATT: 14, END: 20, VIT: 14, STR: 24, DEX: 22, INT: 9, FTH: 9, LCK: 7 },
+    4: { VIG: 32, ATT: 16, END: 24, VIT: 16, STR: 32, DEX: 28, INT: 9, FTH: 9, LCK: 7 },
+    5: { VIG: 40, ATT: 18, END: 30, VIT: 18, STR: 40, DEX: 35, INT: 9, FTH: 9, LCK: 7 },
+    6: { VIG: 40, ATT: 20, END: 30, VIT: 20, STR: 40, DEX: 40, INT: 9, FTH: 9, LCK: 7 },
+  };
+  const ds1: Record<number, Record<string, number>> = {
+    1: { VIT: 12, ATT: 8, END: 16, STR: 14, DEX: 13, RES: 11, INT: 9, FTH: 9 },
+    2: { VIT: 18, ATT: 8, END: 22, STR: 18, DEX: 16, RES: 11, INT: 9, FTH: 9 },
+    3: { VIT: 25, ATT: 10, END: 28, STR: 24, DEX: 22, RES: 11, INT: 9, FTH: 9 },
+    4: { VIT: 32, ATT: 14, END: 36, STR: 32, DEX: 32, RES: 11, INT: 9, FTH: 9 },
+    5: { VIT: 42, ATT: 16, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
+    6: { VIT: 50, ATT: 16, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
+  };
+  return JSON.stringify(gameKey === "ds3" ? ds3[phase] : ds1[phase]);
+}
+
+/** Returns the example weapon JSON template string for a given game. */
+function getWeaponTemplate(gameKey: string): string {
+  if (gameKey === "ds3") {
+    return `{ "n": "Weapon Name", "ap": 120, "wt": 5.0, "ef": null, "st": null, "eq": "Right Hand", "wa": "Stomp", "inf": "Heavy", "fp": 18, "d": "Role in build", "loc": "Exact location", "up": "+10", "tip": "Build tip", "lore": "Lore note", "durability": 200, "steps": null }`;
+  }
+  return `{ "n": "Weapon Name", "ap": 120, "wt": 5.0, "ef": null, "st": null, "eq": "Right Hand", "d": "Role in build", "loc": "Exact location", "up": "Standard +5", "tip": "Build tip", "lore": "Lore note", "durability": 200, "steps": null }`;
+}
+
+/** Returns extra system-prompt mechanic rules for a given game. */
+function getGameMechanicRules(gameKey: string): string {
+  if (gameKey === "ds3") {
+    return `
+DS3 mechanic rules — apply to every DS3 build:
+- Stat names: VIG (HP), ATT (FP + spell slots), END (stamina), VIT (equip load), STR, DEX, INT, FTH, LCK. DS3 has NO "RES" stat.
+- Soft caps: VIG 27 (second at 50), END 40, VIT 40, STR 40 (66 two-handed 1.5× multiplier), DEX 40 (second at 60), INT 40 (second at 60), FTH 40 (second at 60), LCK 40.
+- wa (weapon art): Every weapon has a unique Weapon Art. Always populate the "wa" field with the exact in-game name (e.g. "Stomp", "Warcry", "Stance", "Spin Slash", "Hold", "Parry", "Charge", "Flame of Lorian", "Elfriede's Stance"). Catalysts use "Steady Chant" or "Unfaltering Prayer"; shields use "Parry" or "Weapon Skill".
+- inf (infusion): Always populate "inf" with the infusion type — Sharp (DEX scaling), Heavy (STR), Refined (quality STR/DEX), Crystal (INT), Simple (INT + FP regen), Chaos (INT+FTH), Lightning (FTH), Dark (INT+FTH), Blessed (FTH + HP regen), Blood (LCK + bleed), Hollow (LCK when hollowed), Raw (flat AR, no scaling — early game only), Poison (LCK + poison). Use "None" for uninfusable boss weapons.
+- fp (FP cost): Always populate "fp" with the FP cost of the weapon art or spell. In the phase "sn" field note the recommended Ashen Estus flask allocation for FP management (e.g. "Use 2-3 Ashen Estus flasks to sustain weapon art spam.").
+- Poise: In DS3, poise does NOT work passively. It only activates as hyperarmor during weapon swing animations (ultragreatswords, great axes, hammers, greatshields have the most frames). Note this when recommending armor.
+- up field for DS3: Use "+10" for standard weapons (Titanite Slab path), "+5" for boss weapons (Titanite Scale path), "+5" for unique weapons (Twinkling Titanite path).
+- Ember: Being Embered grants +30% max HP. Mention Ember usage in early phases.
+- PvP meta: SL 120 is the standard invasion/duel meta. Note when a phase reaches SL 120.`;
+  }
+  return "";
+}
+
 // ── System prompt builder ──────────────────────────────────────────────────────
 // light=true skips the codex entirely (step3 only needs the build data already
 // in the user message, so there's no reason to send 150K chars of codex again).
@@ -215,8 +264,9 @@ function buildSystemPrompt(
   extra = "",
   light = false,
 ): string {
+  const mechanicRules = getGameMechanicRules(gameKey);
   if (light) {
-    return `You are an expert ${gameName} build guide writer. Generate accurate build analysis in JSON format.${extra ? `\n${extra}` : ""}`;
+    return `You are an expert ${gameName} build guide writer. Generate accurate build analysis in JSON format.${mechanicRules}${extra ? `\n${extra}` : ""}`;
   }
   const maxChars = CODEX_CHAR_LIMITS[provider] ?? 80_000;
   const knowledge = buildKnowledgeBlock(gameKey, maxChars);
@@ -224,7 +274,7 @@ function buildSystemPrompt(
 
 You are an expert ${gameName} build guide writer. You have the full game codex above.
 Generate highly detailed, accurate build guides in JSON format.
-Use ONLY items and mechanics from the codex. Every item must have a real in-game location.${extra ? `\n${extra}` : ""}`;
+Use ONLY items and mechanics from the codex. Every item must have a real in-game location.${mechanicRules}${extra ? `\n${extra}` : ""}`;
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -317,6 +367,8 @@ export async function registerRoutes(
 
     const systemPrompt = buildSystemPrompt(gameKey, gameName, provider);
 
+    const weaponTpl = getWeaponTemplate(gameKey);
+
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
 Generate a ${gameName} build guide for: "${buildDescription}"
@@ -342,13 +394,10 @@ Return this EXACT JSON structure:
     "name": "Early Game",
     "chapter": "The Vow of the Sacred Flame",
     "range": "SL 1-20",
-    "stats": { "VIT": 12, "ATT": 8, "END": 16, "STR": 14, "DEX": 13, "RES": 11, "INT": 9, "FTH": 9 },
+    "stats": ${getPhaseStats(gameKey, 1)},
     "sn": "Opening strategy (2-3 sentences). Focus on what's reachable before the first major boss gate.",
     "weapons": [
-      { "n": "Weapon Name", "ap": 120, "wt": 5.0, "ef": null, "st": null,
-        "eq": "Right Hand", "d": "Role in build", "loc": "Exact location",
-        "up": "Standard +5", "tip": "Build tip", "lore": "Lore note", "durability": 200,
-        "steps": null }
+      ${weaponTpl}
     ],
     "armor": [ { "n": "Armor Name", "wt": 4.0, "eq": "Chest", "d": "...", "loc": "...", "up": "None", "tip": "...", "lore": "...", "durability": 300 } ],
     "acc":   [ { "n": "Ring Name", "wt": 0.0, "eq": "Ring", "d": "...", "loc": "...", "up": "None", "tip": "...", "lore": "..." } ],
@@ -359,7 +408,7 @@ Return this EXACT JSON structure:
     "name": "Early-Mid Game",
     "chapter": "The Pale Covenant",
     "range": "SL 20-40",
-    "stats": { "VIT": 18, "ATT": 8, "END": 22, "STR": 18, "DEX": 16, "RES": 11, "INT": 9, "FTH": 9 },
+    "stats": ${getPhaseStats(gameKey, 2)},
     "sn": "Transition strategy — first major upgrades and gear unlocks after the early boss gates.",
     "weapons": [], "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 200, "sp": 170, "bs": 400, "n": "Damage context" }
@@ -368,8 +417,8 @@ Return this EXACT JSON structure:
     "name": "Mid Game",
     "chapter": "When Iron Finds Its Purpose",
     "range": "SL 40-60",
-    "stats": { "VIT": 25, "ATT": 10, "END": 28, "STR": 24, "DEX": 22, "RES": 11, "INT": 9, "FTH": 9 },
-    "sn": "Build core taking shape — key weapons at +10 or better, core rings obtained.",
+    "stats": ${getPhaseStats(gameKey, 3)},
+    "sn": "Build core taking shape — key weapons upgraded, core rings obtained.",
     "weapons": [], "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 270, "sp": 230, "bs": 540, "n": "Damage context" }
   }
@@ -381,8 +430,8 @@ Rules:
 - key: kebab-case of the label
 - Every item loc must be a real ${gameName} location or drop source
 - Include lore and durability for every item
-- Rings go in "acc" array; spells/pyromancies/miracles go in "spells"
-- Stats must fit the soul level range for each phase
+- Rings go in "acc" array; spells/sorceries/pyromancies/miracles go in "spells"
+- Stats must use the correct stat names for ${gameName} and fit the soul level range for each phase
 - accent must be a dark hex color that fits the build's theme (e.g. deep crimson for fire, dark violet for sorcery)
 - chapter: a 3-5 word lore title for each phase — reads like a chapter heading in a dark fantasy novel. Must be unique per phase and thematically tied to what happens in that phase of the build's journey. Good: "The Ashen Covenant", "When Flame Meets Iron", "Heir of the Abyss". Bad: "Early Game Phase", "Getting Started"
 - steps: include a ["Step 1: ...", "Step 2: ..."] array ONLY for items requiring NPC questlines or multi-step acquisition (e.g. Logan's Catalyst, Moonlight Greatsword). Leave null for simple drops, loot, or merchant purchases.`;
@@ -417,6 +466,9 @@ Rules:
     );
 
     const pb = partialBuild as Record<string, unknown>;
+    const weaponTpl2 = getWeaponTemplate(gameKey);
+    const ngStatKey = gameKey === "ds3" ? "VIG" : "VIT";
+
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
 Build so far: ${JSON.stringify({
@@ -435,9 +487,9 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
     "name": "Late Game",
     "chapter": "The Weight of Kingdoms",
     "range": "SL 60-80",
-    "stats": { "VIT": 32, "ATT": 14, "END": 36, "STR": 32, "DEX": 32, "RES": 11, "INT": 9, "FTH": 9 },
+    "stats": ${getPhaseStats(gameKey, 4)},
     "sn": "Late-game push — approaching soft caps, upgraded gear, boss souls spent.",
-    "weapons": [ { "n": "...", "ap": 330, "wt": 6.0, "ef": null, "st": null, "eq": "Right Hand", "d": "...", "loc": "...", "up": "+12 standard", "tip": "...", "lore": "...", "durability": 200 } ],
+    "weapons": [ ${weaponTpl2} ],
     "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 340, "sp": 290, "bs": 680, "n": "Late-game damage context" }
   },
@@ -445,9 +497,9 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
     "name": "End Game",
     "chapter": "The Final Reckoning",
     "range": "SL 80-120",
-    "stats": { "VIT": 42, "ATT": 16, "END": 40, "STR": 40, "DEX": 40, "RES": 11, "INT": 9, "FTH": 9 },
+    "stats": ${getPhaseStats(gameKey, 5)},
     "sn": "Fully optimised — soft caps hit, best-in-slot gear equipped.",
-    "weapons": [ { "n": "...", "ap": 420, "wt": 6.0, "ef": null, "st": null, "eq": "Right Hand", "d": "...", "loc": "...", "up": "+15 standard", "tip": "...", "lore": "...", "durability": 200 } ],
+    "weapons": [ ${weaponTpl2} ],
     "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 420, "sp": 370, "bs": 840, "n": "Peak damage context" }
   },
@@ -455,20 +507,20 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
     "name": "NG+",
     "chapter": "The Undying Herald Endures",
     "range": "NG+1 and beyond",
-    "stats": { "VIT": 50, "ATT": 16, "END": 40, "STR": 40, "DEX": 40, "RES": 11, "INT": 9, "FTH": 9 },
-    "sn": "Same build; enemies scale harder each cycle. Consider stamina management over pure offense.",
+    "stats": ${getPhaseStats(gameKey, 6)},
+    "sn": "Same build; enemies scale harder each cycle. Adjust stamina management over pure offense.",
     "weapons": [], "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 420, "sp": 370, "bs": 840, "n": "Same damage output; enemy HP/damage scales per cycle" },
     "ngCycles": [
-      { "label": "NG+1", "stats": { "VIT": 50 }, "notes": "~20% HP/damage increase" },
-      { "label": "NG+3", "stats": { "VIT": 55 }, "notes": "~50% HP increase — adapt positioning" },
-      { "label": "NG+5", "stats": { "VIT": 60 }, "notes": "~90% HP increase — patience over aggression" },
-      { "label": "NG+7", "stats": { "VIT": 65 }, "notes": "~150% HP increase — max difficulty" }
+      { "label": "NG+1", "stats": { "${ngStatKey}": 40 }, "notes": "~20% HP/damage increase" },
+      { "label": "NG+3", "stats": { "${ngStatKey}": 45 }, "notes": "~50% HP increase — adapt positioning" },
+      { "label": "NG+5", "stats": { "${ngStatKey}": 50 }, "notes": "~90% HP increase — patience over aggression" },
+      { "label": "NG+7", "stats": { "${ngStatKey}": 55 }, "notes": "~150% HP increase — max difficulty" }
     ]
   }
 }
 
-Rules: all item locations must be real in ${gameName}. Include lore and durability for every item.
+Rules: all item locations must be real in ${gameName}. Include lore and durability for every item. Use correct stat names for ${gameName}.
 - chapter: a 3-5 word lore title per phase — dark fantasy chapter heading, unique per phase, thematically tied to that stage of the journey.`;
 
     try {

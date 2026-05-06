@@ -53,6 +53,16 @@ export default function ItemCard({ item, accent }: Props) {
             </span>
           )}
 
+          {/* Infusion badge (DS3) */}
+          {item.inf && item.inf !== "None" && (
+            <span
+              className="flex-shrink-0 text-[8px] px-1.5 py-0.5 rounded uppercase tracking-widest font-semibold"
+              style={{ background: "var(--color-card-2)", color: "var(--color-gold)" }}
+            >
+              {item.inf}
+            </span>
+          )}
+
           {/* Name */}
           <span
             className="font-semibold text-sm truncate"
@@ -136,6 +146,20 @@ export default function ItemCard({ item, accent }: Props) {
             )
           )}
 
+          {/* Weapon Art (DS3) */}
+          {item.wa && (
+            <div className="flex gap-2 text-xs mb-2.5">
+              <span className="flex-shrink-0" style={{ color: hexToRgba(accent, 0.7) }}>⚔</span>
+              <span style={{ color: "var(--color-text)" }}>
+                <span style={{ color: "var(--color-dim)" }}>Weapon Art: </span>
+                {item.wa}
+                {item.fp !== undefined && item.fp > 0 && (
+                  <span className="ml-2 font-mono" style={{ color: "var(--color-purple)" }}>({item.fp} FP)</span>
+                )}
+              </span>
+            </div>
+          )}
+
           {/* Upgrade path */}
           {item.up && item.up !== "—" && item.up !== "N/A" && (
             <div className="flex gap-2 text-xs mb-2.5">
@@ -162,6 +186,12 @@ export default function ItemCard({ item, accent }: Props) {
               <span className="text-[10px]">
                 <span style={{ color: "var(--color-dim)" }}>Dur: </span>
                 <span style={{ color: "var(--color-text)" }}>{item.durability}</span>
+              </span>
+            )}
+            {item.inf && item.inf !== "None" && (
+              <span className="text-[10px]">
+                <span style={{ color: "var(--color-dim)" }}>Infusion: </span>
+                <span style={{ color: "var(--color-gold)" }}>{item.inf}</span>
               </span>
             )}
             {item.st && (

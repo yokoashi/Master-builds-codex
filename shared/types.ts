@@ -78,6 +78,9 @@ export interface Item {
   ef?: string;      // effect / passive
   st?: string;      // status buildup
   eq: string;       // equip slot
+  wa?: string;      // weapon art / skill name (DS3)
+  inf?: string;     // infusion type (DS3: Sharp, Heavy, Refined, Crystal, Chaos, etc.)
+  fp?: number;      // FP cost for weapon art or spell cast (DS3)
   d: string;        // description / role in build
   loc: string;      // how / where to get it
   up: string;       // upgrade path
