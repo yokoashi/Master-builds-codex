@@ -36,8 +36,8 @@ async function callAI(
 ): Promise<string> {
   if (provider === "claude") {
     // Split system prompt into a stable codex block and a variable instruction block.
-    // The codex block is identical across step1 → step2 → step3 for the same game,
-    // so Anthropic's ephemeral prompt cache (5-min window) reuses it on steps 2 & 3
+    // The codex block is identical across step1 → step2 → step3 → step4 for the same game,
+    // so Anthropic's ephemeral prompt cache (5-min window) reuses it on steps 2–4
     // instead of charging full input-token price each time.
     const SPLIT = "\n\nYou are an expert";
     const idx = systemPrompt.indexOf(SPLIT);
@@ -269,7 +269,22 @@ function getWeaponTemplate(gameKey: string): string {
   return `{ "n": "Weapon Name", "ap": 120, "wt": 5.0, "ef": null, "st": null, "eq": "Right Hand", "d": "Role in build", "loc": "Exact location", "up": "Standard +5", "tip": "Build tip", "lore": "Lore note", "durability": 200, "steps": null }`;
 }
 
-/** Returns extra system-prompt mechanic rules for a given game. */
+/** Returns brief, imperative rules injected into every step's user-prompt Rules section. */
+function getGamePromptRules(gameKey: string): string {
+  if (gameKey === "ds3") {
+    return `
+DS3 MANDATORY FIELDS — failure to include these is invalid output:
+- wa: exact weapon art name for EVERY weapon — "Stomp", "Warcry", "Stance", "Hold", "Parry", "Spin Slash", "Charge", "Skill", etc. NEVER null.
+- inf: infusion type for EVERY weapon — Sharp, Heavy, Refined, Crystal, Simple, Chaos, Lightning, Dark, Blessed, Blood, Hollow, Raw, Poison, or None (boss/unique weapons). NEVER null.
+- fp: FP cost integer for EVERY weapon art and spell. NEVER null.
+- Stats: VIG (HP), ATT (FP+slots), END (stamina), VIT (equip load), STR, DEX, INT, FTH, LCK — NEVER use RES or VIT for HP.
+- Upgrade paths: "+10" for standard (Titanite Slab), "+5" for boss (Titanite Scale) or unique (Twinkling Titanite) weapons.
+- Soft caps to observe: VIG 27/50, END 40, VIT 40, STR 40/66 two-hand, DEX 40/60, INT 40/60, FTH 40/60, LCK 40.`;
+  }
+  return "";
+}
+
+
 function getGameMechanicRules(gameKey: string): string {
   if (gameKey === "ds3") {
     return `
@@ -288,8 +303,8 @@ DS3 mechanic rules — apply to every DS3 build:
 }
 
 // ── System prompt builder ──────────────────────────────────────────────────────
-// light=true skips the codex entirely (step3 only needs the build data already
-// in the user message, so there's no reason to send 150K chars of codex again).
+// light=true skips the codex entirely (step4/pros-cons only needs the build data
+// already in the user message, so there's no reason to send 150K chars again).
 function buildSystemPrompt(
   gameKey: string,
   gameName: string,
@@ -457,7 +472,7 @@ Rules:
 - Stats must use the correct stat names for ${gameName} and fit the soul level range
 - accent: dark hex color matching theme (deep crimson for fire, dark violet for sorcery)
 - chapter: 3-5 word dark-fantasy lore title unique per phase. Good: "The Ashen Covenant". Bad: "Early Game Phase"
-- steps: questline acquisition array ONLY for multi-step items. null for drops/merchants.`;
+- steps: questline acquisition array ONLY for multi-step items. null for drops/merchants.${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -527,7 +542,7 @@ Generate phase3 (Mid Game) and phase4 (Mid-Late Game) for this ${gameName} build
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability for every item. Use correct stat names for ${gameName}.
-- chapter: 3-5 word dark-fantasy lore title, unique per phase.`;
+- chapter: 3-5 word dark-fantasy lore title, unique per phase.${getGamePromptRules(gameKey)}`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
@@ -610,7 +625,7 @@ Generate phase5 (Late Game), phase6 (End Game), and phase7 (NG+) for this ${game
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability for every item. Use correct stat names for ${gameName}.
-- chapter: 3-5 word dark-fantasy lore title, unique per phase.`;
+- chapter: 3-5 word dark-fantasy lore title, unique per phase.${getGamePromptRules(gameKey)}`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
