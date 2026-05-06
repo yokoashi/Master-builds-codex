@@ -12,14 +12,15 @@ interface Props {
 }
 
 type Mode = "full" | "semi" | "manual";
-type Stage = "idle" | "step1" | "step2" | "step3" | "step4" | "finalizing" | "done" | "error";
+type Stage = "idle" | "step1" | "step2" | "step3" | "step4" | "step5" | "finalizing" | "done" | "error";
 
 const STAGE_LABELS: Record<Stage, string> = {
   idle:       "",
-  step1:      "Generating metadata + Early Game phases (1–2)…",
-  step2:      "Generating Mid Game phases (3–4)…",
-  step3:      "Generating Late Game + NG+ phases (5–7)…",
-  step4:      "Writing pros, cons & quick-ref…",
+  step1:      "Generating build identity & concept…",
+  step2:      "Generating Early Game phases (1–2)…",
+  step3:      "Generating Mid Game phases (3–4)…",
+  step4:      "Generating Late Game + NG+ phases (5–7)…",
+  step5:      "Writing pros, cons & quick-ref…",
   finalizing: "Saving build…",
   done:       "Complete",
   error:      "Error — see details below",
@@ -208,10 +209,11 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         gameKey: game.key,
         gameName: game.name,
         buildKey: parsed.key,
-        step1: { ...parsed, phase1: parsed.phases?.[0], phase2: parsed.phases?.[1] },
-        step2: { phase3: parsed.phases?.[2], phase4: parsed.phases?.[3] },
-        step3: { phase5: parsed.phases?.[4], phase6: parsed.phases?.[5], phase7: parsed.phases?.[6] },
-        step4: { pros: parsed.pros ?? [], cons: parsed.cons ?? [], ref: parsed.ref ?? [] },
+        step1: parsed,
+        step2: { phase1: parsed.phases?.[0], phase2: parsed.phases?.[1] },
+        step3: { phase3: parsed.phases?.[2], phase4: parsed.phases?.[3] },
+        step4: { phase5: parsed.phases?.[4], phase6: parsed.phases?.[5], phase7: parsed.phases?.[6] },
+        step5: { pros: parsed.pros ?? [], cons: parsed.cons ?? [], ref: parsed.ref ?? [] },
       });
       setStage("done");
       onCreated(build);
@@ -275,13 +277,24 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
 
       setStage("step4");
 
-      let step4: { pros?: string[]; cons?: string[]; ref?: unknown[]; tabNames?: Record<string, string> } = {};
+      const step4 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step4", {
+        gameKey: game.key,
+        gameName: game.name,
+        buildKey,
+        partialBuild: { ...step1, ...step2, ...step3 },
+        provider,
+        model,
+      });
+
+      setStage("step5");
+
+      let step5: { pros?: string[]; cons?: string[]; ref?: unknown[]; tabNames?: Record<string, string> } = {};
       try {
-        step4 = await apiRequest<typeof step4>("POST", "/api/generate/step4", {
+        step5 = await apiRequest<typeof step5>("POST", "/api/generate/step5", {
           gameKey: game.key,
           gameName: game.name,
           buildKey,
-          partialBuild: { ...step1, ...step2, ...step3 },
+          partialBuild: { ...step1, ...step2, ...step3, ...step4 },
           provider,
           model,
         });
@@ -297,6 +310,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         step2,
         step3,
         step4,
+        step5,
       });
 
       setStage("done");
