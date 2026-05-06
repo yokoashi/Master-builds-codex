@@ -162,43 +162,74 @@ function normaliseStep1(p: Record<string, unknown>): Record<string, unknown> {
 }
 
 function normaliseStep2(p: Record<string, unknown>): Record<string, unknown> {
-  const lateKeys = /late.?game|phase.?4|lateGame/i;
-  const endKeys  = /end.?game|phase.?5|endGame/i;
-  const ngKeys   = /ng\+|new.?game\+?|phase.?6|ngPlus/i;
+  const midKeys     = /^mid.?game$|phase.?3|^midGame$/i;
+  const midLateKeys = /mid.?late|phase.?4|midLate/i;
 
-  // 1. Already correct
-  if (p.phase4 || p.phase5 || p.phase6) return p;
+  if (p.phase3 || p.phase4) return p;
 
-  // 2. Nested under "phases" object key
   const nested = p.phases as Record<string, unknown> | undefined;
   if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-    if (nested.phase4 || nested.phase5 || nested.phase6) return { ...p, ...nested };
+    if (nested.phase3 || nested.phase4) return { ...p, ...nested };
   }
 
-  // 3. Phases array [lateGame, endGame, ngPlus]
   if (Array.isArray(p.phases) && p.phases.length >= 2) {
     const arr = p.phases as unknown[];
-    return { ...p, phase4: arr[0], phase5: arr[1], ...(arr[2] ? { phase6: arr[2] } : {}) };
+    return { ...p, phase3: arr[0], phase4: arr[1] };
   }
 
-  // 4. By name / camelCase key variants at top level
-  const phase4 = p.phase_4 ?? p.lateGame ?? p.late_game ?? phaseByName(p, lateKeys);
-  const phase5 = p.phase_5 ?? p.endGame ?? p.end_game ?? p.endgame ?? phaseByName(p, endKeys);
-  const phase6 = p.phase_6 ?? p.ngPlus ?? p.ng_plus ?? p.ng ?? phaseByName(p, ngKeys);
-  if (phase4 || phase5 || phase6) return { ...p, phase4, phase5, phase6 };
+  const phase3 = p.phase_3 ?? p.midGame ?? p.mid_game ?? phaseByName(p, midKeys);
+  const phase4 = p.phase_4 ?? p.midLateGame ?? p.mid_late_game ?? phaseByName(p, midLateKeys);
+  if (phase3 || phase4) return { ...p, phase3, phase4 };
 
-  // 5. AI wrapped everything under a single top-level key
   for (const val of Object.values(p)) {
     if (!val || typeof val !== "object" || Array.isArray(val)) continue;
     const inner = val as Record<string, unknown>;
-    if (inner.phase4 || inner.phase5 || inner.phase6) return { ...p, ...inner };
-    const ip4 = inner.phase_4 ?? inner.lateGame ?? inner.late_game ?? phaseByName(inner, lateKeys);
-    const ip5 = inner.phase_5 ?? inner.endGame ?? inner.end_game ?? inner.endgame ?? phaseByName(inner, endKeys);
-    const ip6 = inner.phase_6 ?? inner.ngPlus ?? inner.ng_plus ?? inner.ng ?? phaseByName(inner, ngKeys);
-    if (ip4 || ip5 || ip6) return { ...p, ...inner, phase4: ip4, phase5: ip5, phase6: ip6 };
+    if (inner.phase3 || inner.phase4) return { ...p, ...inner };
+    const ip3 = inner.phase_3 ?? inner.midGame ?? inner.mid_game ?? phaseByName(inner, midKeys);
+    const ip4 = inner.phase_4 ?? inner.midLateGame ?? inner.mid_late_game ?? phaseByName(inner, midLateKeys);
+    if (ip3 || ip4) return { ...p, ...inner, phase3: ip3, phase4: ip4 };
     if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length >= 2) {
       const arr = inner.phases as unknown[];
-      return { ...p, ...inner, phase4: arr[0], phase5: arr[1], ...(arr[2] ? { phase6: arr[2] } : {}) };
+      return { ...p, ...inner, phase3: arr[0], phase4: arr[1] };
+    }
+  }
+
+  return p;
+}
+
+function normaliseStep3(p: Record<string, unknown>): Record<string, unknown> {
+  const lateKeys = /late.?game|phase.?5|lateGame/i;
+  const endKeys  = /end.?game|phase.?6|endGame/i;
+  const ngKeys   = /ng\+|new.?game\+?|phase.?7|ngPlus|build.?perfect/i;
+
+  if (p.phase5 || p.phase6 || p.phase7) return p;
+
+  const nested = p.phases as Record<string, unknown> | undefined;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    if (nested.phase5 || nested.phase6 || nested.phase7) return { ...p, ...nested };
+  }
+
+  if (Array.isArray(p.phases) && p.phases.length >= 2) {
+    const arr = p.phases as unknown[];
+    return { ...p, phase5: arr[0], phase6: arr[1], ...(arr[2] ? { phase7: arr[2] } : {}) };
+  }
+
+  const phase5 = p.phase_5 ?? p.lateGame ?? p.late_game ?? phaseByName(p, lateKeys);
+  const phase6 = p.phase_6 ?? p.endGame ?? p.end_game ?? p.endgame ?? phaseByName(p, endKeys);
+  const phase7 = p.phase_7 ?? p.ngPlus ?? p.ng_plus ?? p.ng ?? p.buildPerfected ?? phaseByName(p, ngKeys);
+  if (phase5 || phase6 || phase7) return { ...p, phase5, phase6, phase7 };
+
+  for (const val of Object.values(p)) {
+    if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+    const inner = val as Record<string, unknown>;
+    if (inner.phase5 || inner.phase6 || inner.phase7) return { ...p, ...inner };
+    const ip5 = inner.phase_5 ?? inner.lateGame ?? inner.late_game ?? phaseByName(inner, lateKeys);
+    const ip6 = inner.phase_6 ?? inner.endGame ?? inner.end_game ?? inner.endgame ?? phaseByName(inner, endKeys);
+    const ip7 = inner.phase_7 ?? inner.ngPlus ?? inner.ng_plus ?? inner.ng ?? phaseByName(inner, ngKeys);
+    if (ip5 || ip6 || ip7) return { ...p, ...inner, phase5: ip5, phase6: ip6, phase7: ip7 };
+    if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length >= 2) {
+      const arr = inner.phases as unknown[];
+      return { ...p, ...inner, phase5: arr[0], phase6: arr[1], ...(arr[2] ? { phase7: arr[2] } : {}) };
     }
   }
 
@@ -208,22 +239,24 @@ function normaliseStep2(p: Record<string, unknown>): Record<string, unknown> {
 // ── DS3 / per-game mechanic helpers ───────────────────────────────────────────
 
 /** Returns the stat-block JSON string for a given phase number, keyed by game. */
-function getPhaseStats(gameKey: string, phase: 1 | 2 | 3 | 4 | 5 | 6): string {
+function getPhaseStats(gameKey: string, phase: 1 | 2 | 3 | 4 | 5 | 6 | 7): string {
   const ds3: Record<number, Record<string, number>> = {
     1: { VIG: 15, ATT: 10, END: 12, VIT: 10, STR: 14, DEX: 13, INT: 9, FTH: 9, LCK: 7 },
     2: { VIG: 20, ATT: 12, END: 16, VIT: 12, STR: 18, DEX: 16, INT: 9, FTH: 9, LCK: 7 },
     3: { VIG: 27, ATT: 14, END: 20, VIT: 14, STR: 24, DEX: 22, INT: 9, FTH: 9, LCK: 7 },
     4: { VIG: 32, ATT: 16, END: 24, VIT: 16, STR: 32, DEX: 28, INT: 9, FTH: 9, LCK: 7 },
-    5: { VIG: 40, ATT: 18, END: 30, VIT: 18, STR: 40, DEX: 35, INT: 9, FTH: 9, LCK: 7 },
+    5: { VIG: 36, ATT: 18, END: 27, VIT: 18, STR: 38, DEX: 32, INT: 9, FTH: 9, LCK: 7 },
     6: { VIG: 40, ATT: 20, END: 30, VIT: 20, STR: 40, DEX: 40, INT: 9, FTH: 9, LCK: 7 },
+    7: { VIG: 40, ATT: 20, END: 30, VIT: 20, STR: 40, DEX: 40, INT: 9, FTH: 9, LCK: 7 },
   };
   const ds1: Record<number, Record<string, number>> = {
-    1: { VIT: 12, ATT: 8, END: 16, STR: 14, DEX: 13, RES: 11, INT: 9, FTH: 9 },
-    2: { VIT: 18, ATT: 8, END: 22, STR: 18, DEX: 16, RES: 11, INT: 9, FTH: 9 },
+    1: { VIT: 12, ATT: 8,  END: 16, STR: 14, DEX: 13, RES: 11, INT: 9, FTH: 9 },
+    2: { VIT: 18, ATT: 8,  END: 22, STR: 18, DEX: 16, RES: 11, INT: 9, FTH: 9 },
     3: { VIT: 25, ATT: 10, END: 28, STR: 24, DEX: 22, RES: 11, INT: 9, FTH: 9 },
-    4: { VIT: 32, ATT: 14, END: 36, STR: 32, DEX: 32, RES: 11, INT: 9, FTH: 9 },
-    5: { VIT: 42, ATT: 16, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
-    6: { VIT: 50, ATT: 16, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
+    4: { VIT: 30, ATT: 12, END: 32, STR: 30, DEX: 28, RES: 11, INT: 9, FTH: 9 },
+    5: { VIT: 36, ATT: 14, END: 36, STR: 36, DEX: 34, RES: 11, INT: 9, FTH: 9 },
+    6: { VIT: 42, ATT: 16, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
+    7: { VIT: 50, ATT: 16, END: 40, STR: 40, DEX: 40, RES: 11, INT: 9, FTH: 9 },
   };
   return JSON.stringify(gameKey === "ds3" ? ds3[phase] : ds1[phase]);
 }
@@ -355,7 +388,7 @@ export async function registerRoutes(
     return res.json({ facts: [], entryCount: raw.entryCount, patchNote: null, updatedAt: raw.updatedAt });
   });
 
-  // POST /api/generate/step1 — metadata + Early Game (phase1) + Early-Mid Game (phase2) + Mid Game (phase3)
+  // POST /api/generate/step1 — metadata + Early Game (phase1) + Early-Mid Game (phase2)
   app.post("/api/generate/step1", async (req, res) => {
     const body = req.body as GenerateStep1Request;
     const { gameKey, gameName, buildDescription, provider, model, preferredWeapon, seedStats, constraints } = body;
@@ -366,7 +399,6 @@ export async function registerRoutes(
     };
 
     const systemPrompt = buildSystemPrompt(gameKey, gameName, provider);
-
     const weaponTpl = getWeaponTemplate(gameKey);
 
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
@@ -395,7 +427,7 @@ Return this EXACT JSON structure:
     "chapter": "The Vow of the Sacred Flame",
     "range": "SL 1-20",
     "stats": ${getPhaseStats(gameKey, 1)},
-    "sn": "Opening strategy (2-3 sentences). Focus on what's reachable before the first major boss gate.",
+    "sn": "Opening strategy (2-3 sentences). Describe the very first hours — starting gear, first upgrade stone, first NPC to meet.",
     "weapons": [
       ${weaponTpl}
     ],
@@ -407,45 +439,36 @@ Return this EXACT JSON structure:
   "phase2": {
     "name": "Early-Mid Game",
     "chapter": "The Pale Covenant",
-    "range": "SL 20-40",
+    "range": "SL 20-35",
     "stats": ${getPhaseStats(gameKey, 2)},
-    "sn": "Transition strategy — first major upgrades and gear unlocks after the early boss gates.",
+    "sn": "First major upgrade unlock — primary weapon at +3 or better, key early rings secured.",
     "weapons": [], "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 200, "sp": 170, "bs": 400, "n": "Damage context" }
-  },
-  "phase3": {
-    "name": "Mid Game",
-    "chapter": "When Iron Finds Its Purpose",
-    "range": "SL 40-60",
-    "stats": ${getPhaseStats(gameKey, 3)},
-    "sn": "Build core taking shape — key weapons upgraded, core rings obtained.",
-    "weapons": [], "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 270, "sp": 230, "bs": 540, "n": "Damage context" }
   }
 }
 
 Rules:
-- label: give the build an evocative proper name or poetic title rooted in ${gameName} lore — NEVER a stat description. Good: "Voidwalker", "The Iron Heretic", "Daughter of Chaos". Bad: "Pure STR Build", "Magic Sorcerer Build"
-- sub: a poetic subtitle — a character archetype, lore fragment, or thematic phrase. Good: "Keeper of the First Flame", "Sellsword of the Painted World". Bad: "STR/FAI hybrid"
-- key: kebab-case of the label
+- label: evocative lore name — NEVER a stat description. Good: "Voidwalker", "The Iron Heretic". Bad: "Pure STR Build"
+- sub: poetic subtitle, lore archetype. Good: "Keeper of the First Flame". Bad: "STR/FAI hybrid"
+- key: kebab-case of label
 - Every item loc must be a real ${gameName} location or drop source
 - Include lore and durability for every item
-- Rings go in "acc" array; spells/sorceries/pyromancies/miracles go in "spells"
-- Stats must use the correct stat names for ${gameName} and fit the soul level range for each phase
-- accent must be a dark hex color that fits the build's theme (e.g. deep crimson for fire, dark violet for sorcery)
-- chapter: a 3-5 word lore title for each phase — reads like a chapter heading in a dark fantasy novel. Must be unique per phase and thematically tied to what happens in that phase of the build's journey. Good: "The Ashen Covenant", "When Flame Meets Iron", "Heir of the Abyss". Bad: "Early Game Phase", "Getting Started"
-- steps: include a ["Step 1: ...", "Step 2: ..."] array ONLY for items requiring NPC questlines or multi-step acquisition (e.g. Logan's Catalyst, Moonlight Greatsword). Leave null for simple drops, loot, or merchant purchases.`;
+- Rings go in "acc"; spells/sorceries/pyromancies/miracles go in "spells"
+- Stats must use the correct stat names for ${gameName} and fit the soul level range
+- accent: dark hex color matching theme (deep crimson for fire, dark violet for sorcery)
+- chapter: 3-5 word dark-fantasy lore title unique per phase. Good: "The Ashen Covenant". Bad: "Early Game Phase"
+- steps: questline acquisition array ONLY for multi-step items. null for drops/merchants.`;
 
     try {
-      const text   = await callAI(provider, model, systemPrompt, userPrompt);
+      const text = await callAI(provider, model, systemPrompt, userPrompt);
       console.log(`[step1] AI response (first 600 chars): ${text.slice(0, 600)}`);
       const raw = parseJson(text) as Record<string, unknown>;
       const p   = normaliseStep1(raw);
-      if (!p.phase1 && !p.phase2 && !p.phase3) {
+      if (!p.phase1 && !p.phase2) {
         const keys = Object.keys(raw).join(", ");
         console.error("[step1] MISSING phases after normalise. Keys:", keys, "| Raw:", JSON.stringify(raw).slice(0, 800));
         return res.status(500).json({
-          error: `AI did not return any phase data (got keys: ${keys || "none"}). Try again — if it keeps failing, try a shorter or simpler build description.`,
+          error: `AI did not return Early Game phases (got keys: ${keys || "none"}). Try again — if it keeps failing, try a shorter or simpler build description.`,
         });
       }
       res.json(p);
@@ -455,19 +478,18 @@ Rules:
     }
   });
 
-  // POST /api/generate/step2 — Late Game (phase4) + End Game (phase5) + NG+ (phase6)
+  // POST /api/generate/step2 — Mid Game (phase3) + Mid-Late Game (phase4)
   app.post("/api/generate/step2", async (req, res) => {
     const body = req.body as GenerateStep2Request;
     const { gameKey, gameName, partialBuild, provider, model } = body;
 
     const systemPrompt = buildSystemPrompt(
       gameKey, gameName, provider,
-      `Continue the "${partialBuild.label}" build. Generate the final three phases.`,
+      `Continue the "${partialBuild.label}" build. Generate the mid-game phases.`,
     );
 
     const pb = partialBuild as Record<string, unknown>;
-    const weaponTpl2 = getWeaponTemplate(gameKey);
-    const ngStatKey = gameKey === "ds3" ? "VIG" : "VIT";
+    const weaponTpl = getWeaponTemplate(gameKey);
 
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
@@ -477,40 +499,107 @@ Build so far: ${JSON.stringify({
   caps: partialBuild.caps,
   phase1: pb.phase1,
   phase2: pb.phase2,
-  phase3: pb.phase3,
 }, null, 2)}
 
-Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${gameName} build.
+Generate phase3 (Mid Game) and phase4 (Mid-Late Game) for this ${gameName} build.
 
 {
+  "phase3": {
+    "name": "Mid Game",
+    "chapter": "When Iron Finds Its Purpose",
+    "range": "SL 35-55",
+    "stats": ${getPhaseStats(gameKey, 3)},
+    "sn": "Build identity locked in — primary weapon upgraded to mid-tier, first soft caps in sight.",
+    "weapons": [ ${weaponTpl} ],
+    "armor": [], "acc": [], "spells": [],
+    "dmg": { "ps": 270, "sp": 230, "bs": 540, "n": "Mid-game damage context" }
+  },
   "phase4": {
+    "name": "Mid-Late Game",
+    "chapter": "The Iron Ascent",
+    "range": "SL 55-75",
+    "stats": ${getPhaseStats(gameKey, 4)},
+    "sn": "First soft cap hit — weapon nearing max upgrade, key boss weapons unlocked.",
+    "weapons": [ ${weaponTpl} ],
+    "armor": [], "acc": [], "spells": [],
+    "dmg": { "ps": 320, "sp": 270, "bs": 640, "n": "Mid-late damage context" }
+  }
+}
+
+Rules: all item locations must be real in ${gameName}. Include lore and durability for every item. Use correct stat names for ${gameName}.
+- chapter: 3-5 word dark-fantasy lore title, unique per phase.`;
+
+    try {
+      const text   = await callAI(provider, model, systemPrompt, userPrompt);
+      console.log(`[step2] AI response (first 600 chars): ${text.slice(0, 600)}`);
+      const parsed = parseJson(text) as Record<string, unknown>;
+      const p = normaliseStep2(parsed);
+      if (!p.phase3 && !p.phase4) {
+        console.error("[step2] MISSING phases after normalise:", JSON.stringify(parsed).slice(0, 600));
+        return res.status(500).json({ error: "AI did not return Mid Game phases. Try again." });
+      }
+      res.json(p);
+    } catch (err) {
+      console.error("Step2 error:", err);
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // POST /api/generate/step3 — Late Game (phase5) + End Game (phase6) + NG+ (phase7)
+  app.post("/api/generate/step3", async (req, res) => {
+    const body = req.body as GenerateStep2Request;
+    const { gameKey, gameName, partialBuild, provider, model } = body;
+
+    const systemPrompt = buildSystemPrompt(
+      gameKey, gameName, provider,
+      `Continue the "${partialBuild.label}" build. Generate the late-game and NG+ phases.`,
+    );
+
+    const pb = partialBuild as Record<string, unknown>;
+    const weaponTpl = getWeaponTemplate(gameKey);
+    const ngStatKey = gameKey === "ds3" ? "VIG" : "VIT";
+
+    const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
+
+Build so far: ${JSON.stringify({
+  label: partialBuild.label,
+  cls: partialBuild.cls,
+  caps: partialBuild.caps,
+  phase3: pb.phase3,
+  phase4: pb.phase4,
+}, null, 2)}
+
+Generate phase5 (Late Game), phase6 (End Game), and phase7 (NG+) for this ${gameName} build.
+
+{
+  "phase5": {
     "name": "Late Game",
     "chapter": "The Weight of Kingdoms",
-    "range": "SL 60-80",
-    "stats": ${getPhaseStats(gameKey, 4)},
-    "sn": "Late-game push — approaching soft caps, upgraded gear, boss souls spent.",
-    "weapons": [ ${weaponTpl2} ],
-    "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 340, "sp": 290, "bs": 680, "n": "Late-game damage context" }
-  },
-  "phase5": {
-    "name": "End Game",
-    "chapter": "The Final Reckoning",
-    "range": "SL 80-120",
+    "range": "SL 75-95",
     "stats": ${getPhaseStats(gameKey, 5)},
-    "sn": "Fully optimised — soft caps hit, best-in-slot gear equipped.",
-    "weapons": [ ${weaponTpl2} ],
+    "sn": "Approaching peak — all core soft caps reachable, best-in-slot weapons upgrading.",
+    "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 420, "sp": 370, "bs": 840, "n": "Peak damage context" }
+    "dmg": { "ps": 370, "sp": 320, "bs": 740, "n": "Late-game damage context" }
   },
   "phase6": {
+    "name": "End Game",
+    "chapter": "The Final Reckoning",
+    "range": "SL 95-120",
+    "stats": ${getPhaseStats(gameKey, 6)},
+    "sn": "Fully optimised — all soft caps hit, best-in-slot gear equipped. PvP meta range reached.",
+    "weapons": [ ${weaponTpl} ],
+    "armor": [], "acc": [], "spells": [],
+    "dmg": { "ps": 430, "sp": 380, "bs": 860, "n": "Peak damage context" }
+  },
+  "phase7": {
     "name": "NG+",
     "chapter": "The Undying Herald Endures",
     "range": "NG+1 and beyond",
-    "stats": ${getPhaseStats(gameKey, 6)},
-    "sn": "Same build; enemies scale harder each cycle. Adjust stamina management over pure offense.",
+    "stats": ${getPhaseStats(gameKey, 7)},
+    "sn": "Same build; enemies scale harder each cycle. Note any DLC weapons or covenant rewards worth pursuing.",
     "weapons": [], "armor": [], "acc": [], "spells": [],
-    "dmg": { "ps": 420, "sp": 370, "bs": 840, "n": "Same damage output; enemy HP/damage scales per cycle" },
+    "dmg": { "ps": 430, "sp": 380, "bs": 860, "n": "Same damage output; enemy HP/damage scales per cycle" },
     "ngCycles": [
       { "label": "NG+1", "stats": { "${ngStatKey}": 40 }, "notes": "~20% HP/damage increase" },
       { "label": "NG+3", "stats": { "${ngStatKey}": 45 }, "notes": "~50% HP increase — adapt positioning" },
@@ -521,27 +610,26 @@ Generate phase4 (Late Game), phase5 (End Game), and phase6 (NG+) for this ${game
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability for every item. Use correct stat names for ${gameName}.
-- chapter: a 3-5 word lore title per phase — dark fantasy chapter heading, unique per phase, thematically tied to that stage of the journey.`;
+- chapter: 3-5 word dark-fantasy lore title, unique per phase.`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
-      console.log(`[step2] AI response (first 600 chars): ${text.slice(0, 600)}`);
+      console.log(`[step3] AI response (first 600 chars): ${text.slice(0, 600)}`);
       const parsed = parseJson(text) as Record<string, unknown>;
-
-      const p = normaliseStep2(parsed);
-      if (!p.phase4 && !p.phase5 && !p.phase6) {
-        console.error("[step2] MISSING phases after normalise:", JSON.stringify(parsed).slice(0, 600));
-        return res.status(500).json({ error: "AI did not return Late Game / End Game / NG+ phases. Try again — if this keeps happening, try a shorter build description." });
+      const p = normaliseStep3(parsed);
+      if (!p.phase5 && !p.phase6 && !p.phase7) {
+        console.error("[step3] MISSING phases after normalise:", JSON.stringify(parsed).slice(0, 600));
+        return res.status(500).json({ error: "AI did not return Late Game / End Game / NG+ phases. Try again." });
       }
       res.json(p);
     } catch (err) {
-      console.error("Step2 error:", err);
+      console.error("Step3 error:", err);
       res.status(500).json({ error: String(err) });
     }
   });
 
-  // POST /api/generate/step3 — pros / cons / quick-ref / tab names
-  app.post("/api/generate/step3", async (req, res) => {
+  // POST /api/generate/step4 — pros / cons / quick-ref / tab names
+  app.post("/api/generate/step4", async (req, res) => {
     const body = req.body as GenerateStep3Request;
     const { gameKey, gameName, partialBuild, provider, model } = body;
 
@@ -583,13 +671,14 @@ tabNames: 2-4 word lore-flavored labels for each UI tab, themed to this specific
 
   // POST /api/generate/finalize — assemble Build + save
   app.post("/api/generate/finalize", (req, res) => {
-    const { gameKey, buildKey, step1, step2, step3 } = req.body as {
+    const { gameKey, buildKey, step1, step2, step3, step4 } = req.body as {
       gameKey: string;
       gameName: string;
       buildKey: string;
       step1: Record<string, unknown>;
       step2: Record<string, unknown>;
-      step3: { pros: string[]; cons: string[]; ref: unknown[]; tabNames?: Record<string, string> };
+      step3: Record<string, unknown>;
+      step4: { pros: string[]; cons: string[]; ref: unknown[]; tabNames?: Record<string, string> };
     };
 
     const build: Build = {
@@ -607,15 +696,16 @@ tabNames: 2-4 word lore-flavored labels for each UI tab, themed to this specific
       phases: [
         step1.phase1,
         step1.phase2,
-        step1.phase3,
+        step2.phase3,
         step2.phase4,
-        step2.phase5,
-        step2.phase6,
+        step3.phase5,
+        step3.phase6,
+        step3.phase7,
       ].filter(Boolean) as Build["phases"],
-      pros: step3?.pros ?? [],
-      cons: step3?.cons ?? [],
-      ref:  (step3?.ref as Build["ref"]) ?? [],
-      tabNames: step3?.tabNames as Build["tabNames"] ?? undefined,
+      pros: step4?.pros ?? [],
+      cons: step4?.cons ?? [],
+      ref:  (step4?.ref as Build["ref"]) ?? [],
+      tabNames: step4?.tabNames as Build["tabNames"] ?? undefined,
       isAI: true,
     };
 
