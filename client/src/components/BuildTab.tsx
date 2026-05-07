@@ -138,11 +138,11 @@ export default function BuildTab({ build, game }: Props) {
       {/* ── Phase navigation — horizontal chapter cards ──────────────────────── */}
       {phases.length > 0 && (
         <div
-          className="border-b px-6 py-3"
+          className="border-b px-6 pt-3 pb-0"
           style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-card)" }}
         >
           <div className="overflow-x-auto -mx-2 px-2">
-            <div className="flex gap-2 min-w-max pb-0.5">
+            <div className="flex gap-2 min-w-max pb-3">
               {phases.map((p, i) => {
                 const active = activePhase === i;
                 return (
@@ -193,9 +193,53 @@ export default function BuildTab({ build, game }: Props) {
             </div>
           </div>
 
+          {/* ── Sub-tab bar — always visible ──────────────────────────────────── */}
+          <div
+            className="flex border-t -mx-6 px-6"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            {(
+              [
+                { id: "overview",  label: "Overview",    icon: "◈" },
+                { id: "roadmap",   label: "Progression", icon: "↗" },
+                { id: "checklist", label: "Checklist",   icon: "✦" },
+              ] as { id: SubTab; label: string; icon: string }[]
+            ).map((t) => {
+              const active = subTab === t.id;
+              const hasData =
+                t.id === "overview" ? true :
+                t.id === "roadmap"  ? !!(phase?.progression?.length || phase?.keyBosses?.length) :
+                                      !!phase?.checklist?.length;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setSubTab(t.id)}
+                  className="relative flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-semibold transition-all"
+                  style={{
+                    color: active ? accent : hasData ? "var(--color-dim2)" : "var(--color-dim)",
+                    borderBottom: active ? `2px solid ${accent}` : "2px solid transparent",
+                    marginBottom: -1,
+                    opacity: hasData || active ? 1 : 0.5,
+                  }}
+                >
+                  <span style={{ fontSize: 10 }}>{t.icon}</span>
+                  {t.label}
+                  {!hasData && t.id !== "overview" && (
+                    <span
+                      className="ml-1 text-[8px] px-1 rounded"
+                      style={{ backgroundColor: "var(--color-card-2)", color: "var(--color-dim)" }}
+                    >
+                      AI only
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
           {/* NG+ cycle selector */}
           {ngCycles.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
+            <div className="flex flex-wrap gap-1 pt-2 pb-3">
               {ngCycles.map((c, i) => (
                 <button
                   key={i}
@@ -296,26 +340,6 @@ export default function BuildTab({ build, game }: Props) {
             </div>
           )}
 
-          {/* ── Sub-tab navigation ────────────────────────────────────────────── */}
-          {(phase.progression?.length || phase.checklist?.length || phase.keyBosses?.length) ? (
-            <div className="flex gap-1 pt-1">
-              {(["overview", "roadmap", "checklist"] as SubTab[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setSubTab(t)}
-                  className="px-3 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-all"
-                  style={{
-                    backgroundColor: subTab === t ? hexToRgba(accent, 0.15) : "var(--color-card-2)",
-                    color: subTab === t ? accent : "var(--color-dim)",
-                    border: `1px solid ${subTab === t ? hexToRgba(accent, 0.35) : "var(--color-border)"}`,
-                  }}
-                >
-                  {t === "overview" ? "Overview" : t === "roadmap" ? "Progression" : "Checklist"}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
           {/* ── SUB-TAB: Overview (default — stats + items) ──────────────────── */}
           {subTab === "overview" && (
             <>
@@ -399,9 +423,13 @@ export default function BuildTab({ build, game }: Props) {
                   </ol>
                 </div>
               ) : (
-                <p className="text-xs py-6 text-center" style={{ color: "var(--color-dim)" }}>
-                  No progression guide — regenerate this build to populate this tab.
-                </p>
+                <div className="py-10 text-center">
+                  <p className="text-2xl mb-3" style={{ color: "var(--color-dim)" }}>↗</p>
+                  <p className="text-sm font-semibold mb-1" style={{ color: "var(--color-dim2)" }}>No progression guide yet</p>
+                  <p className="text-xs" style={{ color: "var(--color-dim)" }}>
+                    Generate a new build to get step-by-step guidance for advancing through each phase.
+                  </p>
+                </div>
               )}
 
               {phase.keyBosses && phase.keyBosses.length > 0 && (
@@ -467,9 +495,13 @@ export default function BuildTab({ build, game }: Props) {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs py-6 text-center" style={{ color: "var(--color-dim)" }}>
-                  No checklist — regenerate this build to populate this tab.
-                </p>
+                <div className="py-10 text-center">
+                  <p className="text-2xl mb-3" style={{ color: "var(--color-dim)" }}>✦</p>
+                  <p className="text-sm font-semibold mb-1" style={{ color: "var(--color-dim2)" }}>No checklist yet</p>
+                  <p className="text-xs" style={{ color: "var(--color-dim)" }}>
+                    Generate a new build to get an interactive item and objective checklist per phase.
+                  </p>
+                </div>
               )}
             </div>
           )}

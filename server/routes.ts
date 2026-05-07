@@ -566,9 +566,9 @@ Generate phase1 (Early Game) and phase2 (Early-Mid Game) for this ${gameName} bu
     "acc":   [ { "n": "Ring Name", "wt": 0.0, "eq": "Ring", "d": "...", "loc": "...", "up": "None", "tip": "...", "lore": "..." } ],
     "spells": [],
     "dmg": { "ps": 150, "sp": 120, "bs": 300, "n": "Damage context" },
-    "progression": ["Action 1: specific thing to do first", "Action 2: upgrade goal", "Action 3: NPC or location to visit", "Action 4: boss kill or item to unlock", "Action 5: gear swap or level target"],
-    "checklist": ["Item Name — why needed", "Upgrade level — e.g. +3 weapon before leaving", "Boss kill — what it unlocks", "NPC visit — what you get"],
-    "keyBosses": ["Boss Name — 1 sentence on build-specific approach or difficulty"]
+    "progression": ["Kill [boss name] — the exact route and tactic for this build to beat them early", "Upgrade starting weapon to +3 — farm [specific material] at [location]; do this before the first gate boss", "Level [stat] to [number] — this is the minimum to use [weapon]; visit [blacksmith/merchant] in [location]", "Talk to [NPC name] at [location] after [trigger condition] — unlocks [questline / covenant / key item]", "Collect [specific ring or talisman] from [chest or NPC] in [area] — it is core to this build from now on"],
+    "checklist": ["[Weapon name] at +3 — mandatory before moving past [first area gate]; source: [exact location]", "[Key ring/talisman] — found at [exact spot] in [area], gives [effect]; do not miss this", "Kill [boss name] — unlocks [area, merchant, or item] essential for this build", "[NPC name] talk at [location] — buy [item] or trigger [quest]; they can be missed if you advance the area", "[Upgrade material ×N] in your pocket — stockpile before [area] since the next blacksmith is far"],
+    "keyBosses": ["[Boss name] — [2 sentence strategy: exploit [weakness/opening], use [weapon art or tactic], watch for [dangerous attack]]"
   },
   "phase2": {
     "name": "Early-Mid Game",
@@ -579,9 +579,9 @@ Generate phase1 (Early Game) and phase2 (Early-Mid Game) for this ${gameName} bu
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 200, "sp": 170, "bs": 400, "n": "Damage context" },
-    "progression": ["Action 1: specific thing to do first", "Action 2: upgrade goal", "Action 3: NPC or location to visit", "Action 4: boss kill or item to unlock"],
-    "checklist": ["Item Name — why needed", "Upgrade level before leaving", "Boss kill — unlocks next area", "Ring or tool to acquire"],
-    "keyBosses": ["Boss Name — 1 sentence on build-specific approach"]
+    "progression": ["Kill [boss name] — gates [next area]; use [specific build tactic or item]", "Push weapon to +5 — requires [specific material]; farm from [enemy/location] or buy from [merchant] for [cost]", "Level [stat] from [X] to [Y] — this noticeably raises AR on [weapon]; priority over other stats right now", "Open [area or shortcut] by [method] — gives access to [mid-game item/merchant/covenant] this build needs"],
+    "checklist": ["[Weapon] at +5 — this is the ceiling before you need [next tier material]; don't skip this", "[Boss soul] — use it to craft [specific weapon] or sell for [souls]; know before NG+", "[Ring/talisman name] — pick it up at [exact location]; often overlooked but key to this build", "[NPC name] — trigger next dialogue step at [location] before clearing [boss/area] or they lock out"],
+    "keyBosses": ["[Boss name] — [2 sentences: opening window, punish strategy, which attack to bait for this build]"
   }
 }
 
@@ -589,9 +589,9 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 - chapter: 3-5 word dark-fantasy lore title, unique per phase.
 - Rings in "acc"; spells/sorceries/pyromancies/miracles in "spells".
 - steps: questline array only for multi-step acquisitions; null for drops/merchants.
-- progression: 4-6 specific ordered actions to advance from THIS phase to the NEXT (boss kills, upgrade milestones, NPC visits, area clears). Be concrete.
-- checklist: 5-8 items/objectives to have/complete before leaving. Format: "Name — brief why"
-- keyBosses: boss encounters in this SL range, 1 sentence each on build-specific strategy${getGamePromptRules(gameKey)}`;
+- PROGRESSION: Write 4-6 complete, specific actions — name the boss/NPC/area/item/stat number. No generic 'Action N:' placeholders. Each step must answer 'exactly what, where, and why?' A player should not need to look anything up.
+- CHECKLIST: 5-8 specific items/objectives. Always include: exact item name, how to get it (location/drop/merchant), and why it matters for this build. Format: "Item — [source] — [build impact]"
+- keyBosses: name each boss with a 2-sentence build-specific strategy (which opening to exploit, which attack to bait, which weapon art or tactic)${getGamePromptRules(gameKey)}`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
@@ -644,9 +644,9 @@ Generate phase3 (Mid Game) for this ${gameName} build. Build identity is crystal
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 270, "sp": 230, "bs": 540, "n": "Mid-game damage context" },
-    "progression": ["Action 1: specific goal to push toward mid-late", "Action 2: upgrade milestone", "Action 3: covenant or NPC", "Action 4: boss that gates mid-late content"],
+    "progression": ["Kill [boss name] — their [soul/drop] gives [specific reward] or opens [area]; use [build-specific tactic]", "Push weapon to +6 or +7 — farm [specific material] from [location/enemy]; this is the mid-game damage spike", "Level [stat] to [number] — this hits the first soft cap on [stat], raising AR by roughly [amount]", "Unlock [covenant or questline] by [action at location] — gives [ring/spell/gesture] this build uses in late game"],
     "checklist": ["Item — why needed before moving on", "Upgrade level — target before leaving", "Boss kill — what it unlocks", "Key ring or accessory"],
-    "keyBosses": ["Boss Name — 1 sentence build-specific approach", "Boss Name 2 — strategy note"]
+    "keyBosses": ["[Boss name] — [2 sentences: exploit [opening], use [specific attack or art], avoid [dangerous move]]", "[Boss name 2] — [2 sentences: positioning note, punish window, build-specific advantage or weakness]"]
   }
 }
 
@@ -655,7 +655,9 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 - Include 2-3 weapons, 2-3 armor pieces, 2-3 accessories.
 - progression: 4-6 specific ordered steps to advance from Mid Game to Mid-Late. Boss kills, upgrade targets, NPC visits.
 - checklist: 5-8 items/objectives. Format: "Name — brief why"
-- keyBosses: boss encounters in SL 35-55, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
+- PROGRESSION: 4-6 complete specific actions — name the boss/item/stat/area. No "Action N:" placeholders. Each step tells the player exactly what to do, where, and why without needing external help.
+- CHECKLIST: 5-8 items. Format: "Item — [how to get] — [why it matters for this build]"
+- keyBosses: 2-sentence strategy per boss — exploit their opening, name the punish window, note the build-specific advantage${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -724,18 +726,18 @@ Generate phase4 (Mid-Late Game) for this ${gameName} build. Critical transition 
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 320, "sp": 270, "bs": 640, "n": "Mid-late damage context" },
-    "progression": ["Action 1: which boss weapon to forge first", "Action 2: upgrade path to +10/+5", "Action 3: stat level to hit next soft cap", "Action 4: late-game area unlock"],
-    "checklist": ["Boss weapon — which boss soul to use", "Upgrade — weapon to +10 or +5 before late game", "Soft cap — which stat to push first", "Key armor — acquire before late content"],
-    "keyBosses": ["Boss Name — boss soul used for weapon / build significance", "Boss Name 2 — gates late-game area"]
+    "progression": ["Forge [specific boss weapon] using [boss soul] at [blacksmith] — this is the build's primary weapon from here on", "Upgrade to +8 or +9 — farm [specific slab/scale] from [location]; be deliberate since slabs are scarce", "Level [stat] to [number] — this reaches the soft cap on [stat], the last big AR jump before end game", "Unlock [late-game area or DLC entrance] by [specific method] — needed to access [key item/boss] for this build"],
+    "checklist": ["[Weapon name] at +9/+10 — you need [titanite slab/twinkling slab] from [source]; do this now", "Kill [boss name] — their [soul/drop] is used to forge [boss weapon] at [blacksmith]; do not transpose wrong", "[Key talisman/ring] from [exact location] — this is best-in-slot for [specific build function]", "[Armor set] from [NPC/area] — this keeps you in [equip load bracket] with the boss weapon equipped", "[NPC questline] — complete [specific step] before killing [boss] or the questline locks out permanently"],
+    "keyBosses": ["[Boss name] — [2 sentences: soul used for [weapon], exploit their [opening], punish with [weapon art]]", "[Boss name 2] — [2 sentences: gates [area], build-specific strategy, warning about [dangerous attack]]"]
   }
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability. Use correct stat names.
 - chapter: 3-5 word dark-fantasy lore title.
 - Mention specific boss weapon prerequisites in weapon loc fields.
-- progression: 4-6 steps to advance to Late Game. Focus on weapon forge decisions and soft cap milestones.
-- checklist: 5-8 items/objectives. Format: "Name — brief why"
-- keyBosses: boss encounters in SL 55-75 with build-specific notes${getGamePromptRules(gameKey)}`;
+- PROGRESSION: 4-6 specific steps to reach Late Game. Name the boss weapon to forge, the exact upgrade path, which stat soft cap to hit next, and which late area to unlock. No "Action N:" placeholders — each step is fully actionable.
+- CHECKLIST: 5-8 items. Format: "Item — [exact source] — [why needed now]"
+- keyBosses: 2-sentence strategy per boss — name their soul's value for this build, the best punish window, and any dangerous attacks to avoid${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -803,17 +805,17 @@ Generate ONLY phase5 (Late Game) for this ${gameName} build.
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 370, "sp": 320, "bs": 740, "n": "Late-game damage context" },
-    "progression": ["Action 1: remaining soft caps to finish", "Action 2: best-in-slot item to farm or buy", "Action 3: optional covenant or DLC content", "Action 4: final stat level before End Game"],
-    "checklist": ["Weapon at max upgrade — +10 or +5", "All primary soft caps hit", "Best-in-slot armor acquired", "Key talisman/ring for build finisher"],
-    "keyBosses": ["Boss Name — guards key late item for this build", "Optional Boss — DLC or covenant reward worth pursuing"]
+    "progression": ["Reach SL [target] and push [stat] to [number] — the last meaningful soft cap before end game; AR gain is [approx amount]", "Farm [specific best-in-slot item] from [enemy/location] — this replaces [current item] and is worth the effort", "Clear [optional DLC area or covenant] to obtain [specific reward] — this is [ring/spell/armor] that improves [build function]", "Upgrade armour to [+X] if relevant — final piece of the equip load puzzle before facing late bosses"],
+    "checklist": ["[Weapon] at +10/+5 — mandatory; source [titanite slab] from [exact location or merchant]", "[Stat] at soft cap [number] — last upgrade before AR plateau; spend [amount] souls at [bonfire merchant]", "[Best-in-slot ring/talisman] — found at [exact location] or dropped by [boss/enemy]; core to peak damage", "[Best-in-slot armor set] — obtain from [NPC/area/drop]; keeps weight under [equip load bracket]", "[Key covenant/DLC item] — join [covenant] or clear [DLC area] to access [reward]; worth it for [specific reason]"],
+    "keyBosses": ["[Boss name] — [2 sentences: this is a spike in difficulty for this build because [reason]; exploit [opening], punish with [weapon art or tactic]]", "[Optional boss name] — [2 sentences: their [drop/soul] gives [item] for this build; use [approach] to deal with [their hardest mechanic]]"
   }
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability. Use correct stat names.
 - chapter: 3-5 word dark-fantasy lore title.
-- progression: 4-6 steps that advance toward End Game.
-- checklist: 5-8 items/objectives. Format: "Name — brief why"
-- keyBosses: boss encounters in SL 75-95 range, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
+- PROGRESSION: 4-6 fully specific steps toward End Game — name exact stats, numbers, items, locations. No "Action N:" placeholders. A player reading this should be able to follow it without searching anything.
+- CHECKLIST: 5-8 items. Format: "Item — [exact source] — [why it's the best-in-slot for this build]"
+- keyBosses: 2-sentence strategy per boss — name the difficulty spike, exploit their opening, note the build-specific approach${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -881,17 +883,17 @@ Generate ONLY phase6 (End Game) for this ${gameName} build.
     "weapons": [ ${weaponTpl} ],
     "armor": [], "acc": [], "spells": [],
     "dmg": { "ps": 430, "sp": 380, "bs": 860, "n": "Peak damage context" },
-    "progression": ["Action 1: hit SL 120 (PvP meta)", "Action 2: final optional stat point allocation", "Action 3: any last DLC or covenant content", "Action 4: prepare for NG+"],
-    "checklist": ["SL 120 reached — PvP meta locked", "All DLC optional content cleared", "Final covenant reward obtained if applicable", "Build fully optimised — nothing left to upgrade"],
-    "keyBosses": ["Final boss — build's peak performance showcase", "Optional End Game boss — extra challenge or reward"]
+    "progression": ["Reach SL 120 — spend the final levels on [stat] to [number]; this is the PvP meta bracket for [game]", "Complete any missed DLC by clearing [DLC area name] — [specific reward] from [boss] is worth getting now", "Obtain final covenant reward by [action] at [covenant location] — [reward name] completes the build", "Swap to [final best-in-slot item] if you haven't already — [where to get it] and [what it replaces]"],
+    "checklist": ["SL 120 — PvP meta bracket locked; final stat point goes to [stat] at [number]", "[Final ring/talisman] — this replaces [earlier item] and is obtained from [source]; do not miss this", "[DLC boss name] cleared — drops [reward] or soul for [weapon]; key for completionists", "All Estus flasks upgraded — use [specific item] at [location] to max out before final encounters", "[Final armor piece] equipped — completes the [equip load bracket] with everything on"],
+    "keyBosses": ["[Final boss name] — [2 sentences: this is where the build reaches peak performance; use [weapon art/combo], punish [their opening], flask at [specific timing]]", "[Optional end-game boss] — [2 sentences: challenge rating for this build, what reward justifies the fight]"
   }
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability. Use correct stat names.
 - chapter: 3-5 word dark-fantasy lore title, different from phase5's chapter.
-- progression: 4-6 final polish steps leading into NG+.
-- checklist: 5-8 items/objectives. Format: "Name — brief why"
-- keyBosses: end-game boss encounters, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
+- PROGRESSION: 4-6 specific final steps — name exact SL targets, DLC areas, covenant names, final item swaps. No "Action N:" placeholders. Every step must be immediately actionable.
+- CHECKLIST: 5-8 items. Format: "Item — [source] — [why it's the final version for this build]"
+- keyBosses: 2-sentence strategy per encounter — show this is the build's peak performance, name the punish window and flask timing${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -964,16 +966,16 @@ Generate phase7 (NG+) for this ${gameName} build. Enemies scale harder each cycl
       { "label": "NG+5", "stats": { "${ngStatKey}": 50 }, "notes": "~90% HP increase — patience and resource management critical" },
       { "label": "NG+7", "stats": { "${ngStatKey}": 55 }, "notes": "~150% HP increase — maximum difficulty, no margin for error" }
     ],
-    "progression": ["Tip 1: how to handle HP/damage scaling across cycles", "Tip 2: any stat point investments worth making in later cycles", "Tip 3: DLC or covenant content to revisit in NG+", "Tip 4: toughest encounter in NG+ for this build and how to handle it"],
-    "checklist": ["Collect any missed covenant rewards in NG+", "Grab DLC items that become more accessible in NG+", "Reassess Estus flask allocation if HP pool changes", "Note any questlines that are easier in NG+"],
-    "keyBosses": ["Hardest NG+ boss for this build — specific adaptive strategy", "Any boss that scales unfavourably for this build — what to watch for"]
+    "progression": ["[Hardest early NG+ boss for this build] — at +20-30% HP/damage this is where the build gets tested; the key adjustment is [specific tactic change]", "Revisit [NPC questline or covenant] in NG+ — [specific reward] becomes available again or a different path opens", "Consider spending extra souls on [stat] if it was under-leveled — NG+ provides more resources per run to close gaps", "In NG+3 and beyond, the biggest danger for this build is [specific mechanic or boss] — adapt by [specific advice]"],
+    "checklist": ["[Covenant reward] — collect missed covenant items this run; [specific reward name] requires [rank] and is worth it", "[DLC boss name] again — their [drop/soul] stacks with or replaces [current item] in later cycles", "Reassess Estus vs Ashen Estus split if [enemy] now requires more flasks to tank; consider [allocation]", "[Questline NPC] — their NG+ path gives [alternative reward]; trigger by [specific action] in [location]", "Watch for [specific NG+ scaling spike] — at NG+[number] the HP increase means [boss] requires [specific adaptation]"],
+    "keyBosses": ["[Hardest NG+ boss for this build] — [2 sentences: why they're the spike, specific adaptive strategy using this build's tools]", "[Boss that scales poorly against this build in NG+] — [2 sentences: what changes, how to compensate with [specific item/tactic]]"
   }
 }
 
 Rules: Use correct stat names for ${gameName}. ngCycles notes must be specific to this build's playstyle.
-- progression: 4-6 tips specifically for running this build through NG+ cycles
-- checklist: items, covenants, or adjustments to make across NG+ runs
-- keyBosses: hardest encounters in NG+ for this specific build with adaptive advice${getGamePromptRules(gameKey)}`;
+- PROGRESSION: 4-6 specific NG+ tips — name the exact boss that becomes the difficulty spike, what stat or item adjustment helps, and which covenant/questline rewards are worth revisiting. No "Tip N:" placeholders.
+- CHECKLIST: 5-8 specific items and adjustments for NG+ runs. Format: "Item/Action — [why in NG+ specifically]"
+- keyBosses: 2-sentence adaptive strategy per boss — explain why they're harder in NG+ for this build and exactly how to handle it${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
