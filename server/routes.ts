@@ -665,9 +665,19 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
       if (!p.phase3) {
         const midKeys = /^mid.?game$|phase.?3|^midGame$/i;
         const nested = (p.phases as Record<string, unknown> | undefined)?.phase3 ?? p.phase_3 ?? p.midGame ?? phaseByName(p, midKeys);
-        if (nested) p = { ...p, phase3: nested };
-        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) p = { ...p, phase3: (p.phases as unknown[])[0] };
-        else if ("sn" in p || "dmg" in p) p = { phase3: p };
+        if (nested) { p = { ...p, phase3: nested }; }
+        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) { p = { ...p, phase3: (p.phases as unknown[])[0] }; }
+        else if ("sn" in p || "dmg" in p) { p = { phase3: p }; }
+        else {
+          // deep search — catches OpenAI wrapping output under a top-level key
+          for (const val of Object.values(p)) {
+            if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+            const inner = val as Record<string, unknown>;
+            const ip3 = inner.phase3 ?? inner.phase_3 ?? inner.midGame ?? phaseByName(inner, midKeys);
+            if (ip3) { p = { ...p, phase3: ip3 }; break; }
+            if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length > 0) { p = { ...p, phase3: (inner.phases as unknown[])[0] }; break; }
+          }
+        }
       }
       if (!p.phase3) {
         console.error("[step4] MISSING phase3:", JSON.stringify(parsed).slice(0, 600));
@@ -735,9 +745,18 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
       if (!p.phase4) {
         const midLateKeys = /mid.?late|phase.?4|midLate/i;
         const nested = (p.phases as Record<string, unknown> | undefined)?.phase4 ?? p.phase_4 ?? p.midLateGame ?? phaseByName(p, midLateKeys);
-        if (nested) p = { ...p, phase4: nested };
-        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) p = { ...p, phase4: (p.phases as unknown[])[0] };
-        else if ("sn" in p || "dmg" in p) p = { phase4: p };
+        if (nested) { p = { ...p, phase4: nested }; }
+        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) { p = { ...p, phase4: (p.phases as unknown[])[0] }; }
+        else if ("sn" in p || "dmg" in p) { p = { phase4: p }; }
+        else {
+          for (const val of Object.values(p)) {
+            if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+            const inner = val as Record<string, unknown>;
+            const ip4 = inner.phase4 ?? inner.phase_4 ?? inner.midLateGame ?? phaseByName(inner, midLateKeys);
+            if (ip4) { p = { ...p, phase4: ip4 }; break; }
+            if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length > 0) { p = { ...p, phase4: (inner.phases as unknown[])[0] }; break; }
+          }
+        }
       }
       if (!p.phase4) {
         console.error("[step5] MISSING phase4:", JSON.stringify(parsed).slice(0, 600));
@@ -813,22 +832,7 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
       const text = await callAI(provider, model, systemPrompt, userPrompt);
       console.log(`[step6] AI response (first 600 chars): ${text.slice(0, 600)}`);
       const parsed = parseJson(text) as Record<string, unknown>;
-      let p = parsed;
-      if (!p.phase5 && !p.phase6) {
-        const nested = p.phases as Record<string, unknown> | undefined;
-        if (nested && !Array.isArray(nested) && (nested.phase5 || nested.phase6)) {
-          p = { ...p, ...nested };
-        } else if (Array.isArray(p.phases) && (p.phases as unknown[]).length >= 2) {
-          const arr = p.phases as unknown[];
-          p = { ...p, phase5: arr[0], phase6: arr[1] };
-        } else {
-          const lateKeys = /late.?game|phase.?5|lateGame/i;
-          const endKeys  = /end.?game|phase.?6|endGame/i;
-          const phase5 = p.phase_5 ?? p.lateGame ?? p.late_game ?? phaseByName(p, lateKeys);
-          const phase6 = p.phase_6 ?? p.endGame  ?? p.end_game  ?? phaseByName(p, endKeys);
-          if (phase5 || phase6) p = { ...p, phase5, phase6 };
-        }
-      }
+      const p = normaliseStep3(parsed); // reuses full normaliser — handles all OpenAI wrapping patterns
       if (!p.phase5 && !p.phase6) {
         console.error("[step6] MISSING late/end phases:", JSON.stringify(parsed).slice(0, 600));
         return res.status(500).json({ error: "AI did not return Late/End Game phases. Try again." });
@@ -898,9 +902,18 @@ Rules: Use correct stat names for ${gameName}. ngCycles notes must be specific t
       if (!p.phase7) {
         const ngKeys = /ng\+|new.?game\+?|phase.?7|ngPlus|build.?perfect/i;
         const nested = (p.phases as Record<string, unknown> | undefined)?.phase7 ?? p.phase_7 ?? p.ngPlus ?? p.ng ?? phaseByName(p, ngKeys);
-        if (nested) p = { ...p, phase7: nested };
-        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) p = { ...p, phase7: (p.phases as unknown[])[0] };
-        else if ("sn" in p || "ngCycles" in p) p = { phase7: p };
+        if (nested) { p = { ...p, phase7: nested }; }
+        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) { p = { ...p, phase7: (p.phases as unknown[])[0] }; }
+        else if ("sn" in p || "ngCycles" in p) { p = { phase7: p }; }
+        else {
+          for (const val of Object.values(p)) {
+            if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+            const inner = val as Record<string, unknown>;
+            const ip7 = inner.phase7 ?? inner.phase_7 ?? inner.ngPlus ?? inner.ng ?? phaseByName(inner, ngKeys);
+            if (ip7) { p = { ...p, phase7: ip7 }; break; }
+            if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length > 0) { p = { ...p, phase7: (inner.phases as unknown[])[0] }; break; }
+          }
+        }
       }
       if (!p.phase7) {
         console.error("[step7] MISSING phase7:", JSON.stringify(parsed).slice(0, 600));
