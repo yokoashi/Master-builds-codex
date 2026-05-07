@@ -9,17 +9,19 @@ import MaterialsTab from "@/components/MaterialsTab";
 import ProgressionTab from "@/components/ProgressionTab";
 import ProsConsTab from "@/components/ProsConsTab";
 import QuickRefTab from "@/components/QuickRefTab";
+import LocationTab from "@/components/LocationTab";
 import AddBuildModal from "@/components/AddBuildModal";
 import DeleteModal from "@/components/DeleteModal";
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 
-const TAB_KEYS = ["build", "progression", "materials", "prosCons", "quickRef"] as const;
+const TAB_KEYS = ["build", "progression", "locations", "materials", "prosCons", "quickRef"] as const;
 type TabKey = typeof TAB_KEYS[number];
 
 const DEFAULT_TAB_LABELS: Record<TabKey, string> = {
   build:       "Your Build",
   progression: "Progression",
+  locations:   "Locations",
   materials:   "Materials",
   prosCons:    "Pros & Cons",
   quickRef:    "Quick Ref",
@@ -406,6 +408,7 @@ export default function CodexPage() {
             <div className="flex-1 overflow-y-auto" style={{ backgroundColor: "var(--color-bg)" }}>
               {activeTab === "build"       && <BuildTab build={build} game={game} />}
               {activeTab === "progression" && <ProgressionTab build={build} />}
+              {activeTab === "locations"   && <LocationTab build={build} />}
               {activeTab === "materials"   && <MaterialsTab build={build} game={game} />}
               {activeTab === "prosCons"    && <ProsConsTab build={build} />}
               {activeTab === "quickRef"    && <QuickRefTab build={build} />}

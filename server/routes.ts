@@ -568,7 +568,8 @@ Generate phase1 (Early Game) and phase2 (Early-Mid Game) for this ${gameName} bu
     "dmg": { "ps": 150, "sp": 120, "bs": 300, "n": "Damage context" },
     "progression": ["Kill [boss name] — the exact route and tactic for this build to beat them early", "Upgrade starting weapon to +3 — farm [specific material] at [location]; do this before the first gate boss", "Level [stat] to [number] — this is the minimum to use [weapon]; visit [blacksmith/merchant] in [location]", "Talk to [NPC name] at [location] after [trigger condition] — unlocks [questline / covenant / key item]", "Collect [specific ring or talisman] from [chest or NPC] in [area] — it is core to this build from now on"],
     "checklist": ["[Weapon name] at +3 — mandatory before moving past [first area gate]; source: [exact location]", "[Key ring/talisman] — found at [exact spot] in [area], gives [effect]; do not miss this", "Kill [boss name] — unlocks [area, merchant, or item] essential for this build", "[NPC name] talk at [location] — buy [item] or trigger [quest]; they can be missed if you advance the area", "[Upgrade material ×N] in your pocket — stockpile before [area] since the next blacksmith is far"],
-    "keyBosses": ["[Boss name] — [2 sentence strategy: exploit [weakness/opening], use [weapon art or tactic], watch for [dangerous attack]]"
+    "keyBosses": ["[Boss name] — [2 sentence strategy: exploit [weakness/opening], use [weapon art or tactic], watch for [dangerous attack]]"],
+    "areaPath": ["Start at [starting bonfire/checkpoint]", "Head [direction] through [landmark] — watch for [hazard or enemy patrol]", "Take [shortcut/ladder/path] at [landmark] to avoid [dangerous area] until you're stronger", "Reach [key NPC/bonfire/area entrance] — rest and resupply here before pushing further"]
   },
   "phase2": {
     "name": "Early-Mid Game",
@@ -581,7 +582,8 @@ Generate phase1 (Early Game) and phase2 (Early-Mid Game) for this ${gameName} bu
     "dmg": { "ps": 200, "sp": 170, "bs": 400, "n": "Damage context" },
     "progression": ["Kill [boss name] — gates [next area]; use [specific build tactic or item]", "Push weapon to +5 — requires [specific material]; farm from [enemy/location] or buy from [merchant] for [cost]", "Level [stat] from [X] to [Y] — this noticeably raises AR on [weapon]; priority over other stats right now", "Open [area or shortcut] by [method] — gives access to [mid-game item/merchant/covenant] this build needs"],
     "checklist": ["[Weapon] at +5 — this is the ceiling before you need [next tier material]; don't skip this", "[Boss soul] — use it to craft [specific weapon] or sell for [souls]; know before NG+", "[Ring/talisman name] — pick it up at [exact location]; often overlooked but key to this build", "[NPC name] — trigger next dialogue step at [location] before clearing [boss/area] or they lock out"],
-    "keyBosses": ["[Boss name] — [2 sentences: opening window, punish strategy, which attack to bait for this build]"
+    "keyBosses": ["[Boss name] — [2 sentences: opening window, punish strategy, which attack to bait for this build]"],
+    "areaPath": ["From [previous area bonfire], head [direction] past [landmark] — the gate is opened by [key or lever at location]", "Cross [bridge/path/shortcut] into [new area] — light the first bonfire immediately before engaging enemies", "Navigate [dangerous corridor/room] by [specific method] — the [enemy type] here can be skipped by [tactic]", "Reach [area boss fog/merchant/key item spot] — landmark is [description]"]
   }
 }
 
@@ -591,7 +593,8 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 - steps: questline array only for multi-step acquisitions; null for drops/merchants.
 - PROGRESSION: Write 4-6 complete, specific actions — name the boss/NPC/area/item/stat number. No generic 'Action N:' placeholders. Each step must answer 'exactly what, where, and why?' A player should not need to look anything up.
 - CHECKLIST: 5-8 specific items/objectives. Always include: exact item name, how to get it (location/drop/merchant), and why it matters for this build. Format: "Item — [source] — [build impact]"
-- keyBosses: name each boss with a 2-sentence build-specific strategy (which opening to exploit, which attack to bait, which weapon art or tactic)${getGamePromptRules(gameKey)}`;
+- keyBosses: name each boss with a 2-sentence build-specific strategy (which opening to exploit, which attack to bait, which weapon art or tactic)
+- AREAPATH: 4-6 turn-by-turn navigation steps to reach the phase's main area from the previous bonfire. Name exact bonfires, landmarks, enemies to avoid, shortcuts to unlock. Write as if guiding someone blind — no vague "head south"; use in-game reference points.${getGamePromptRules(gameKey)}`;
 
     try {
       const text   = await callAI(provider, model, systemPrompt, userPrompt);
@@ -646,7 +649,8 @@ Generate phase3 (Mid Game) for this ${gameName} build. Build identity is crystal
     "dmg": { "ps": 270, "sp": 230, "bs": 540, "n": "Mid-game damage context" },
     "progression": ["Kill [boss name] — their [soul/drop] gives [specific reward] or opens [area]; use [build-specific tactic]", "Push weapon to +6 or +7 — farm [specific material] from [location/enemy]; this is the mid-game damage spike", "Level [stat] to [number] — this hits the first soft cap on [stat], raising AR by roughly [amount]", "Unlock [covenant or questline] by [action at location] — gives [ring/spell/gesture] this build uses in late game"],
     "checklist": ["Item — why needed before moving on", "Upgrade level — target before leaving", "Boss kill — what it unlocks", "Key ring or accessory"],
-    "keyBosses": ["[Boss name] — [2 sentences: exploit [opening], use [specific attack or art], avoid [dangerous move]]", "[Boss name 2] — [2 sentences: positioning note, punish window, build-specific advantage or weakness]"]
+    "keyBosses": ["[Boss name] — [2 sentences: exploit [opening], use [specific attack or art], avoid [dangerous move]]", "[Boss name 2] — [2 sentences: positioning note, punish window, build-specific advantage or weakness]"],
+    "areaPath": ["From [previous bonfire], take [route/path] — the entrance to [area] is [description of how it looks]", "Pass through [landmark] — stay [left/right] to avoid the [specific dangerous enemy type] until you're ready", "Key shortcut: [location] — unlock by [action]; cuts travel time significantly for farming runs", "Important: [NPC/chest/bonfire] is in [exact sub-area location] — easy to miss if you don't take the [specific path]"]
   }
 }
 
@@ -657,7 +661,8 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 - checklist: 5-8 items/objectives. Format: "Name — brief why"
 - PROGRESSION: 4-6 complete specific actions — name the boss/item/stat/area. No "Action N:" placeholders. Each step tells the player exactly what to do, where, and why without needing external help.
 - CHECKLIST: 5-8 items. Format: "Item — [how to get] — [why it matters for this build]"
-- keyBosses: 2-sentence strategy per boss — exploit their opening, name the punish window, note the build-specific advantage${getGamePromptRules(gameKey)}`;
+- keyBosses: 2-sentence strategy per boss — exploit their opening, name the punish window, note the build-specific advantage
+- AREAPATH: 4-6 navigation steps from the previous phase's bonfire to this phase's main area. Name bonfires, doors/keys needed, enemy patrols to avoid, and any shortcuts worth unlocking for future farming runs.${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -728,7 +733,8 @@ Generate phase4 (Mid-Late Game) for this ${gameName} build. Critical transition 
     "dmg": { "ps": 320, "sp": 270, "bs": 640, "n": "Mid-late damage context" },
     "progression": ["Forge [specific boss weapon] using [boss soul] at [blacksmith] — this is the build's primary weapon from here on", "Upgrade to +8 or +9 — farm [specific slab/scale] from [location]; be deliberate since slabs are scarce", "Level [stat] to [number] — this reaches the soft cap on [stat], the last big AR jump before end game", "Unlock [late-game area or DLC entrance] by [specific method] — needed to access [key item/boss] for this build"],
     "checklist": ["[Weapon name] at +9/+10 — you need [titanite slab/twinkling slab] from [source]; do this now", "Kill [boss name] — their [soul/drop] is used to forge [boss weapon] at [blacksmith]; do not transpose wrong", "[Key talisman/ring] from [exact location] — this is best-in-slot for [specific build function]", "[Armor set] from [NPC/area] — this keeps you in [equip load bracket] with the boss weapon equipped", "[NPC questline] — complete [specific step] before killing [boss] or the questline locks out permanently"],
-    "keyBosses": ["[Boss name] — [2 sentences: soul used for [weapon], exploit their [opening], punish with [weapon art]]", "[Boss name 2] — [2 sentences: gates [area], build-specific strategy, warning about [dangerous attack]]"]
+    "keyBosses": ["[Boss name] — [2 sentences: soul used for [weapon], exploit their [opening], punish with [weapon art]]", "[Boss name 2] — [2 sentences: gates [area], build-specific strategy, warning about [dangerous attack]]"],
+    "areaPath": ["[Main late-game area] — accessed from [location] via [path]; the entrance can be tricky, look for [landmark]", "Important sub-area: [name] — reached by [specific method]; contains [key item for this build]", "Watch out: [hazard] blocks the direct route — go around via [alternate path] at [location]", "Bonfire layout: the nearest bonfire to [key boss/item] is [bonfire name] — reach it via [route]"]
   }
 }
 
@@ -807,7 +813,8 @@ Generate ONLY phase5 (Late Game) for this ${gameName} build.
     "dmg": { "ps": 370, "sp": 320, "bs": 740, "n": "Late-game damage context" },
     "progression": ["Reach SL [target] and push [stat] to [number] — the last meaningful soft cap before end game; AR gain is [approx amount]", "Farm [specific best-in-slot item] from [enemy/location] — this replaces [current item] and is worth the effort", "Clear [optional DLC area or covenant] to obtain [specific reward] — this is [ring/spell/armor] that improves [build function]", "Upgrade armour to [+X] if relevant — final piece of the equip load puzzle before facing late bosses"],
     "checklist": ["[Weapon] at +10/+5 — mandatory; source [titanite slab] from [exact location or merchant]", "[Stat] at soft cap [number] — last upgrade before AR plateau; spend [amount] souls at [bonfire merchant]", "[Best-in-slot ring/talisman] — found at [exact location] or dropped by [boss/enemy]; core to peak damage", "[Best-in-slot armor set] — obtain from [NPC/area/drop]; keeps weight under [equip load bracket]", "[Key covenant/DLC item] — join [covenant] or clear [DLC area] to access [reward]; worth it for [specific reason]"],
-    "keyBosses": ["[Boss name] — [2 sentences: this is a spike in difficulty for this build because [reason]; exploit [opening], punish with [weapon art or tactic]]", "[Optional boss name] — [2 sentences: their [drop/soul] gives [item] for this build; use [approach] to deal with [their hardest mechanic]]"
+    "keyBosses": ["[Boss name] — [2 sentences: this is a spike in difficulty for this build because [reason]; exploit [opening], punish with [weapon art or tactic]]", "[Optional boss name] — [2 sentences: their [drop/soul] gives [item] for this build; use [approach] to deal with [their hardest mechanic]]"],
+    "areaPath": ["[Late-game area] — enter from [bonfire name]; take [path] — it branches at [landmark], go [direction]", "Crucial warning: [ambush spot or invisible enemy] at [specific location] — approach from [direction] to avoid it", "Farming route for [specific material]: [start bonfire] → [path] → [kill location] → reset; takes approx [X] minutes per run", "Key chest/NPC at [location] — it's [distance/direction] from [bonfire], past [landmark]; don't miss this for the build"]
   }
 }
 
@@ -815,7 +822,9 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 - chapter: 3-5 word dark-fantasy lore title.
 - PROGRESSION: 4-6 fully specific steps toward End Game — name exact stats, numbers, items, locations. No "Action N:" placeholders. A player reading this should be able to follow it without searching anything.
 - CHECKLIST: 5-8 items. Format: "Item — [exact source] — [why it's the best-in-slot for this build]"
-- keyBosses: 2-sentence strategy per boss — name the difficulty spike, exploit their opening, note the build-specific approach${getGamePromptRules(gameKey)}`;
+- keyBosses: 2-sentence strategy per boss — name the difficulty spike, exploit their opening, note the build-specific approach
+- AREAPATH: 4-6 navigation directions for the Late Game area(s). Name the bonfire, the path, any elevation/branching points, key shortcuts, and farm spots for best-in-slot items.
+- AREAPATH: 4-6 navigation steps to reach the main area for this SL range. Include bonfire names, locked paths that open after certain boss kills, hazards to avoid, and farming route notes.${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -885,7 +894,8 @@ Generate ONLY phase6 (End Game) for this ${gameName} build.
     "dmg": { "ps": 430, "sp": 380, "bs": 860, "n": "Peak damage context" },
     "progression": ["Reach SL 120 — spend the final levels on [stat] to [number]; this is the PvP meta bracket for [game]", "Complete any missed DLC by clearing [DLC area name] — [specific reward] from [boss] is worth getting now", "Obtain final covenant reward by [action] at [covenant location] — [reward name] completes the build", "Swap to [final best-in-slot item] if you haven't already — [where to get it] and [what it replaces]"],
     "checklist": ["SL 120 — PvP meta bracket locked; final stat point goes to [stat] at [number]", "[Final ring/talisman] — this replaces [earlier item] and is obtained from [source]; do not miss this", "[DLC boss name] cleared — drops [reward] or soul for [weapon]; key for completionists", "All Estus flasks upgraded — use [specific item] at [location] to max out before final encounters", "[Final armor piece] equipped — completes the [equip load bracket] with everything on"],
-    "keyBosses": ["[Final boss name] — [2 sentences: this is where the build reaches peak performance; use [weapon art/combo], punish [their opening], flask at [specific timing]]", "[Optional end-game boss] — [2 sentences: challenge rating for this build, what reward justifies the fight]"
+    "keyBosses": ["[Final boss name] — [2 sentences: this is where the build reaches peak performance; use [weapon art/combo], punish [their opening], flask at [specific timing]]", "[Optional end-game boss] — [2 sentences: challenge rating for this build, what reward justifies the fight]"],
+    "areaPath": ["[Final area] — reached from [bonfire]; the approach has [specific hazard] — deal with it by [tactic]", "Final boss fog is at [location description] — there is a bonfire [distance] before it at [name]; use it to resupply", "Tip: [shortcut or trick] makes the [boss/area] run much shorter — unlock it by [action] earlier in the game", "Optional end-game content at [location] — accessed via [path]; worth visiting for [reward] before final attempt"]
   }
 }
 
@@ -893,7 +903,8 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 - chapter: 3-5 word dark-fantasy lore title, different from phase5's chapter.
 - PROGRESSION: 4-6 specific final steps — name exact SL targets, DLC areas, covenant names, final item swaps. No "Action N:" placeholders. Every step must be immediately actionable.
 - CHECKLIST: 5-8 items. Format: "Item — [source] — [why it's the final version for this build]"
-- keyBosses: 2-sentence strategy per encounter — show this is the build's peak performance, name the punish window and flask timing${getGamePromptRules(gameKey)}`;
+- keyBosses: 2-sentence strategy per encounter — show this is the build's peak performance, name the punish window and flask timing
+- AREAPATH: 4-6 final navigation notes — the route to the final boss area, the nearest bonfire, any pre-boss shortcut tricks, and optional end-game area directions.${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
@@ -968,14 +979,16 @@ Generate phase7 (NG+) for this ${gameName} build. Enemies scale harder each cycl
     ],
     "progression": ["[Hardest early NG+ boss for this build] — at +20-30% HP/damage this is where the build gets tested; the key adjustment is [specific tactic change]", "Revisit [NPC questline or covenant] in NG+ — [specific reward] becomes available again or a different path opens", "Consider spending extra souls on [stat] if it was under-leveled — NG+ provides more resources per run to close gaps", "In NG+3 and beyond, the biggest danger for this build is [specific mechanic or boss] — adapt by [specific advice]"],
     "checklist": ["[Covenant reward] — collect missed covenant items this run; [specific reward name] requires [rank] and is worth it", "[DLC boss name] again — their [drop/soul] stacks with or replaces [current item] in later cycles", "Reassess Estus vs Ashen Estus split if [enemy] now requires more flasks to tank; consider [allocation]", "[Questline NPC] — their NG+ path gives [alternative reward]; trigger by [specific action] in [location]", "Watch for [specific NG+ scaling spike] — at NG+[number] the HP increase means [boss] requires [specific adaptation]"],
-    "keyBosses": ["[Hardest NG+ boss for this build] — [2 sentences: why they're the spike, specific adaptive strategy using this build's tools]", "[Boss that scales poorly against this build in NG+] — [2 sentences: what changes, how to compensate with [specific item/tactic]]"
+    "keyBosses": ["[Hardest NG+ boss for this build] — [2 sentences: why they're the spike, specific adaptive strategy using this build's tools]", "[Boss that scales poorly against this build in NG+] — [2 sentences: what changes, how to compensate with [specific item/tactic]]"],
+    "areaPath": ["NG+ note: [area] is the earliest point where the scaling becomes punishing for this build — prepare [item/strategy] before entering", "Key difference in NG+: [path or shortcut] that was locked in NG0 opens differently — access it via [method]", "Fastest route to [key NG+ reward]: [bonfire] → [path] → [target]; priority in the first NG+ run", "Warning: [specific NG+ ambush or surprise enemy] at [location] — even experienced players get caught here in NG+"]
   }
 }
 
 Rules: Use correct stat names for ${gameName}. ngCycles notes must be specific to this build's playstyle.
 - PROGRESSION: 4-6 specific NG+ tips — name the exact boss that becomes the difficulty spike, what stat or item adjustment helps, and which covenant/questline rewards are worth revisiting. No "Tip N:" placeholders.
 - CHECKLIST: 5-8 specific items and adjustments for NG+ runs. Format: "Item/Action — [why in NG+ specifically]"
-- keyBosses: 2-sentence adaptive strategy per boss — explain why they're harder in NG+ for this build and exactly how to handle it${getGamePromptRules(gameKey)}`;
+- keyBosses: 2-sentence adaptive strategy per boss — explain why they're harder in NG+ for this build and exactly how to handle it
+- AREAPATH: 4-6 NG+-specific navigation notes — areas where routing differs from NG0, earliest danger zones, and fastest routes to covenant/reward targets.${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);

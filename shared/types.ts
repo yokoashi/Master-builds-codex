@@ -26,6 +26,7 @@ export interface WeightTier {
 export interface BuildTabNames {
   build?: string;       // replaces "Your Build"
   progression?: string; // replaces "Progression"
+  locations?: string;   // replaces "Locations"
   materials?: string;   // replaces "Materials"
   prosCons?: string;    // replaces "Pros & Cons"
   quickRef?: string;    // replaces "Quick Ref"
@@ -68,6 +69,7 @@ export interface Phase {
   progression?: string[];  // ordered steps to advance to the next phase
   checklist?: string[];    // items & objectives to acquire/complete in this phase
   keyBosses?: string[];    // key boss encounters with build-specific notes
+  areaPath?: string[];     // step-by-step navigation directions to reach the phase's main area(s)
 }
 
 export interface NgCycle {
