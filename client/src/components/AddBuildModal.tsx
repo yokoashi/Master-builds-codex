@@ -14,22 +14,23 @@ interface Props {
 type Mode = "full" | "semi" | "manual";
 type Stage =
   | "idle" | "step1" | "step2" | "step3" | "step4" | "step5"
-  | "step6" | "step7" | "step8" | "step9" | "finalizing" | "done" | "error";
+  | "step6" | "step6b" | "step7" | "step8" | "step9" | "finalizing" | "done" | "error";
 
 const STAGE_ORDER: Stage[] = [
-  "step1","step2","step3","step4","step5","step6","step7","step8","step9","finalizing","done",
+  "step1","step2","step3","step4","step5","step6","step6b","step7","step8","step9","finalizing","done",
 ];
 
 const PIPELINE_STEPS = [
-  { id: "step1" as Stage,      label: "Build Identity",       desc: "Name · Class · Concept · Stat targets · Weapon requirements" },
-  { id: "step2" as Stage,      label: "Loadouts & Variants",  desc: "Equipment configurations · Weight tiers · Armour setups" },
-  { id: "step3" as Stage,      label: "Early Game",           desc: "Phases 1–2 · SL 1–35 · Starting gear · First upgrades · Opening NPC path" },
-  { id: "step4" as Stage,      label: "Mid Game",             desc: "Phase 3 · SL 35–55 · Build crystallises · Key covenant unlock" },
-  { id: "step5" as Stage,      label: "Mid-Late Transition",  desc: "Phase 4 · SL 55–75 · First soft caps · Boss weapons unlocked" },
-  { id: "step6" as Stage,      label: "Late & End Game",      desc: "Phases 5–6 · SL 75–120 · Peak optimisation · PvP meta" },
-  { id: "step7" as Stage,      label: "NG+ & Cycles",         desc: "Phase 7 · Scaling cycles · Covenant rewards · DLC notes" },
-  { id: "step8" as Stage,      label: "Build Comparisons",    desc: "2 similar builds · 2 contrasting alternatives · Player context" },
-  { id: "step9" as Stage,      label: "Pros, Cons & Ref",     desc: "Honest strengths · Weaknesses · Quick-reference item table" },
+  { id: "step1"      as Stage, label: "Build Identity",       desc: "Name · Class · Concept · Stat targets · Weapon requirements" },
+  { id: "step2"      as Stage, label: "Loadouts & Variants",  desc: "Equipment configurations · Weight tiers · Armour setups" },
+  { id: "step3"      as Stage, label: "Early Game",           desc: "Phases 1–2 · SL 1–35 · Starting gear · First upgrades · Opening NPC path" },
+  { id: "step4"      as Stage, label: "Mid Game",             desc: "Phase 3 · SL 35–55 · Build crystallises · Key covenant unlock" },
+  { id: "step5"      as Stage, label: "Mid-Late Transition",  desc: "Phase 4 · SL 55–75 · First soft caps · Boss weapons unlocked" },
+  { id: "step6"      as Stage, label: "Late Game",            desc: "Phase 5 · SL 75–95 · Best-in-slot weapons · Final soft cap push" },
+  { id: "step6b"     as Stage, label: "End Game",             desc: "Phase 6 · SL 95–120 · Full optimisation · PvP meta locked in" },
+  { id: "step7"      as Stage, label: "NG+ & Cycles",         desc: "Phase 7 · Scaling cycles · Covenant rewards · DLC notes" },
+  { id: "step8"      as Stage, label: "Build Comparisons",    desc: "2 similar builds · 2 contrasting alternatives · Player context" },
+  { id: "step9"      as Stage, label: "Pros, Cons & Ref",     desc: "Honest strengths · Weaknesses · Quick-reference item table" },
   { id: "finalizing" as Stage, label: "Saving",               desc: "Assembling & storing the complete build guide" },
 ] as const;
 
@@ -224,7 +225,8 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         step3: { phase1: parsed.phases?.[0], phase2: parsed.phases?.[1] },
         step4: { phase3: parsed.phases?.[2] },
         step5: { phase4: parsed.phases?.[3] },
-        step6: { phase5: parsed.phases?.[4], phase6: parsed.phases?.[5] },
+        step6: { phase5: parsed.phases?.[4] },
+        step6b: { phase6: parsed.phases?.[5] },
         step7: { phase7: parsed.phases?.[6] },
         step8: { sim: parsed.sim ?? [], oth: parsed.oth ?? [] },
         step9: { pros: parsed.pros ?? [], cons: parsed.cons ?? [], ref: parsed.ref ?? [] },
@@ -301,18 +303,25 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         partialBuild: { ...step1, ...step3, ...step4 }, provider, model,
       });
 
-      // Step 6: late + end game phases 5-6
+      // Step 6: late game phase 5
       setStage("step6");
       const step6 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step6", {
         gameKey: game.key, gameName: game.name, buildKey,
         partialBuild: { ...step1, ...step4, ...step5 }, provider, model,
       });
 
+      // Step 6b: end game phase 6
+      setStage("step6b");
+      const step6b = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step6b", {
+        gameKey: game.key, gameName: game.name, buildKey,
+        partialBuild: { ...step1, ...step5, ...step6 }, provider, model,
+      });
+
       // Step 7: NG+ phase 7
       setStage("step7");
       const step7 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step7", {
         gameKey: game.key, gameName: game.name, buildKey,
-        partialBuild: { ...step1, ...step5, ...step6 }, provider, model,
+        partialBuild: { ...step1, ...step6, ...step6b }, provider, model,
       });
 
       // Step 8: similar/contrasting builds (non-fatal)
@@ -339,7 +348,7 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
       setStage("finalizing");
       const build = await apiRequest<Build>("POST", "/api/generate/finalize", {
         gameKey: game.key, gameName: game.name, buildKey,
-        step1, step2, step3, step4, step5, step6, step7, step8, step9,
+        step1, step2, step3, step4, step5, step6, step6b, step7, step8, step9,
       });
 
       setStage("done");

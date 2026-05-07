@@ -769,14 +769,14 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
     }
   });
 
-  // POST /api/generate/step6 — Late Game (phase5) + End Game (phase6)
+  // POST /api/generate/step6 — Late Game (phase5 only)
   app.post("/api/generate/step6", async (req, res) => {
     const body = req.body as GenerateStep2Request;
     const { gameKey, gameName, partialBuild, provider, model } = body;
 
     const systemPrompt = buildSystemPrompt(
       gameKey, gameName, provider,
-      `Continue "${partialBuild.label}". Generate late and end-game phases.`,
+      `Continue "${partialBuild.label}". Generate the Late Game phase.`,
     );
 
     const pb = partialBuild as Record<string, unknown>;
@@ -791,7 +791,7 @@ Build so far: ${JSON.stringify({
   phase4: pb.phase4,
 }, null, 2)}
 
-Generate phase5 (Late Game) and phase6 (End Game) for this ${gameName} build.
+Generate ONLY phase5 (Late Game) for this ${gameName} build.
 
 {
   "phase5": {
@@ -806,7 +806,72 @@ Generate phase5 (Late Game) and phase6 (End Game) for this ${gameName} build.
     "progression": ["Action 1: remaining soft caps to finish", "Action 2: best-in-slot item to farm or buy", "Action 3: optional covenant or DLC content", "Action 4: final stat level before End Game"],
     "checklist": ["Weapon at max upgrade — +10 or +5", "All primary soft caps hit", "Best-in-slot armor acquired", "Key talisman/ring for build finisher"],
     "keyBosses": ["Boss Name — guards key late item for this build", "Optional Boss — DLC or covenant reward worth pursuing"]
-  },
+  }
+}
+
+Rules: all item locations must be real in ${gameName}. Include lore and durability. Use correct stat names.
+- chapter: 3-5 word dark-fantasy lore title.
+- progression: 4-6 steps that advance toward End Game.
+- checklist: 5-8 items/objectives. Format: "Name — brief why"
+- keyBosses: boss encounters in SL 75-95 range, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
+
+    try {
+      const text = await callAI(provider, model, systemPrompt, userPrompt);
+      console.log(`[step6] raw (first 2000 chars):\n${text.slice(0, 2000)}`);
+      const parsed = parseJson(text) as Record<string, unknown>;
+      const lateKeys = /late.?game|phase.?5|lateGame/i;
+      let p = parsed;
+      if (!p.phase5) {
+        const nested = (p.phases as Record<string, unknown> | undefined)?.phase5 ?? p.phase_5 ?? p.lateGame ?? p.late_game ?? phaseByName(p, lateKeys);
+        if (nested) { p = { ...p, phase5: nested }; }
+        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) { p = { ...p, phase5: (p.phases as unknown[])[0] }; }
+        else if ("sn" in p || "dmg" in p) { p = { phase5: p }; }
+        else {
+          for (const val of Object.values(p)) {
+            if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+            const inner = val as Record<string, unknown>;
+            const ip5 = inner.phase5 ?? inner.phase_5 ?? inner.lateGame ?? inner.late_game ?? phaseByName(inner, lateKeys);
+            if (ip5) { p = { ...p, phase5: ip5 }; break; }
+            if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length > 0) { p = { ...p, phase5: (inner.phases as unknown[])[0] }; break; }
+          }
+        }
+      }
+      if (!p.phase5) {
+        console.error("[step6] MISSING phase5. Keys:", Object.keys(parsed), "| raw first 2000:", text.slice(0, 2000));
+        return res.status(500).json({ error: "AI did not return Late Game phase. Try again." });
+      }
+      res.json(p);
+    } catch (err) {
+      console.error("Step6 error:", err);
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // POST /api/generate/step6b — End Game (phase6 only)
+  app.post("/api/generate/step6b", async (req, res) => {
+    const body = req.body as GenerateStep2Request;
+    const { gameKey, gameName, partialBuild, provider, model } = body;
+
+    const systemPrompt = buildSystemPrompt(
+      gameKey, gameName, provider,
+      `Continue "${partialBuild.label}". Generate the End Game phase.`,
+    );
+
+    const pb = partialBuild as Record<string, unknown>;
+    const weaponTpl = getWeaponTemplate(gameKey);
+
+    const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
+
+Build so far: ${JSON.stringify({
+  label: partialBuild.label,
+  cls: partialBuild.cls,
+  caps: partialBuild.caps,
+  phase5: pb.phase5,
+}, null, 2)}
+
+Generate ONLY phase6 (End Game) for this ${gameName} build.
+
+{
   "phase6": {
     "name": "End Game",
     "chapter": "The Final Reckoning",
@@ -823,23 +888,39 @@ Generate phase5 (Late Game) and phase6 (End Game) for this ${gameName} build.
 }
 
 Rules: all item locations must be real in ${gameName}. Include lore and durability. Use correct stat names.
-- chapter: 3-5 word dark-fantasy lore title, unique per phase.
-- progression: 4-6 steps. phase5 = path to End Game; phase6 = final polish + NG+ prep.
+- chapter: 3-5 word dark-fantasy lore title, different from phase5's chapter.
+- progression: 4-6 final polish steps leading into NG+.
 - checklist: 5-8 items/objectives. Format: "Name — brief why"
-- keyBosses: boss encounters in each SL range, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
+- keyBosses: end-game boss encounters, 1 sentence each on build approach${getGamePromptRules(gameKey)}`;
 
     try {
       const text = await callAI(provider, model, systemPrompt, userPrompt);
-      console.log(`[step6] AI response (first 600 chars): ${text.slice(0, 600)}`);
+      console.log(`[step6b] raw (first 2000 chars):\n${text.slice(0, 2000)}`);
       const parsed = parseJson(text) as Record<string, unknown>;
-      const p = normaliseStep3(parsed); // reuses full normaliser — handles all OpenAI wrapping patterns
-      if (!p.phase5 && !p.phase6) {
-        console.error("[step6] MISSING late/end phases:", JSON.stringify(parsed).slice(0, 600));
-        return res.status(500).json({ error: "AI did not return Late/End Game phases. Try again." });
+      const endKeys = /end.?game|phase.?6|endGame/i;
+      let p = parsed;
+      if (!p.phase6) {
+        const nested = (p.phases as Record<string, unknown> | undefined)?.phase6 ?? p.phase_6 ?? p.endGame ?? p.end_game ?? p.endgame ?? phaseByName(p, endKeys);
+        if (nested) { p = { ...p, phase6: nested }; }
+        else if (Array.isArray(p.phases) && (p.phases as unknown[]).length > 0) { p = { ...p, phase6: (p.phases as unknown[])[0] }; }
+        else if ("sn" in p || "dmg" in p) { p = { phase6: p }; }
+        else {
+          for (const val of Object.values(p)) {
+            if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+            const inner = val as Record<string, unknown>;
+            const ip6 = inner.phase6 ?? inner.phase_6 ?? inner.endGame ?? inner.end_game ?? inner.endgame ?? phaseByName(inner, endKeys);
+            if (ip6) { p = { ...p, phase6: ip6 }; break; }
+            if (Array.isArray(inner.phases) && (inner.phases as unknown[]).length > 0) { p = { ...p, phase6: (inner.phases as unknown[])[0] }; break; }
+          }
+        }
+      }
+      if (!p.phase6) {
+        console.error("[step6b] MISSING phase6. Keys:", Object.keys(parsed), "| raw first 2000:", text.slice(0, 2000));
+        return res.status(500).json({ error: "AI did not return End Game phase. Try again." });
       }
       res.json(p);
     } catch (err) {
-      console.error("Step6 error:", err);
+      console.error("Step6b error:", err);
       res.status(500).json({ error: String(err) });
     }
   });
@@ -1010,7 +1091,7 @@ tabNames: 2-4 word lore-flavored labels for each UI tab, themed to this specific
 
   // POST /api/generate/finalize — assemble Build + save
   app.post("/api/generate/finalize", (req, res) => {
-    const { gameKey, buildKey, step1, step2, step3, step4, step5, step6, step7, step8, step9 } = req.body as {
+    const { gameKey, buildKey, step1, step2, step3, step4, step5, step6, step6b, step7, step8, step9 } = req.body as {
       gameKey: string;
       gameName: string;
       buildKey: string;
@@ -1020,6 +1101,7 @@ tabNames: 2-4 word lore-flavored labels for each UI tab, themed to this specific
       step4: Record<string, unknown>;
       step5: Record<string, unknown>;
       step6: Record<string, unknown>;
+      step6b: Record<string, unknown>;
       step7: Record<string, unknown>;
       step8: { sim?: unknown[]; oth?: unknown[] };
       step9: { pros?: string[]; cons?: string[]; ref?: unknown[]; tabNames?: Record<string, string> };
@@ -1043,7 +1125,7 @@ tabNames: 2-4 word lore-flavored labels for each UI tab, themed to this specific
         step4.phase3,
         step5.phase4,
         step6.phase5,
-        step6.phase6,
+        step6b?.phase6,
         step7.phase7,
       ].filter(Boolean) as Build["phases"],
       sim:  (step8?.sim as Build["sim"])  ?? [],
