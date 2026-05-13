@@ -79,19 +79,38 @@ async function callAI(
   const oa = new OpenAI({
     baseURL,
     apiKey,
+    timeout: 150_000, // 2.5 min — prevents "terminated" on slow models
+    maxRetries: 0,    // we handle retries ourselves below
     defaultHeaders: provider === "openrouter"
       ? { "HTTP-Referer": "http://localhost:5000", "X-Title": "Master Build Codex" }
       : undefined,
   });
-  const completion = await oa.chat.completions.create({
-    model: resolvedModel,
-    max_tokens: 8000,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-  });
-  return completion.choices[0]?.message?.content ?? "";
+
+  // Retry up to 2 times on transient network errors ("terminated", ECONNRESET, etc.)
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const completion = await oa.chat.completions.create({
+        model: resolvedModel,
+        max_tokens: 8000,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      });
+      return completion.choices[0]?.message?.content ?? "";
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err).toLowerCase();
+      const isTransient = msg.includes("terminated") || msg.includes("econnreset")
+        || msg.includes("econnrefused") || msg.includes("network") || msg.includes("socket");
+      if (!isTransient || attempt === 2) throw err;
+      const wait = (attempt + 1) * 3000;
+      console.warn(`[callAI] transient error on attempt ${attempt + 1}, retrying in ${wait}ms:`, String(err));
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
 }
 
 // ── Phase normalisation ───────────────────────────────────────────────────────
@@ -953,11 +972,12 @@ Rules: all item locations must be real in ${gameName}. Include lore and durabili
 
     const userPrompt = `CRITICAL OUTPUT FORMAT: Your ENTIRE response must be a single JSON object. Start with { and end with }.
 
-Build (peak state): ${JSON.stringify({
+Build (fully optimised at peak): ${JSON.stringify({
   label: partialBuild.label,
+  sub: partialBuild.sub,
   cls: partialBuild.cls,
   caps: partialBuild.caps,
-  phase6: pb.phase6,
+  playstyle: partialBuild.playstyle,
 }, null, 2)}
 
 Generate phase7 (NG+) for this ${gameName} build. Enemies scale harder each cycle — adaptation strategies, covenant rewards across cycles, DLC adjustments.

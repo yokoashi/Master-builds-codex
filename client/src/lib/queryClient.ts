@@ -9,14 +9,23 @@ export const API_BASE =
 export async function apiRequest<T = unknown>(
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  timeoutMs = 170_000, // 2m50s — just under the server's 3m socket timeout
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     let errorMsg = `${res.status} ${res.statusText}`;

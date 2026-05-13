@@ -121,4 +121,8 @@ app.use((req, res, next) => {
     { port, host: "0.0.0.0", reusePort: true },
     () => { log(`serving on port ${port}`); }
   );
+  // AI generation routes can take 60-120s — extend socket timeout so the
+  // connection isn't dropped mid-response by the OS or a reverse proxy.
+  httpServer.setTimeout(180_000);
+  httpServer.keepAliveTimeout = 185_000;
 })();

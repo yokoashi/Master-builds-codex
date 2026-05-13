@@ -317,12 +317,20 @@ export default function AddBuildModal({ game, onClose, onCreated }: Props) {
         partialBuild: { ...step1, ...step5, ...step6 }, provider, model,
       });
 
-      // Step 7: NG+ phase 7
+      // Step 7: NG+ phase 7 (non-fatal — NG+ content is a bonus, never abort for it)
       setStage("step7");
-      const step7 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step7", {
-        gameKey: game.key, gameName: game.name, buildKey,
-        partialBuild: { ...step1, ...step6, ...step6b }, provider, model,
-      });
+      let step7: Record<string, unknown> = {};
+      try {
+        step7 = await apiRequest<Record<string, unknown>>("POST", "/api/generate/step7", {
+          gameKey: game.key, gameName: game.name, buildKey,
+          // Pass only identity fields — not the full phase6 blob — to keep the payload small
+          partialBuild: {
+            label: step1.label, cls: step1.cls, caps: step1.caps,
+            playstyle: step1.playstyle, sub: step1.sub,
+          },
+          provider, model,
+        });
+      } catch { /* non-fatal — build saves fine without NG+ phase */ }
 
       // Step 8: similar/contrasting builds (non-fatal)
       setStage("step8");
